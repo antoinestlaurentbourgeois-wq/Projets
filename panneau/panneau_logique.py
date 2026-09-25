@@ -350,17 +350,56 @@ class SystemeWindows:
 
     def http_get(self, url, delai):
         """Renvoie (code HTTP, texte) ; code None si personne ne répond."""
+        return self.http("GET", url, delai)
+
+    def http(self, methode, url, delai, entetes=None, corps_json=None):
+        """Requête HTTP vers ce PC uniquement. Renvoie (code HTTP, texte).
+
+        Les en-têtes (qui peuvent contenir une clé) ne sont jamais écrits
+        dans le journal ni renvoyés dans un message d'erreur.
+        """
         if not url_est_locale(url):
             raise ValueError(f"adresse refusée (pas locale) : {url}")
+        donnees = None
+        entetes = dict(entetes or {})
+        if corps_json is not None:
+            donnees = json.dumps(corps_json).encode("utf-8")
+            entetes["Content-Type"] = "application/json"
+        requete = urllib.request.Request(url, data=donnees, headers=entetes, method=methode)
         # ProxyHandler({}) : ne jamais passer par un proxy, même s'il y en a un.
         ouvreur = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         try:
-            with ouvreur.open(url, timeout=delai) as rep:
-                return rep.status, rep.read(1_000_000).decode("utf-8", "replace")
+            with ouvreur.open(requete, timeout=delai) as rep:
+                return rep.status, rep.read(5_000_000).decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
-            return e.code, ""
+            try:
+                corps = e.read(20_000).decode("utf-8", "replace")
+            except OSError:
+                corps = ""
+            return e.code, corps
         except (urllib.error.URLError, OSError, ValueError) as e:
             return None, str(getattr(e, "reason", e))
+
+    def ouvrir_url(self, url):
+        """Ouvre une adresse LOCALE dans le navigateur par défaut."""
+        if not url_est_locale(url):
+            raise ValueError(f"adresse refusée (pas locale) : {url}")
+        os.startfile(url)  # noqa: disponible seulement sous Windows
+
+    def lire_fichier(self, chemin):
+        """Texte du fichier (UTF-8, avec ou sans BOM), ou None s'il n'existe pas."""
+        try:
+            with open(chemin, encoding="utf-8-sig") as f:
+                return f.read()
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    def ecrire_fichier(self, chemin, texte):
+        """Écrit d'un coup (fichier temporaire puis remplacement) : jamais de fichier à moitié écrit."""
+        temporaire = chemin + ".tmp"
+        with open(temporaire, "w", encoding="utf-8") as f:
+            f.write(texte)
+        os.replace(temporaire, chemin)
 
     def fichier_existe(self, chemin):
         return os.path.isfile(chemin)
@@ -380,18 +419,23 @@ class SystemeWindows:
         os.startfile(chemin)  # noqa: disponible seulement sous Windows
 
     def variable_utilisateur_presente(self, nom_var):
-        """Vrai si la variable existe dans HKCU\\Environment et n'est pas vide.
+        """Vrai si la variable existe dans HKCU\\Environment et n'est pas vide."""
+        return bool(self.valeur_variable_utilisateur(nom_var))
 
-        La valeur est lue puis oubliée aussitôt : elle n'est ni gardée,
-        ni affichée, ni écrite dans le journal.
+    def valeur_variable_utilisateur(self, nom_var):
+        """Valeur de la variable dans HKCU\\Environment, ou None.
+
+        Sert uniquement à s'authentifier auprès d'Open WebUI : la valeur n'est
+        ni gardée, ni affichée, ni écrite dans le journal.
         """
         import winreg
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as cle:
                 valeur, _ = winreg.QueryValueEx(cle, nom_var)
-                return bool(str(valeur).strip())
+                valeur = str(valeur).strip()
+                return valeur or None
         except OSError:
-            return False
+            return None
 
     def maintenant(self):
         return time.monotonic()

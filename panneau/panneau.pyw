@@ -25,17 +25,13 @@ sys.path.insert(0, DOSSIER)
 
 import reglages as R  # noqa: E402
 import panneau_logique as L  # noqa: E402
+import panneau_crew as C  # noqa: E402
+import panneau_ouvrir as O  # noqa: E402
 from panneau_logique import ACTIF, ARRETE, INCONNU, TRANSITION, Etat  # noqa: E402
+from panneau_widgets import (CARTE, COULEURS, FOND, GRIS, POLICE, TEXTE, TEXTE_ETAT,  # noqa: E402
+                             SectionMoteurs, SelecteurMode, rendre_cliquable)
 
 FICHIER_JOURNAL = os.path.join(DOSSIER, "panneau.log")
-
-COULEURS = {ACTIF: "#2e9d4f", ARRETE: "#d64545", TRANSITION: "#e8962e", INCONNU: "#9a9a9a"}
-TEXTE_ETAT = {ACTIF: "Actif", ARRETE: "Arrêté", TRANSITION: "En cours…", INCONNU: "Inconnu"}
-FOND = "#f4f5f7"
-CARTE = "#ffffff"
-TEXTE = "#1f2328"
-GRIS = "#6b7280"
-POLICE = "Segoe UI"
 
 
 def configurer_journal():
@@ -85,14 +81,17 @@ class Interrupteur(tk.Canvas):
 class LigneComposant:
     """Voyant + nom + description + interrupteur + ligne d'explication."""
 
-    def __init__(self, parent, composant, au_clic, echelle=1.0):
+    def __init__(self, parent, composant, au_clic, echelle=1.0, au_clic_nom=None):
         self.cadre = tk.Frame(parent, bg=CARTE, padx=14, pady=8)
         t = int(18 * echelle)
         self.voyant = tk.Canvas(self.cadre, width=t, height=t, bg=CARTE, highlightthickness=0)
         self.voyant.grid(row=0, column=0, rowspan=2, sticky="n", pady=(3, 0))
         self.rond = self.voyant.create_oval(2, 2, t - 2, t - 2, fill=COULEURS[INCONNU], outline="")
-        tk.Label(self.cadre, text=composant.nom, bg=CARTE, fg=TEXTE,
-                 font=(POLICE, 11, "bold")).grid(row=0, column=1, sticky="w", padx=(10, 0))
+        self.nom = tk.Label(self.cadre, text=composant.nom, bg=CARTE, fg=TEXTE, font=(POLICE, 11, "bold"))
+        self.nom.grid(row=0, column=1, sticky="w", padx=(10, 0))
+        if au_clic_nom is not None:
+            # Nom cliquable : ouvre l'application (Open WebUI, LM Studio, Docker Desktop).
+            rendre_cliquable(self.nom, lambda: au_clic_nom(composant.ident))
         self.etiquette = tk.Label(self.cadre, text="", bg=CARTE, fg=GRIS, font=(POLICE, 9))
         self.etiquette.grid(row=0, column=2, sticky="e", padx=8)
         tk.Label(self.cadre, text=composant.description, bg=CARTE, fg=GRIS,
@@ -127,6 +126,13 @@ class Panneau:
         self.occupe = False             # une action (ou séquence) est en cours
         self.arret = threading.Event()
         self.reveil = threading.Event()
+        self.crew = C.CrewDistant(controleur.sys)
+        self.ouvreur = O.Ouvreur(controleur.sys, controleur)
+        self.section_ia_ouverte = False   # lu par le fil de vérification
+        self.mode_en_cours = False        # un changement de mode est en cours
+        self.a_ouvrir_apres = None        # composant à ouvrir quand son démarrage réussit
+        self.fin_changement_mode = 0.0
+        self.demo = demo
 
         racine.title("Panneau IA locale" + (" — DÉMO (simulation)" if demo else ""))
         racine.configure(bg=FOND)
@@ -165,20 +171,29 @@ class Panneau:
         self.statut = tk.Label(bas, text="Prêt.", bg=FOND, fg=TEXTE,
                                font=(POLICE, 9), anchor="w", justify="left",
                                wraplength=int(330 * self.echelle))
-        self.statut.pack(side="left", fill="x", expand=True)
         tk.Button(bas, text="Journal", command=self.ouvrir_journal, relief="flat",
                   bg="#e5e7eb", padx=10).pack(side="right")
         tk.Button(bas, text="Vérifier", command=self.reveil.set, relief="flat",
                   bg="#e5e7eb", padx=10).pack(side="right", padx=6)
         self.heure = tk.Label(bas, text="", bg=FOND, fg=GRIS, font=(POLICE, 8))
         self.heure.pack(side="right", padx=6)
+        # Placé en dernier : le texte d'état prend la place qui reste, sans écraser l'heure.
+        self.statut.pack(side="left", fill="x", expand=True)
 
         liste = self.zone_defilante()
         self.lignes = {}
         for c in L.COMPOSANTS:
-            ligne = LigneComposant(liste, c, self.clic_interrupteur, self.echelle)
+            ouvrable = self.clic_nom if c.ident in O.OUVRABLES else None
+            ligne = LigneComposant(liste, c, self.clic_interrupteur, self.echelle, ouvrable)
             ligne.cadre.pack(fill="x", pady=2)
             self.lignes[c.ident] = ligne
+
+        # Ligne du serveur Crew : sélecteur de mode, puis section repliable des IA.
+        cadre_crew = self.lignes["crew"].cadre
+        self.selecteur = SelecteurMode(cadre_crew, self.changer_mode, self.echelle)
+        self.selecteur.cadre.grid(row=3, column=1, columnspan=3, sticky="w", padx=(10, 0), pady=(6, 0))
+        self.section_ia = SectionMoteurs(cadre_crew, self.basculer_section_ia, self.echelle)
+        self.section_ia.cadre.grid(row=4, column=1, columnspan=3, sticky="we", padx=(10, 0), pady=(6, 0))
 
         cles = tk.Frame(liste, bg=CARTE, padx=14, pady=8)
         cles.pack(fill="x", pady=(8, 2))
@@ -194,7 +209,8 @@ class Panneau:
 
         # Hauteur de départ : tout le contenu, sans dépasser l'écran.
         self.racine.update_idletasks()
-        hauteur = min(self.racine.winfo_reqheight() + liste.winfo_reqheight(),
+        hauteur = min(self.racine.winfo_reqheight() - self.toile.winfo_reqheight()
+                      + liste.winfo_reqheight(),
                       self.racine.winfo_screenheight() - 80)
         self.racine.geometry(f"{int(580 * self.echelle)}x{hauteur}")
 
@@ -202,7 +218,7 @@ class Panneau:
         """Zone avec barre de défilement, utile si l'écran est petit ou agrandi (125 %, 150 %)."""
         conteneur = tk.Frame(self.racine, bg=FOND)
         conteneur.pack(fill="both", expand=True)
-        toile = tk.Canvas(conteneur, bg=FOND, highlightthickness=0)
+        toile = self.toile = tk.Canvas(conteneur, bg=FOND, highlightthickness=0)
         barre = tk.Scrollbar(conteneur, orient="vertical", command=toile.yview)
         interieur = tk.Frame(toile, bg=FOND, padx=16, pady=10)
         fenetre = toile.create_window((0, 0), window=interieur, anchor="nw")
@@ -257,6 +273,12 @@ class Panneau:
                 etats = self.ctrl.verifier_tout()
                 cles = self.ctrl.verifier_cles()
                 self.file.put(("verification", debut, etats, cles))
+                # Mode et IA de Crew : API si le serveur tourne, sinon fichier / « éteint ».
+                # La liste des IA n'est demandée que si la section est ouverte.
+                crew_actif = etats["crew"].code == ACTIF
+                mode = self.crew.lire_mode(crew_actif)
+                moteurs = self.crew.lire_moteurs(crew_actif) if self.section_ia_ouverte else None
+                self.file.put(("crew", debut, mode, moteurs))
             except Exception:
                 logging.getLogger("panneau").exception("échec de la vérification automatique")
             self.reveil.wait(R.INTERVALLE_VERIFICATION)
@@ -287,6 +309,16 @@ class Panneau:
                         self.statut.configure(text=f"{L.nom(ident)} : {etat.message}")
                 elif msg[0] == "fin":
                     self.fin_sequence(*msg[1:])
+                elif msg[0] == "crew":
+                    _, debut, mode, moteurs = msg
+                    if not self.mode_en_cours and debut > self.fin_changement_mode:
+                        self.selecteur.afficher(mode)
+                    if moteurs is not None:
+                        self.section_ia.afficher(moteurs)
+                elif msg[0] == "mode":
+                    self.fin_changement(*msg[1:])
+                elif msg[0] == "ouverture":
+                    self.executer_ouverture(*msg[1:])
         except queue.Empty:
             pass
         for ident, ligne in self.lignes.items():
@@ -340,6 +372,9 @@ class Panneau:
             texte = f"{titre} : terminé."
         self.statut.configure(text=texte)
         self.reveil.set()   # revérifier tout de suite
+        ident, self.a_ouvrir_apres = self.a_ouvrir_apres, None
+        if ident and resultats.get(ident, Etat(INCONNU)).code == ACTIF:
+            self.ouvrir(ident)
 
     def tout_demarrer(self):
         self.lancer("Tout démarrer", lambda: self.ctrl.tout_demarrer(self.progres), True)
@@ -380,6 +415,106 @@ class Panneau:
             etapes = [("demarrer", d) for d in manquantes] + [("demarrer", ident)]
             titre, demarrage = f"Démarrage de {nom_c}", True
         self.lancer(titre, lambda: self.ctrl.executer_sequence(etapes, self.progres), demarrage)
+
+    # ----- version 2 : ouvrir les applications ----------------------------------
+
+    def clic_nom(self, ident):
+        """Clic sur le nom d'un composant : l'ouvrir (en l'allumant d'abord si besoin)."""
+        etat = self.etats[ident]
+        nom_c = L.nom(ident)
+        if etat.code == ACTIF or (ident == "docker" and etat.code == TRANSITION):
+            self.ouvrir(ident)
+            return
+        if self.occupe or etat.code == TRANSITION:
+            self.racine.bell()
+            self.statut.configure(text=f"{nom_c} : une action est en cours, réessayez dans un instant.")
+            return
+        a_allumer = L.dependances_a_demarrer(ident, self.etats) + [ident]
+        noms = ", ".join(L.nom(d) for d in a_allumer)
+        if not messagebox.askyesno("Ouvrir", f"{nom_c} est éteint.\n\nAllumer {noms}, puis ouvrir {nom_c} ?",
+                                   parent=self.racine):
+            return
+        etapes = [("demarrer", d) for d in a_allumer]
+        self.a_ouvrir_apres = ident
+        self.lancer(f"Démarrage de {nom_c}", lambda: self.ctrl.executer_sequence(etapes, self.progres), True)
+
+    def ouvrir(self, ident):
+        """Cherche quoi ouvrir dans un fil séparé (réseau), puis ouvre dans la fenêtre."""
+        self.statut.configure(text=f"Ouverture de {L.nom(ident)}…")
+
+        def fil():
+            try:
+                ouverture, erreur = self.ouvreur.preparer(ident), None
+            except L.ErreurAction as e:
+                ouverture, erreur = None, str(e)
+            except Exception as e:
+                logging.getLogger("panneau").exception("ouverture impossible")
+                ouverture, erreur = None, f"Erreur inattendue : {e}"
+            self.file.put(("ouverture", ident, ouverture, erreur))
+        threading.Thread(target=fil, daemon=True).start()
+
+    def executer_ouverture(self, ident, ouverture, erreur):
+        nom_c = L.nom(ident)
+        if erreur:
+            logging.getLogger("panneau").error("Ouverture de %s : %s", nom_c, erreur)
+            self.statut.configure(text=f"{nom_c} : {erreur}")
+            messagebox.showerror("Ouvrir", erreur, parent=self.racine)
+            return
+        try:
+            self.ouvreur.executer(ouverture)
+        except (OSError, ValueError, AttributeError) as e:
+            logging.getLogger("panneau").error("Ouverture de %s impossible : %s", nom_c, e)
+            messagebox.showerror("Ouvrir", f"Impossible d'ouvrir {nom_c} : {e}", parent=self.racine)
+            return
+        if ouverture.presse_papiers:
+            self.racine.clipboard_clear()
+            self.racine.clipboard_append(ouverture.presse_papiers)
+        texte = f"{nom_c} ouvert." + (" (démo : ouverture simulée)" if self.demo else "")
+        if ouverture.message and ouverture.genre == "url":
+            texte = f"{nom_c} : {ouverture.message}"
+        self.statut.configure(text=texte)
+        if ouverture.message and ouverture.genre == "programme":
+            messagebox.showinfo(nom_c, ouverture.message, parent=self.racine)
+
+    # ----- version 2 : mode et IA de Crew ------------------------------------------
+
+    def basculer_section_ia(self, ouverte):
+        self.section_ia_ouverte = ouverte
+        if ouverte:
+            self.reveil.set()      # charger la liste tout de suite
+
+    def changer_mode(self, ident):
+        if self.mode_en_cours:
+            self.racine.bell()
+            return
+        self.mode_en_cours = True
+        self.selecteur.afficher(self.selecteur.info, occupe=True)
+        crew_actif = self.etats["crew"].code == ACTIF
+
+        def fil():
+            try:
+                info, erreur = self.crew.changer_mode(ident), None
+            except C.ErreurCrew as e:
+                info, erreur = None, str(e)
+            except Exception as e:
+                logging.getLogger("panneau").exception("changement de mode impossible")
+                info, erreur = None, f"Erreur inattendue : {e}"
+            if info is None:
+                info = self.crew.lire_mode(crew_actif)
+            self.file.put(("mode", ident, info, erreur))
+        threading.Thread(target=fil, daemon=True).start()
+
+    def fin_changement(self, ident, info, erreur):
+        self.mode_en_cours = False
+        self.fin_changement_mode = time.monotonic()
+        self.selecteur.afficher(info)
+        if erreur:
+            logging.getLogger("panneau").error("Changement de mode (%s) : %s", ident, erreur)
+            self.statut.configure(text=f"Mode Crew : {erreur}")
+            messagebox.showerror("Mode de Crew", erreur, parent=self.racine)
+        else:
+            ou = "" if info.serveur_actif else " (enregistré dans le fichier, serveur éteint)"
+            self.statut.configure(text=f"Mode Crew : {info.libelle()}{ou}")
 
     # ----- divers ------------------------------------------------------------
 
@@ -432,6 +567,10 @@ def main():
         systeme.delai_docker, systeme.delai_webui, systeme.delai_crew = 8, 5, 3
         systeme.lms_serveur = True
         systeme.modeles[R.MODELE_EMBEDDINGS] = 1
+        systeme.cles["OPENWEBUI_API_KEY"] = systeme.cle_webui_serveur
+        systeme.conversations = [
+            {"id": "demo-crew-1", "updated_at": 2000, "models": ["crew-normal"]},
+            {"id": "demo-gemma", "updated_at": 3000, "models": [R.MODELE_GEMMA]}]
     else:
         systeme = L.SystemeWindows(dossier_temp=DOSSIER)
     journal.info("Panneau ouvert%s", " (démo)" if demo else "")

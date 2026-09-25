@@ -225,7 +225,7 @@ class TestVoyants(unittest.TestCase):
         self.assertEqual({k: v.code for k, v in e.items()}, {k: ACTIF for k in e})
 
     def test_docker_en_cours_de_demarrage_est_orange(self):
-        self.sim.ouvrir_programme("Docker Desktop.exe")
+        self.sim.ouvrir_programme(R.DOCKER_DESKTOP_CANDIDATS[0])
         self.assertEqual(self.ctrl.verifier_docker().code, TRANSITION)
 
     def test_webui_conteneur_lance_mais_site_pas_pret(self):

@@ -87,3 +87,35 @@ DELAI_CHARGEMENT_EMBEDDINGS = 120
 DELAI_DECHARGEMENT = 60
 DELAI_DEMARRAGE_CREW = 90
 DELAI_ARRET_CREW = 20
+
+# ---------------------------------------------------------------------------
+# Version 2 : sélecteur de mode Crew, liste des IA, ouverture des applications
+# ---------------------------------------------------------------------------
+
+# Serveur Crew : adresses protégées par la clé CREW_API_KEY (lue dans le .env).
+URL_CREW_MODE = "http://127.0.0.1:8765/mode"
+URL_CREW_MOTEURS = "http://127.0.0.1:8765/moteurs"
+FICHIER_ENV_CREW = DOSSIER_CREW + r"\.env"
+NOM_CLE_CREW = "CREW_API_KEY"
+# Fichier du mode, utilisé seulement quand le serveur Crew est éteint.
+FICHIER_MODE_CREW = DOSSIER_CREW + r"\mode_crew.json"
+# Copie locale des libellés/explications reçus du serveur (pour les afficher
+# même quand le serveur est éteint). Rangée dans le dossier du panneau.
+FICHIER_CACHE_MODES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modes_crew_cache.json")
+
+# Open WebUI
+URL_WEBUI_BASE = "http://localhost:3000"
+URL_WEBUI_CONVERSATIONS = URL_WEBUI_BASE + "/api/v1/chats/?page=1"
+URL_WEBUI_CONVERSATION = URL_WEBUI_BASE + "/api/v1/chats/{id}"
+URL_WEBUI_CONVERSATION_OUVRIR = URL_WEBUI_BASE + "/c/{id}"
+URL_WEBUI_NOUVELLE_CREW = URL_WEBUI_BASE + "/?model=crew-normal"
+NOM_CLE_WEBUI = "OPENWEBUI_API_KEY"
+PREFIXE_MODELE_CREW = "crew-"
+CONVERSATIONS_EXAMINEES = 20      # on regarde au plus les 20 plus récentes
+DELAI_RECHERCHE_CONVERSATION = 10 # secondes au total, ensuite : nouvelle conversation
+
+# LM Studio (l'application)
+LMSTUDIO_EXE_CANDIDATS = [
+    r"C:\Users\boliv\AppData\Local\Programs\LM Studio\LM Studio.exe",
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\LM Studio\LM Studio.exe"),
+]

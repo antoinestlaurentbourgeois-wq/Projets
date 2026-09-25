@@ -15,7 +15,7 @@ corriger le problème.
 ## A. Avant de commencer
 
 - [ ] **A1. Tests automatiques.** Double-cliquez sur `lancer_tests.bat`.
-  *Résultat attendu :* la dernière ligne affiche `OK` (59 tests).
+  *Résultat attendu :* la dernière ligne affiche `OK` (105 tests).
 - [ ] **A2. Mode démo.** Double-cliquez sur `demo.bat`, cliquez sur **Tout démarrer**, puis sur **Mode jeu**.
   *Résultat attendu :* les voyants passent à l'orange puis au vert, puis au rouge. Rien ne se passe
   réellement sur le PC (Docker et LM Studio ne bougent pas). Fermez la fenêtre de démo.
@@ -113,6 +113,91 @@ Pour chaque test : cliquez sur l'interrupteur, observez le voyant (**orange** pe
   *Attendu :* `panneau.log` s'ouvre dans le Bloc-notes, avec les actions (« Démarrage de … : terminé »).
 - [ ] **F2.** Dans le Bloc-notes, faites Ctrl + F et cherchez le début de l'une de vos clés API.
   *Attendu :* **aucun résultat.**
+
+## G. Nouveautés de la version 2
+
+Commencez avec **tout allumé** (bouton **Tout démarrer**). Comptez environ 15 minutes.
+
+### G1. Tests et ouverture
+
+- [ ] **G1a.** Double-cliquez sur `lancer_tests.bat`. *Attendu :* `OK` (105 tests).
+- [ ] **G1b.** Ouvrez le panneau par le raccourci. *Attendu :* sous « Serveur Crew », une ligne
+  « Mode : [Économe ▾] i » et, en dessous, « ▸ État des IA utilisées par Crew ». Aucune fenêtre noire.
+
+### G2. Sélecteur de mode (serveur Crew allumé)
+
+- [ ] **G2a.** *Attendu :* le mode affiché est celui en cours (normalement « Économe »), écrit comme le
+  serveur l'écrit (avec l'accent).
+- [ ] **G2b.** Passez la souris sur le **i** à côté du mode (ou cliquez dessus).
+  *Attendu :* une bulle jaune affiche l'explication du mode, identique à celle du serveur.
+- [ ] **G2c.** Cliquez sur le mode. *Attendu :* une liste des 4 modes s'ouvre juste en dessous, avec un
+  point vert devant le mode en cours et un **i** au bout de chaque ligne. Survolez chaque **i** : chacune
+  affiche une explication différente.
+- [ ] **G2d.** Appuyez sur Échap. *Attendu :* la liste se ferme sans rien changer. Rouvrez-la, cliquez à
+  côté (sur la fenêtre) : elle se ferme aussi.
+- [ ] **G2e.** Rouvrez la liste et choisissez **MaxPerf**. *Attendu :* le bouton affiche brièvement
+  « changement… », puis « MaxPerf ». En bas : « Mode Crew : MaxPerf ».
+- [ ] **G2f. Vérification croisée.** Ouvrez `I:\Python\crewai-routage\mode_crew.json` dans le Bloc-notes.
+  *Attendu :* `"mode": "maxperf"` (si votre serveur enregistre le mode dans ce fichier).
+- [ ] **G2g.** Revenez sur **Économe**.
+
+### G3. Sélecteur de mode (serveur Crew éteint)
+
+- [ ] **G3a.** Éteignez le **Serveur Crew** (interrupteur). *Attendu :* à côté du mode :
+  « Serveur Crew éteint (mode lu dans le fichier) ». Le mode affiché est toujours le bon, avec son nom
+  complet (le panneau a gardé les noms et explications reçus du serveur).
+- [ ] **G3b.** Choisissez **Confidentiel**. *Attendu :* en bas : « Mode Crew : Confidentiel (enregistré dans
+  le fichier, serveur éteint) ». Dans `mode_crew.json` : `"mode": "confidentiel"`.
+- [ ] **G3c.** Rallumez le **Serveur Crew**. *Attendu :* une fois le voyant vert, le mode affiché est
+  toujours **Confidentiel** (le serveur a bien relu le fichier), et la note « serveur éteint » disparaît.
+- [ ] **G3d.** Remettez **Économe**.
+
+### G4. État des IA
+
+- [ ] **G4a.** Cliquez sur **▸ État des IA utilisées par Crew**. *Attendu :* la flèche devient ▾ ; après
+  « Chargement… » (1 à 5 s), une ligne par IA : gemma, Gemini Flash, DeepSeek Flash, DeepSeek V4 Pro,
+  chacune avec son voyant, « niveau 1 (simple) / 2 (bon) / 3 (expert) », « gratuit » ou « coût relatif N »,
+  et une ligne d'état (« prête — … »).
+- [ ] **G4b.** Les voyants correspondent à la réalité : vert pour les IA prêtes, gris si une clé manque.
+- [ ] **G4c.** Éteignez le **Serveur Crew**. *Attendu :* la section affiche « Serveur Crew éteint ».
+  Rallumez-le : la liste revient toute seule.
+- [ ] **G4d.** Repliez la section (clic sur ▾). *Attendu :* elle se referme. (Repliée, elle n'interroge
+  plus le serveur.)
+- [ ] **G4e. (plus tard)** Quand vous ajouterez une IA à Crew, elle doit apparaître dans cette liste sans
+  toucher au panneau.
+
+### G5. Noms cliquables
+
+- [ ] **G5a.** Survolez les noms. *Attendu :* **Open WebUI**, **Serveur LM Studio** et **Docker Desktop**
+  deviennent bleus et soulignés, avec le curseur « main ». Les autres noms (Kokoro, modèles, Crew) ne
+  changent pas.
+- [ ] **G5b. Open WebUI.** Cliquez sur le nom. *Attendu :* le navigateur ouvre **votre conversation la plus
+  récente avec un modèle crew-…** (adresse `http://localhost:3000/c/…`). Vérifiez que c'est bien la bonne.
+- [ ] **G5c. Nouvelle conversation avec Crew.** Tapez dans le navigateur
+  `http://localhost:3000/?model=crew-normal` (c'est l'adresse qu'utilise le panneau quand il ne trouve
+  pas de conversation Crew). *Attendu :* une conversation vide avec **crew-normal** déjà sélectionné en
+  haut. Si un autre modèle est sélectionné, dites-le-moi (c'est le point 11 du README).
+- [ ] **G5d. LM Studio.** Cliquez sur **Serveur LM Studio**. *Attendu :* LM Studio s'ouvre (ou revient au
+  premier plan), et le panneau affiche un message « choisissez « google/gemma-4-12b-qat » … ». Dans
+  LM Studio, créez une conversation, cliquez sur la recherche de modèles et faites **Ctrl+V** : le nom
+  est collé. **Vérifiez qu'aucun modèle n'a été chargé en plus** (toujours un seul gemma).
+- [ ] **G5e. Docker Desktop.** Cliquez sur le nom. *Attendu :* la fenêtre de Docker Desktop s'ouvre.
+- [ ] **G5f. Composant éteint.** Faites **Mode jeu**, puis cliquez sur **Open WebUI**.
+  *Attendu :* la question « Open WebUI est éteint. Allumer Docker Desktop, Open WebUI, puis ouvrir Open
+  WebUI ? ». Répondez **Oui** : Docker puis Open WebUI démarrent (1 à 3 min), puis le navigateur s'ouvre.
+  Faites de même avec **Serveur LM Studio** (répondez **Oui** : le serveur démarre, puis LM Studio s'ouvre
+  avec le message « Aucun modèle de conversation n'est chargé »).
+- [ ] **G5g.** Répondez **Non** à cette question. *Attendu :* rien ne se passe.
+
+### G6. La fenêtre ne gèle jamais
+
+- [ ] **G6a.** Pendant une recherche de conversation (clic sur Open WebUI) ou un changement de mode,
+  déplacez la fenêtre. *Attendu :* elle réagit normalement.
+
+### G7. Aucune clé dans le journal
+
+- [ ] **G7a.** Cliquez sur **Journal**, puis Ctrl + F : cherchez le début de votre `CREW_API_KEY`
+  (dans le fichier `.env`) et de votre `OPENWEBUI_API_KEY`. *Attendu :* **aucun résultat.**
 
 ---
 

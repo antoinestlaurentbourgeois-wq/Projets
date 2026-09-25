@@ -22,6 +22,18 @@ Docker Desktop, Open WebUI, Kokoro, le serveur LM Studio, les modèles gemma et 
 - Le panneau ne contacte que votre PC (`localhost` / `127.0.0.1`). Rien ne sort sur Internet.
 - Chaque action et chaque erreur est notée dans `panneau.log` (bouton **Journal**).
 
+**Nouveautés de la version 2**
+
+- **Mode de Crew** : sur la ligne « Serveur Crew », une liste déroulante affiche le mode en cours
+  (Économe, MaxPerf, Confidentiel, Ultra-confidentiel…) et permet d'en changer. Le petit **i** à côté
+  de chaque mode affiche son explication (au survol ou au clic).
+- **État des IA** : sous la ligne de Crew, cliquez sur **▸ État des IA utilisées par Crew** pour déplier
+  la liste de toutes les IA que Crew peut utiliser : voyant, nom, niveau (1 simple, 2 bon, 3 expert),
+  coût relatif et une ligne d'état.
+- **Noms cliquables** : **Open WebUI**, **Serveur LM Studio** et **Docker Desktop** s'ouvrent d'un clic
+  sur leur nom (curseur en forme de main, nom souligné au survol). Si le composant est éteint, le panneau
+  propose de l'allumer d'abord.
+
 ---
 
 ## Installation (5 minutes)
@@ -44,6 +56,26 @@ et rien n'est écrit sur le disque C: à part le raccourci du bureau.
 
 Ensuite, suivez la liste [VERIFICATIONS.md](VERIFICATIONS.md) pour tout tester une première fois.
 
+### Mettre à jour depuis la version 1
+
+Votre panneau v1 fonctionne : on remplace seulement certains fichiers. **Ne supprimez pas le dossier**
+(votre `tests\verif_reelle.py` et votre journal y sont).
+
+1. Fermez le panneau (croix en haut à droite).
+2. Téléchargez le ZIP de la branche `claude/new-session-nsb4ea` comme la première fois (**Code → Download
+   ZIP**), sur le disque **I:**.
+3. Copiez depuis le dossier `panneau` du ZIP vers `I:\Python\crewai-routage\panneau\`, en acceptant de
+   **remplacer** les fichiers existants :
+   - nouveaux : `panneau_crew.py`, `panneau_ouvrir.py`, `panneau_widgets.py`, `tests\test_v2.py` ;
+   - modifiés : `panneau.pyw`, `panneau_logique.py`, `simulateur.py`, `reglages.py`,
+     `tests\test_panneau.py`, `README.md`, `VERIFICATIONS.md`, `.gitignore`.
+   - `creer_raccourci.ps1` n'a pas changé : il est déjà enregistré en UTF-8 **avec BOM** (un test vérifie
+     maintenant qu'il le reste). Inutile de recréer le raccourci.
+4. **Si vous aviez modifié `reglages.py`** (un chemin, un délai…), refaites la même modification dans le
+   nouveau fichier. La v2 ajoute seulement un bloc à la fin (« Version 2 »).
+5. Double-cliquez sur `lancer_tests.bat` : la dernière ligne doit afficher `OK` (105 tests).
+6. Rouvrez le panneau par le raccourci, puis suivez la partie **G** de [VERIFICATIONS.md](VERIFICATIONS.md).
+
 ### Si un chemin est différent sur votre PC
 
 Tous les chemins et noms sont dans **`reglages.py`** (clic droit → Ouvrir avec → Bloc-notes).
@@ -62,17 +94,23 @@ Supprimez le raccourci du bureau et le dossier `I:\Python\crewai-routage\panneau
 |---|---|
 | `panneau.pyw` | La fenêtre (lancée sans console grâce à `pythonw.exe`) |
 | `panneau_logique.py` | Toute la logique : dépendances, vérifications, démarrage, arrêt |
+| `panneau_crew.py` | *(v2)* Mode de Crew et liste des IA (`/mode`, `/moteurs`, fichier `mode_crew.json`) |
+| `panneau_ouvrir.py` | *(v2)* Ouvrir Open WebUI, LM Studio et Docker Desktop |
+| `panneau_widgets.py` | *(v2)* Éléments de la fenêtre : bulle « i », liste des modes, section des IA |
 | `reglages.py` | Les chemins, noms et délais — **le seul fichier à modifier** |
 | `simulateur.py` | Une fausse installation, pour les tests et le mode démo |
-| `tests/test_panneau.py` | Les tests automatiques (59 tests, tout est simulé) |
+| `tests/test_panneau.py` | Les tests automatiques de la v1 (59 tests, tout est simulé) |
+| `tests/test_v2.py` | *(v2)* Les tests des nouveautés (46 tests, tout est simulé) |
+| `tests/verif_reelle.py` | Votre script de vérification **réelle** (Mode jeu + Tout démarrer, avec `nvidia-smi`). Il reste sur votre PC ; il n'est pas lancé par les tests automatiques |
 | `creer_raccourci.bat` / `.ps1` | Crée le raccourci sur le bureau |
 | `demo.bat` | Ouvre le panneau en mode démo |
 | `lancer_tests.bat` | Lance les tests automatiques |
 | `panneau.log` | Le journal (créé au premier lancement, 500 Ko max) |
+| `modes_crew_cache.json` | *(v2, créé tout seul)* Copie des noms et explications des modes reçus du serveur Crew, pour les afficher même quand il est éteint |
 
 ## Lancer les tests automatiques
 
-Double-cliquez sur `lancer_tests.bat`. La dernière ligne doit être **`OK`**.
+Double-cliquez sur `lancer_tests.bat`. La dernière ligne doit être **`OK`** (105 tests).
 Ces tests simulent toutes les commandes (Docker, `lms`, PowerShell…) : ils ne touchent à rien sur le PC.
 Ils vérifient notamment l'ordre des dépendances, la lecture des réponses de LM Studio (`/api/v0/models`
 et `lms ps`), le fait de ne jamais charger une 2ᵉ copie d'un modèle, le repli si `docker desktop stop`
@@ -109,9 +147,41 @@ Détails utiles :
 
 ---
 
+## Version 2 : comment ça marche
+
+### Le mode de Crew
+
+- **Serveur Crew allumé** : le panneau lit le mode par `GET /mode` et le change par `PUT /mode`, avec la
+  clé `CREW_API_KEY` lue dans `I:\Python\crewai-routage\.env`. La clé est relue à chaque fois ; elle
+  n'est jamais affichée ni écrite dans le journal.
+- **Serveur Crew éteint** : le panneau affiche « Serveur Crew éteint (mode lu dans le fichier) ». Vous pouvez
+  quand même changer de mode : il est écrit dans `mode_crew.json` (les autres réglages éventuels du fichier
+  sont gardés), et le serveur le relira à la prochaine demande.
+- **Les noms et explications des modes viennent du serveur**, jamais du panneau. Pour pouvoir les afficher
+  quand le serveur est éteint, le panneau en garde une copie (`modes_crew_cache.json`). Conséquence : tant
+  que le serveur Crew n'a jamais été allumé avec la v2, la liste des modes est inconnue et le mode s'affiche
+  sous sa forme brute (ex. « econome »).
+- Le mode est relu toutes les 5 secondes, avec les voyants (une petite requête locale).
+
+### L'état des IA
+
+- La liste vient de `GET /moteurs`. Une IA ajoutée à Crew (un futur GPT-6…) apparaît **sans modifier le
+  panneau**.
+- Voyants : `pret` = vert, `arrete` = rouge, `indisponible` = gris ; une valeur inconnue = gris.
+- Pour économiser, la liste n'est demandée **que quand la section est dépliée** (toutes les 5 s, et tout
+  de suite à l'ouverture). Serveur éteint : « Serveur Crew éteint », sans aucune requête.
+
+### Les noms cliquables
+
+| Nom | Ce qui s'ouvre |
+|---|---|
+| **Open WebUI** | La conversation **la plus récente qui utilise un modèle `crew-…`** (`http://localhost:3000/c/<id>`). Le panneau lit la liste des conversations avec votre clé `OPENWEBUI_API_KEY` et regarde au plus les 20 plus récentes, pendant 10 secondes au maximum. S'il n'en trouve pas (ou si la clé manque), il ouvre une **nouvelle conversation avec Crew** : `http://localhost:3000/?model=crew-normal`. |
+| **Serveur LM Studio** | L'application **LM Studio**, avec un message qui indique quel modèle choisir : le plus gros modèle de conversation chargé (types `llm`/`vlm`, taille lue par `lms ps --json`). Son nom est **copié dans le presse-papiers**. Aucun modèle n'est chargé ni déchargé. |
+| **Docker Desktop** | L'application Docker Desktop. |
+
 ## ⚠️ Ce que je n'ai pas pu vérifier
 
-Je n'ai pas accès à votre PC. Tout a été testé **en simulation** (59 tests automatiques), et l'interface a
+Je n'ai pas accès à votre PC. Tout a été testé **en simulation** (105 tests automatiques), et l'interface a
 été testée sous Linux en mode démo, y compris à l'échelle 150 %. Voici ce qui reste incertain, et ce que fait
 le panneau dans chaque cas :
 
@@ -143,3 +213,24 @@ le panneau dans chaque cas :
    des estimations. Si votre PC est plus lent, augmentez-les dans `reglages.py`.
 10. **Rendu de la fenêtre sous Windows 11** : testé sous Linux uniquement. Les couleurs et les tailles
     devraient être les mêmes, mais la police Segoe UI peut légèrement changer les proportions.
+
+### Incertitudes de la version 2
+
+11. **Le paramètre `?model=` d'Open WebUI** : il est **documenté** par Open WebUI (page « URL
+    Parameters » : `?model=` pour un modèle, `?models=` pour plusieurs). La documentation précise qu'il
+    empêche le retour au modèle par défaut. Je n'ai pas pu vérifier depuis quelle version il existe :
+    si Open WebUI ouvre une conversation avec un autre modèle, dites-le-moi.
+12. **L'API des conversations d'Open WebUI** : d'après le code source d'Open WebUI, `GET /api/v1/chats/`
+    renvoie la liste la plus récente d'abord (`updated_at`), **60 par page** (`?page=1`), avec pour chaque
+    conversation `id`, `title`, `updated_at`, `created_at`. Le détail (`GET /api/v1/chats/<id>`) contient
+    `chat.models` et les messages (avec leur `model`). Le panneau regarde ces trois endroits et accepte
+    aussi une liste « emballée » (`{"items": […]}`). Je n'ai pas vu la réponse de **votre** version.
+13. **Les liens `lmstudio://`** : j'ai cherché. Les seuls liens **documentés** par LM Studio sont
+    `lmstudio://open_from_hf?model=…` (télécharger un modèle depuis Hugging Face) et
+    `lmstudio://add_mcp?…` (ajouter un serveur MCP). **Aucun lien documenté n'ouvre une nouvelle
+    conversation avec un modèle précis.** Conformément à votre demande, je n'en ai pas inventé : le
+    panneau ouvre `LM Studio.exe`, affiche le nom du modèle à choisir et le copie dans le presse-papiers.
+14. **La taille des modèles** (`sizeBytes` de `lms ps --json`) : si ce champ manque dans votre version,
+    le panneau propose le premier modèle de conversation chargé (aujourd'hui, gemma de toute façon).
+15. **Si LM Studio est déjà ouvert**, relancer `LM Studio.exe` devrait simplement ramener sa fenêtre au
+    premier plan (comportement habituel des applications de ce type), mais je ne l'ai pas vérifié.

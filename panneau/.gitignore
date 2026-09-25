@@ -1,3 +1,5 @@
 panneau.log
 panneau.log.*
 __pycache__/
+modes_crew_cache.json
+*.tmp
