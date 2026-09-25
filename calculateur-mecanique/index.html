@@ -1,0 +1,1351 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MécaCalc — Calculateur d'ingénierie mécanique</title>
+<meta name="description" content="Calculateurs d'ingénierie mécanique : poutres, assemblages boulonnés, flambage, hydraulique et soudures.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f3f5f9; --panel:#ffffff; --panel2:#f7f9fc; --border:#e2e7ef; --border2:#cfd7e3;
+  --text:#0f172a; --muted:#566275; --faint:#8b95a7;
+  --accent:#2457d6; --accent-soft:#e9effd; --accent-text:#1d47b3;
+  --c1:#2457d6; --c2:#e0671b; --c3:#0e9384; --c4:#8b5cf6;
+  --ok:#157f3b; --ok-soft:#e5f5ea; --warn:#a16207; --warn-soft:#fdf4dc; --bad:#c62828; --bad-soft:#fdeaea;
+  --grid:#edf0f5; --axis:#a3adbd; --steel:#c9d2df; --steel2:#aab5c6; --weld:#e0671b;
+  --shadow:0 1px 2px rgba(15,23,42,.04),0 6px 20px -8px rgba(15,23,42,.10);
+  --radius:14px;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0c1118; --panel:#131a24; --panel2:#18212d; --border:#233041; --border2:#2f3e52;
+    --text:#e6ebf2; --muted:#9aa7b8; --faint:#6d7a8c;
+    --accent:#6f9bff; --accent-soft:#1b2a45; --accent-text:#9dbbff;
+    --c1:#6f9bff; --c2:#ff9950; --c3:#34c6b2; --c4:#b69bff;
+    --ok:#4ccf7c; --ok-soft:#12291c; --warn:#f2bf4a; --warn-soft:#2c2412; --bad:#ff6b6b; --bad-soft:#2f1618;
+    --grid:#1e2835; --axis:#4a5a70; --steel:#3b4a5e; --steel2:#56677e; --weld:#ff9950;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px -10px rgba(0,0,0,.5);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0c1118; --panel:#131a24; --panel2:#18212d; --border:#233041; --border2:#2f3e52;
+  --text:#e6ebf2; --muted:#9aa7b8; --faint:#6d7a8c;
+  --accent:#6f9bff; --accent-soft:#1b2a45; --accent-text:#9dbbff;
+  --c1:#6f9bff; --c2:#ff9950; --c3:#34c6b2; --c4:#b69bff;
+  --ok:#4ccf7c; --ok-soft:#12291c; --warn:#f2bf4a; --warn-soft:#2c2412; --bad:#ff6b6b; --bad-soft:#2f1618;
+  --grid:#1e2835; --axis:#4a5a70; --steel:#3b4a5e; --steel2:#56677e; --weld:#ff9950;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px -10px rgba(0,0,0,.5);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+button,select,input{font:inherit;color:inherit}
+sup{font-size:.7em;line-height:0}
+
+/* ---------- Layout ---------- */
+.app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+.side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--border);padding:18px 14px}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px}
+.brand-logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#1c3f9e);display:grid;place-items:center;color:#fff;flex:none}
+.brand b{display:block;font-size:16px;letter-spacing:-.01em}
+.brand small{color:var(--faint);font-size:11.5px}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);padding:14px 10px 6px}
+.nav button{display:flex;align-items:center;gap:11px;width:100%;border:0;background:none;padding:9px 10px;border-radius:9px;cursor:pointer;color:var(--muted);font-weight:500;text-align:left}
+.nav button:hover{background:var(--panel2);color:var(--text)}
+.nav button.on{background:var(--accent-soft);color:var(--accent-text)}
+.nav button svg{flex:none;width:19px;height:19px}
+.nav .badge{margin-left:auto;font-size:11px;background:var(--panel2);border:1px solid var(--border);border-radius:99px;padding:0 7px;color:var(--muted)}
+.side-foot{margin-top:auto;padding:12px 8px 0;border-top:1px solid var(--border);font-size:11.5px;color:var(--faint)}
+
+main{min-width:0;padding:22px 28px 40px}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+.top h1{margin:0;font-size:24px;letter-spacing:-.02em;font-weight:700}
+.top p{margin:4px 0 0;color:var(--muted);max-width:720px}
+.top-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:3px}
+.seg button{border:0;background:none;padding:5px 12px;border-radius:7px;cursor:pointer;color:var(--muted);font-weight:500;font-size:13px}
+.seg button.on{background:var(--accent);color:#fff}
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--panel);padding:7px 12px;border-radius:10px;cursor:pointer;font-weight:500;font-size:13px;white-space:nowrap}
+.btn:hover{border-color:var(--border2);background:var(--panel2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.icon{padding:7px 9px}
+.btn svg{width:16px;height:16px}
+
+.layout{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:18px;align-items:start}
+.col-in{position:sticky;top:18px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px 0}
+.card-h h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+.card-b{padding:12px 18px 18px}
+.stack{display:flex;flex-direction:column;gap:18px}
+
+/* ---------- Inputs ---------- */
+.inputs{max-height:calc(100vh - 36px);overflow:auto}
+fieldset.grp{border:0;margin:0;padding:12px 18px 14px;border-top:1px solid var(--border)}
+fieldset.grp:first-child{border-top:0}
+fieldset.grp legend{float:left;width:100%;padding:0;margin:0 0 8px;font-size:12px;font-weight:600;color:var(--accent-text);text-transform:uppercase;letter-spacing:.07em}
+fieldset.grp legend+*{clear:both}
+.fld{display:block;margin-top:9px}
+.fld .lbl{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:4px;font-weight:500}
+.fld .sym{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+.inp{display:flex;align-items:stretch;border:1px solid var(--border);border-radius:9px;background:var(--panel2);transition:border-color .12s,box-shadow .12s}
+.inp:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);background:var(--panel)}
+.inp.bad{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
+.inp input{flex:1;min-width:0;border:0;background:none;outline:0;padding:8px 10px;font-family:var(--mono);font-size:13.5px}
+.inp .u{display:flex;align-items:center;padding:0 10px;color:var(--muted);font-size:12.5px;border-left:1px solid var(--border);white-space:nowrap;min-width:52px;justify-content:center}
+.selw{position:relative}
+.selw select{width:100%;appearance:none;border:1px solid var(--border);border-radius:9px;background:var(--panel2);padding:8px 32px 8px 10px;cursor:pointer;outline:0}
+.selw select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.selw::after{content:"";position:absolute;right:13px;top:50%;width:7px;height:7px;border-right:1.6px solid var(--muted);border-bottom:1.6px solid var(--muted);transform:translateY(-70%) rotate(45deg);pointer-events:none}
+.hint{display:block;font-size:11.5px;color:var(--faint);margin-top:3px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+
+/* ---------- Results ---------- */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+.kpi.ok::before{background:var(--ok)} .kpi.warn::before{background:var(--warn)} .kpi.bad::before{background:var(--bad)}
+.kpi .kl{font-size:12px;color:var(--muted);font-weight:500}
+.kpi .kv{font-size:24px;font-weight:700;letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kpi .kv .ku{font-size:13px;font-weight:500;color:var(--muted);margin-left:5px;letter-spacing:0}
+.kpi .ks{font-size:12px;color:var(--faint);margin-top:1px}
+.kpi.ok .kv{color:var(--ok)} .kpi.warn .kv{color:var(--warn)} .kpi.bad .kv{color:var(--bad)}
+
+.checks{display:flex;flex-direction:column;gap:8px}
+.chk{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;border-radius:10px;font-size:13px}
+.chk .dot{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;margin-top:0}
+.chk.ok{background:var(--ok-soft)} .chk.ok .dot{background:var(--ok)}
+.chk.warn{background:var(--warn-soft)} .chk.warn .dot{background:var(--warn)}
+.chk.bad{background:var(--bad-soft)} .chk.bad .dot{background:var(--bad)}
+.chk.info{background:var(--accent-soft)} .chk.info .dot{background:var(--accent)}
+.chk b{font-weight:600}
+
+.util{display:flex;flex-direction:column;gap:11px;margin-top:4px}
+.ut-row{display:grid;grid-template-columns:minmax(120px,1fr) 2fr 56px;gap:10px;align-items:center;font-size:12.5px}
+.ut-row .ul{color:var(--muted)}
+.ut-bar{height:8px;background:var(--panel2);border:1px solid var(--border);border-radius:99px;overflow:hidden;position:relative}
+.ut-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--ok)}
+.ut-bar i.warn{background:var(--warn)} .ut-bar i.bad{background:var(--bad)}
+.ut-row .uv{text-align:right;font-family:var(--mono);font-weight:500}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px}
+.schem svg{width:100%;height:auto;display:block}
+.sk-steel{fill:var(--steel);stroke:var(--steel2);stroke-width:1.2}
+.sk-line{stroke:var(--text);stroke-width:1.4;fill:none}
+.sk-thin{stroke:var(--muted);stroke-width:1;fill:none}
+.sk-dim{stroke:var(--faint);stroke-width:1;fill:none}
+.sk-load{stroke:var(--c2);stroke-width:2;fill:none}
+.sk-loadf{fill:var(--c2)}
+.sk-acc{stroke:var(--c1);stroke-width:2;fill:none}
+.sk-weld{fill:var(--weld);fill-opacity:.85;stroke:var(--weld)}
+.sk-txt{fill:var(--text);font-size:13px;font-family:Inter,system-ui,sans-serif}
+.sk-txt.m{fill:var(--muted);font-size:12px}
+.sk-txt.l{fill:var(--c2);font-weight:600}
+.sk-bg{fill:var(--panel2)}
+.sk-hatch{stroke:var(--steel2);stroke-width:1}
+.sk-oil{fill:var(--c1);fill-opacity:.14}
+
+table.dt{width:100%;border-collapse:collapse;font-size:13px}
+table.dt td{padding:7px 0;border-bottom:1px solid var(--border)}
+table.dt tr:last-child td{border-bottom:0}
+table.dt td:last-child{text-align:right;font-family:var(--mono);font-size:12.8px;white-space:nowrap}
+table.dt td .u{color:var(--muted);font-family:Inter,system-ui,sans-serif;font-size:12px;margin-left:3px}
+table.dt td small{display:block;color:var(--faint);font-size:11.5px;font-family:Inter,system-ui,sans-serif}
+table.dt .th td{padding-top:14px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-text);font-weight:600;border-bottom:1px solid var(--border2)}
+table.dt .th:first-child td{padding-top:2px}
+.tables{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:0 28px;align-items:start}
+table.dt .th td{text-align:left;font-family:Inter,system-ui,sans-serif}
+
+.charts{display:grid;grid-template-columns:1fr;gap:6px}
+.chart-t{font-size:13px;font-weight:600;margin:6px 0 2px;display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+.chart-t span{font-weight:400;color:var(--faint);font-size:12px}
+.chart{position:relative;width:100%}
+.chart svg{display:block;overflow:visible}
+.chart .grid{stroke:var(--grid);stroke-width:1}
+.chart .zero{stroke:var(--axis);stroke-width:1}
+.chart .frame{stroke:var(--border2);fill:none}
+.chart .tk{fill:var(--faint);font-size:11px;font-family:var(--mono)}
+.chart .al{fill:var(--muted);font-size:11.5px}
+.chart .ln{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.chart .ar{stroke:none;opacity:.13}
+.chart .hl{stroke-width:1.3;stroke-dasharray:5 4;fill:none}
+.chart .hlt{font-size:11px;font-weight:500}
+.chart .mk{stroke:var(--panel);stroke-width:2}
+.chart .mkt{font-size:11.5px;font-weight:600;fill:var(--text);paint-order:stroke;stroke:var(--panel);stroke-width:3px}
+.chart .hov-x{stroke:var(--axis);stroke-width:1;stroke-dasharray:3 3;display:none}
+.chart .hov-dot{stroke:var(--panel);stroke-width:2;display:none}
+.chart .tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--border2);box-shadow:var(--shadow);border-radius:9px;padding:7px 10px;font-size:12px;display:none;white-space:nowrap;z-index:5}
+.chart .tip b{font-family:var(--mono);font-weight:500}
+.chart .tip .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:2px 0 0}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:3px}
+.legend i.d{background:none!important;border-top:2px dashed;height:0}
+
+.notes{margin:0;padding-left:18px;color:var(--muted);font-size:13px}
+.notes li{margin:4px 0}
+.formulas{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 14px}
+.formulas code{font-family:var(--mono);font-size:12.3px;background:var(--panel2);border:1px solid var(--border);padding:4px 9px;border-radius:7px}
+.err{padding:14px 18px;border-radius:var(--radius);background:var(--bad-soft);color:var(--bad);border:1px solid var(--bad);font-weight:500}
+.err ul{margin:4px 0 0;padding-left:18px;font-weight:400}
+
+/* ---------- History ---------- */
+.hist-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.hist-tools .selw{min-width:200px}
+.hist{display:flex;flex-direction:column;gap:10px}
+.he{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;padding:14px 16px}
+.he .tag{font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:99px;background:var(--accent-soft);color:var(--accent-text);white-space:nowrap}
+.he .when{font-size:12px;color:var(--faint)}
+.he .sum{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12.8px;margin-top:3px}
+.he .sum span{color:var(--muted)}
+.he .sum b{font-family:var(--mono);font-weight:500;color:var(--text)}
+.he .acts{display:flex;gap:6px}
+.empty{text-align:center;padding:48px 20px;color:var(--muted)}
+.empty svg{width:40px;height:40px;color:var(--faint);margin-bottom:8px}
+
+.toast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,20px);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:500;opacity:0;transition:.2s;pointer-events:none;z-index:50;max-width:calc(100vw - 32px)}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.foot{margin-top:26px;font-size:12px;color:var(--faint);text-align:center}
+
+/* ---------- Responsive ---------- */
+@media (max-width:1180px){ .grid2{grid-template-columns:1fr} }
+@media (max-width:980px){
+  .layout{grid-template-columns:1fr}
+  .col-in{position:static}
+  .inputs{max-height:none}
+}
+@media (max-width:780px){
+  .app{grid-template-columns:1fr}
+  .side{position:sticky;top:0;height:auto;z-index:20;flex-direction:row;align-items:center;padding:8px 12px;gap:8px;border-right:0;border-bottom:1px solid var(--border);overflow-x:auto}
+  .brand{padding:0 6px 0 0}
+  .brand div{display:none}
+  .nav{flex-direction:row}
+  .nav-lbl,.side-foot{display:none}
+  .nav button{padding:7px 10px;white-space:nowrap}
+  main{padding:16px 16px 32px}
+  .top{flex-direction:column}
+  .top-actions{justify-content:flex-start}
+  .top h1{font-size:20px}
+  .kpi .kv{font-size:20px}
+  .he{grid-template-columns:1fr}
+  .ut-row{grid-template-columns:1fr 1.4fr 50px}
+}
+@media print{
+  .side,.top-actions,.col-in .card-h .btn{display:none}
+  .app{grid-template-columns:1fr} .layout{grid-template-columns:1fr} .col-in{position:static}
+  .inputs{max-height:none}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="brand-logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></svg></div>
+      <div><b>MécaCalc</b><small>Ingénierie mécanique</small></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">Unités : SI / impérial<br>Calcul instantané · données locales</div>
+  </aside>
+  <main>
+    <header class="top">
+      <div><h1 id="title"></h1><p id="desc"></p></div>
+      <div class="top-actions">
+        <div class="seg" id="units" role="group" aria-label="Système d'unités">
+          <button data-u="si">Métrique (SI)</button><button data-u="imp">Impérial</button>
+        </div>
+        <button class="btn icon" id="theme" title="Changer de thème" aria-label="Changer de thème"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+      </div>
+    </header>
+    <section id="view"></section>
+    <div class="foot">Outil d'aide au calcul préliminaire — les résultats doivent être validés selon les normes applicables et par un ingénieur qualifié.</div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* =========================================================================
+   Utilitaires
+   ========================================================================= */
+const $ = (s, r = document) => r.querySelector(s);
+const PI = Math.PI;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* stockage indisponible */ } }
+};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* Quantités : [libellé, facteur vers SI] */
+const Q = {
+  len:     { si: ['m', 1],          imp: ['ft', 0.3048] },
+  dim:     { si: ['mm', 1e-3],      imp: ['in', 0.0254] },
+  force:   { si: ['kN', 1e3],       imp: ['lbf', 4.4482216] },
+  dload:   { si: ['kN/m', 1e3],     imp: ['lbf/ft', 14.593903] },
+  mod:     { si: ['GPa', 1e9],      imp: ['ksi', 6894757.3] },
+  stress:  { si: ['MPa', 1e6],      imp: ['ksi', 6894757.3] },
+  inertia: { si: ['mm⁴', 1e-12],    imp: ['in⁴', 4.1623143e-7] },
+  area:    { si: ['mm²', 1e-6],     imp: ['in²', 6.4516e-4] },
+  secmod:  { si: ['mm³', 1e-9],     imp: ['in³', 1.6387064e-5] },
+  moment:  { si: ['kN·m', 1e3],     imp: ['lbf·ft', 1.3558179] },
+  torque:  { si: ['N·m', 1],        imp: ['lbf·ft', 1.3558179] },
+  press:   { si: ['bar', 1e5],      imp: ['psi', 6894.7573] },
+  flow:    { si: ['L/min', 1/60000], imp: ['gpm', 6.3090196e-5] },
+  speed:   { si: ['mm/s', 1e-3],    imp: ['in/s', 0.0254] },
+  power:   { si: ['kW', 1e3],       imp: ['hp', 745.69987] },
+  vol:     { si: ['L', 1e-3],       imp: ['gal', 3.7854118e-3] },
+  stiff:   { si: ['kN/mm', 1e6],    imp: ['lbf/in', 175.12685] },
+  time:    { si: ['s', 1],          imp: ['s', 1] },
+  pct:     { si: ['%', 0.01],       imp: ['%', 0.01] },
+  none:    { si: ['', 1],           imp: ['', 1] }
+};
+let SYS = store.get('mc.units', 'si') === 'imp' ? 'imp' : 'si';
+const unit = q => Q[q || 'none'][SYS][0];
+const conv = (v, q) => v / Q[q || 'none'][SYS][1];
+
+const nfCache = {};
+const nf = sig => nfCache[sig] || (nfCache[sig] = new Intl.NumberFormat('fr-CA', { maximumSignificantDigits: sig }));
+function fmtNum(v, sig = 4) {
+  if (v == null || !isFinite(v)) return '—';
+  const a = Math.abs(v);
+  if (a !== 0 && (a < 1e-3 || a >= 1e9)) {
+    const e = Math.floor(Math.log10(a));
+    return nf(sig).format(v / Math.pow(10, e)) + ' × 10<sup>' + e + '</sup>';
+  }
+  return nf(sig).format(v);
+}
+const valHTML = (v, q) => typeof v === 'string' ? v : `${fmtNum(conv(v, q))}${unit(q) ? `<span class="u">${unit(q)}</span>` : ''}`;
+const valTxt = (v, q) => typeof v === 'string' ? v : `${fmtNum(conv(v, q)).replace(/<\/?sup>/g, '').replace(' × 10', 'e')} ${unit(q)}`.trim();
+function dispVal(v, q) {
+  if (v == null || !isFinite(v)) return '';
+  return String(parseFloat(conv(v, q).toPrecision(6))).replace('.', ',');
+}
+const tone = (ratio) => ratio < 0.8 ? 'ok' : ratio <= 1 ? 'warn' : 'bad';     // utilisation
+const sfTone = (sf, target = 1.5) => sf >= target ? 'ok' : sf >= 1 ? 'warn' : 'bad'; // facteur de sécurité
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2200);
+}
+function bisect(f, lo, hi, it = 80) { // f croissante ou décroissante, racine de f = 0
+  let flo = f(lo);
+  for (let i = 0; i < it; i++) { const mid = Math.sqrt(lo * hi); const fm = f(mid); if ((fm > 0) === (flo > 0)) { lo = mid; flo = fm; } else hi = mid; }
+  return Math.sqrt(lo * hi);
+}
+
+/* =========================================================================
+   Graphiques SVG (sans dépendance)
+   ========================================================================= */
+let clipId = 0;
+function niceStep(r, n) {
+  if (!(r > 0)) return 1;
+  const raw = r / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
+}
+function tickFmt(v, step) {
+  const dec = Math.max(0, Math.min(8, -Math.floor(Math.log10(step) + 1e-9)));
+  if (Math.abs(v) < step * 1e-6) v = 0;
+  return new Intl.NumberFormat('fr-CA', { maximumFractionDigits: dec }).format(v);
+}
+function chart(host, o) {
+  host._o = o; drawChart(host);
+  if (!host._ro && window.ResizeObserver) {
+    let w = host.clientWidth;
+    host._ro = new ResizeObserver(() => { if (Math.abs(host.clientWidth - w) > 2) { w = host.clientWidth; drawChart(host); } });
+    host._ro.observe(host);
+  }
+}
+function drawChart(host) {
+  const o = host._o; if (!o) return;
+  const W = Math.max(280, Math.floor(host.clientWidth || 600)), H = o.height || 230;
+  const m = { l: 64, r: 18, t: 14, b: 44 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  const acc = (x, y) => {
+    if (isFinite(x)) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+    if (isFinite(y)) { y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  };
+  o.series.forEach(s => s.x.forEach((x, i) => { if (isFinite(s.y[i])) acc(x, s.y[i]); }));
+  (o.markers || []).forEach(p => acc(p.x, p.y));
+  (o.hlines || []).forEach(h => acc(NaN, h.y));
+  if (o.yZero) { y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
+  if (o.xMin != null) x0 = o.xMin; if (o.xMax != null) x1 = o.xMax;
+  if (o.yMin != null) y0 = o.yMin; if (o.yMax != null) y1 = o.yMax;
+  if (!isFinite(x0)) { x0 = 0; x1 = 1; }
+  if (!isFinite(y0)) { y0 = 0; y1 = 1; }
+  if (x1 - x0 <= 0) x1 = x0 + 1;
+  if (y1 - y0 <= Math.abs(y1) * 1e-9 + 1e-300) { const d = Math.abs(y1) || 1; y0 -= d * .5; y1 += d * .5; }
+  const yr = y1 - y0;
+  if (o.yMax == null && y1 !== 0) y1 += yr * .1;
+  if (o.yMin == null && y0 !== 0) y0 -= yr * .1;
+  const X = x => m.l + (x - x0) / (x1 - x0) * pw, Y = y => m.t + (y1 - y) / (y1 - y0) * ph;
+  const cid = 'cp' + (++clipId);
+  let g = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.title || 'Graphique')}"><defs><clipPath id="${cid}"><rect x="${m.l}" y="${m.t - 2}" width="${pw}" height="${ph + 4}"/></clipPath></defs>`;
+  const ys = niceStep(y1 - y0, Math.max(3, Math.round(ph / 42)));
+  for (let v = Math.ceil(y0 / ys) * ys; v <= y1 + ys * 1e-9; v += ys) {
+    const yy = Y(v).toFixed(1);
+    g += `<line class="${Math.abs(v) < ys * 1e-6 ? 'zero' : 'grid'}" x1="${m.l}" x2="${m.l + pw}" y1="${yy}" y2="${yy}"/><text class="tk" x="${m.l - 8}" y="${yy}" dy="3.5" text-anchor="end">${tickFmt(v, ys)}</text>`;
+  }
+  const xs = niceStep(x1 - x0, Math.max(3, Math.round(pw / 90)));
+  for (let v = Math.ceil(x0 / xs) * xs; v <= x1 + xs * 1e-9; v += xs) {
+    const xx = X(v).toFixed(1);
+    g += `<line class="grid" x1="${xx}" x2="${xx}" y1="${m.t}" y2="${m.t + ph}"/><text class="tk" x="${xx}" y="${m.t + ph + 16}" text-anchor="middle">${tickFmt(v, xs)}</text>`;
+  }
+  g += `<rect class="frame" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}"/>`;
+  g += `<text class="al" x="${m.l + pw / 2}" y="${H - 6}" text-anchor="middle">${esc(o.xLabel || '')}</text>`;
+  g += `<text class="al" transform="translate(13 ${m.t + ph / 2}) rotate(-90)" text-anchor="middle">${esc(o.yLabel || '')}</text>`;
+  g += `<g clip-path="url(#${cid})">`;
+  const yb = Math.min(Math.max(Y(0), m.t), m.t + ph);
+  o.series.forEach(s => {
+    let d = '', pen = false, segs = [], cur = [];
+    s.x.forEach((x, i) => {
+      const y = s.y[i];
+      if (!isFinite(y) || !isFinite(x)) { pen = false; if (cur.length) { segs.push(cur); cur = []; } return; }
+      const px = X(x).toFixed(1), py = Y(y).toFixed(1);
+      d += (pen ? 'L' : 'M') + px + ' ' + py; pen = true; cur.push([px, py]);
+    });
+    if (cur.length) segs.push(cur);
+    if (s.area) segs.forEach(sg => { g += `<path class="ar" style="fill:${s.color}" d="M${sg[0][0]} ${yb}L${sg.map(p => p.join(' ')).join('L')}L${sg[sg.length - 1][0]} ${yb}Z"/>`; });
+    g += `<path class="ln" style="stroke:${s.color}${s.dash ? ';stroke-dasharray:6 5;stroke-width:1.7' : ''}" d="${d}"/>`;
+  });
+  (o.hlines || []).forEach(h => {
+    const yy = Y(h.y).toFixed(1);
+    g += `<line class="hl" style="stroke:${h.color}" x1="${m.l}" x2="${m.l + pw}" y1="${yy}" y2="${yy}"/><text class="hlt" style="fill:${h.color}" x="${m.l + pw - 6}" y="${yy}" dy="-5" text-anchor="end">${esc(h.label || '')}</text>`;
+  });
+  (o.vlines || []).forEach(h => {
+    const xx = X(h.x).toFixed(1);
+    g += `<line class="hl" style="stroke:${h.color}" x1="${xx}" x2="${xx}" y1="${m.t}" y2="${m.t + ph}"/><text class="hlt" style="fill:${h.color}" x="${xx}" y="${m.t + 12}" dx="5">${esc(h.label || '')}</text>`;
+  });
+  g += `</g>`;
+  (o.markers || []).forEach(p => {
+    if (!isFinite(p.x) || !isFinite(p.y)) return;
+    const px = X(p.x), py = Y(p.y), right = px > m.l + pw * .7;
+    g += `<circle class="mk" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="5" style="fill:${p.color || 'var(--text)'}"/>`;
+    if (p.label) g += `<text class="mkt" x="${px.toFixed(1)}" y="${py.toFixed(1)}" dx="${right ? -9 : 9}" dy="${p.below ? 15 : -8}" text-anchor="${right ? 'end' : 'start'}">${esc(p.label)}</text>`;
+  });
+  g += `<line class="hov-x" y1="${m.t}" y2="${m.t + ph}"/>`;
+  o.series.forEach(s => { g += `<circle class="hov-dot" r="4.5" style="fill:${s.color}"/>`; });
+  g += `<rect class="hov" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg>`;
+  let legend = '';
+  if (o.series.length > 1 || (o.hlines || []).length) {
+    legend = '<div class="legend">' + o.series.map(s => `<span><i class="${s.dash ? 'd' : ''}" style="background:${s.color};border-color:${s.color}"></i>${esc(s.name)}</span>`).join('') +
+      (o.hlines || []).map(h => `<span><i class="d" style="border-color:${h.color}"></i>${esc(h.label)}</span>`).join('') + '</div>';
+  }
+  host.innerHTML = legend + g + '<div class="tip"></div>';
+  const svg = host.querySelector('svg'), tip = host.querySelector('.tip'), hx = svg.querySelector('.hov-x'), dots = svg.querySelectorAll('.hov-dot');
+  const ov = svg.querySelector('.hov');
+  ov.addEventListener('pointermove', e => {
+    const r = svg.getBoundingClientRect(), px = e.clientX - r.left, xv = x0 + (px - m.l) / pw * (x1 - x0);
+    let rows = [], xs0 = null;
+    o.series.forEach((s, k) => {
+      if (s.noHover) { dots[k].style.display = 'none'; return; }
+      let bi = -1, bd = Infinity;
+      for (let i = 0; i < s.x.length; i++) { if (!isFinite(s.y[i])) continue; const d = Math.abs(s.x[i] - xv); if (d < bd) { bd = d; bi = i; } }
+      if (bi < 0 || bd > (x1 - x0) * .05) { dots[k].style.display = 'none'; return; }
+      dots[k].style.display = 'block'; dots[k].setAttribute('cx', X(s.x[bi])); dots[k].setAttribute('cy', Y(s.y[bi]));
+      if (xs0 == null) xs0 = s.x[bi];
+      rows.push(`<div><span class="sw" style="background:${s.color}"></span>${esc(s.name)} : <b>${fmtNum(s.y[bi])}</b> ${esc(s.unit || '')}</div>`);
+    });
+    if (!rows.length) { tip.style.display = 'none'; hx.style.display = 'none'; return; }
+    hx.style.display = 'block'; hx.setAttribute('x1', X(xs0)); hx.setAttribute('x2', X(xs0));
+    tip.innerHTML = `<div style="color:var(--faint);margin-bottom:2px">${esc(o.xName || 'x')} = <b>${fmtNum(xs0)}</b> ${esc(o.xUnit || '')}</div>` + rows.join('');
+    tip.style.display = 'block';
+    const tw = tip.offsetWidth, legendH = svg.offsetTop;
+    tip.style.left = (px + 14 + tw > W ? px - tw - 14 : px + 14) + 'px';
+    tip.style.top = (legendH + m.t + 4) + 'px';
+  });
+  ov.addEventListener('pointerleave', () => { tip.style.display = 'none'; hx.style.display = 'none'; dots.forEach(d => d.style.display = 'none'); });
+}
+const linspace = (a, b, n) => Array.from({ length: n + 1 }, (_, i) => a + (b - a) * i / n);
+
+/* =========================================================================
+   Données communes : matériaux et sections
+   ========================================================================= */
+const MATS = {
+  a36:   { n: 'Acier A36 / S235',            E: 200e9,  Sy: 250e6, Su: 400e6 },
+  s355:  { n: 'Acier A572 Gr.50 / S355',     E: 200e9,  Sy: 345e6, Su: 450e6 },
+  c1045: { n: 'Acier AISI 1045 étiré à froid', E: 205e9, Sy: 530e6, Su: 625e6 },
+  ss304: { n: 'Inox 304 (recuit)',           E: 193e9,  Sy: 215e6, Su: 505e6 },
+  al6061:{ n: 'Aluminium 6061-T6',           E: 68.9e9, Sy: 276e6, Su: 310e6 },
+  ti64:  { n: 'Titane Ti-6Al-4V',            E: 114e9,  Sy: 880e6, Su: 950e6 },
+  custom:{ n: 'Personnalisé' }
+};
+const matOpts = Object.entries(MATS).map(([k, m]) => [k, m.n]);
+const matChange = (s, v) => { const m = MATS[v]; if (m && m.E) { s.E = m.E; s.Sy = m.Sy; if ('Su' in s) s.Su = m.Su; } };
+
+function secFields(mode, d) {
+  const isSec = (...k) => s => k.includes(s.sec);
+  const f = [
+    { id: 'sec', type: 'sel', label: 'Type de section', def: d.sec, opts: [['rect', 'Rectangulaire pleine'], ['circ', 'Circulaire pleine'], ['tube', 'Tube rond'], ['rhs', 'Tube rectangulaire (HSS)'], ['custom', 'Propriétés personnalisées']] },
+    { id: 'b', label: 'Largeur', sym: 'b', q: 'dim', def: d.b, when: isSec('rect', 'rhs') },
+    { id: 'h', label: mode === 'beam' ? 'Hauteur (sens de la charge)' : 'Hauteur', sym: 'h', q: 'dim', def: d.h, when: isSec('rect', 'rhs') },
+    { id: 't', label: 'Épaisseur de paroi', sym: 't', q: 'dim', def: d.t, when: isSec('rhs') },
+    { id: 'D', label: 'Diamètre extérieur', sym: 'D', q: 'dim', def: d.D, when: isSec('circ', 'tube') },
+    { id: 'di', label: 'Diamètre intérieur', sym: 'd', q: 'dim', def: d.di, when: isSec('tube') },
+    { id: 'Ic', label: mode === 'beam' ? 'Moment d\'inertie' : 'Moment d\'inertie minimal', sym: 'I', q: 'inertia', def: d.Ic, when: isSec('custom') }
+  ];
+  if (mode === 'beam') f.push({ id: 'cc', label: 'Distance à la fibre extrême', sym: 'c', q: 'dim', def: d.cc, when: isSec('custom') });
+  else f.push({ id: 'Ac', label: 'Aire de la section', sym: 'A', q: 'area', def: d.Ac, when: isSec('custom') });
+  return f;
+}
+function secProps(s) {
+  const r = { A: NaN, I: NaN, Imin: NaN, c: NaN, Q: NaN, bw: NaN, err: null };
+  switch (s.sec) {
+    case 'rect': {
+      const { b, h } = s; if (!(b > 0 && h > 0)) { r.err = 'Les dimensions b et h doivent être positives.'; break; }
+      Object.assign(r, { A: b * h, I: b * h ** 3 / 12, Imin: Math.min(b * h ** 3, h * b ** 3) / 12, c: h / 2, Q: b * h * h / 8, bw: b }); break;
+    }
+    case 'circ': {
+      const D = s.D; if (!(D > 0)) { r.err = 'Le diamètre D doit être positif.'; break; }
+      const I = PI * D ** 4 / 64; Object.assign(r, { A: PI * D * D / 4, I, Imin: I, c: D / 2, Q: D ** 3 / 12, bw: D }); break;
+    }
+    case 'tube': {
+      const { D, di } = s; if (!(D > 0 && di >= 0 && di < D)) { r.err = 'Le tube exige 0 ≤ d < D.'; break; }
+      const I = PI * (D ** 4 - di ** 4) / 64; Object.assign(r, { A: PI * (D * D - di * di) / 4, I, Imin: I, c: D / 2, Q: (D ** 3 - di ** 3) / 12, bw: D - di }); break;
+    }
+    case 'rhs': {
+      const { b, h, t } = s; if (!(b > 0 && h > 0 && t > 0 && 2 * t < Math.min(b, h))) { r.err = 'Le tube rectangulaire exige 0 < 2t < min(b, h).'; break; }
+      const bi = b - 2 * t, hi = h - 2 * t, I = (b * h ** 3 - bi * hi ** 3) / 12, Iy = (h * b ** 3 - hi * bi ** 3) / 12;
+      Object.assign(r, { A: b * h - bi * hi, I, Imin: Math.min(I, Iy), c: h / 2, Q: (b * h * h - bi * hi * hi) / 8, bw: 2 * t }); break;
+    }
+    case 'custom': {
+      const I = s.Ic; if (!(I > 0)) { r.err = 'Le moment d\'inertie doit être positif.'; break; }
+      r.I = r.Imin = I; r.c = s.cc; r.A = s.Ac;
+      if ('cc' in s && !(s.cc > 0)) r.err = 'La distance c doit être positive.';
+      if ('Ac' in s && !(s.Ac > 0)) r.err = 'L\'aire A doit être positive.';
+      break;
+    }
+  }
+  return r;
+}
+
+/* =========================================================================
+   Schémas
+   ========================================================================= */
+function arrowDown(x, y1, y2, cls = 'sk-load') {
+  return `<line class="${cls}" x1="${x}" y1="${y1}" x2="${x}" y2="${y2 - 7}"/><path class="sk-loadf" d="M${x - 5} ${y2 - 9}L${x + 5} ${y2 - 9}L${x} ${y2}Z"/>`;
+}
+function dimH(x1, x2, y, label) {
+  return `<line class="sk-dim" x1="${x1}" y1="${y}" x2="${x2}" y2="${y}"/><line class="sk-dim" x1="${x1}" y1="${y - 5}" x2="${x1}" y2="${y + 5}"/><line class="sk-dim" x1="${x2}" y1="${y - 5}" x2="${x2}" y2="${y + 5}"/>` +
+    `<rect class="sk-bg" x="${(x1 + x2) / 2 - label.length * 4 - 6}" y="${y - 9}" width="${label.length * 8 + 12}" height="18" rx="4"/><text class="sk-txt m" x="${(x1 + x2) / 2}" y="${y + 4}" text-anchor="middle">${label}</text>`;
+}
+function wall(x, y1, y2, side) { // side: -1 mur à gauche, +1 à droite
+  let s = `<line class="sk-line" x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/>`;
+  for (let y = y1 + 4; y <= y2; y += 9) s += `<line class="sk-hatch" x1="${x}" y1="${y}" x2="${x + side * 10}" y2="${y - 9}"/>`;
+  return s;
+}
+function pinSup(x, y, roller) {
+  let s = `<path class="sk-line" d="M${x} ${y}L${x - 11} ${y + 18}L${x + 11} ${y + 18}Z"/>`;
+  if (roller) s += `<circle class="sk-line" cx="${x - 6}" cy="${y + 22}" r="3.5"/><circle class="sk-line" cx="${x + 6}" cy="${y + 22}" r="3.5"/>`;
+  const gy = y + (roller ? 26 : 18);
+  s += `<line class="sk-line" x1="${x - 17}" y1="${gy}" x2="${x + 17}" y2="${gy}"/>`;
+  for (let i = -14; i <= 14; i += 7) s += `<line class="sk-hatch" x1="${x + i}" y1="${gy}" x2="${x + i - 6}" y2="${gy + 6}"/>`;
+  return s;
+}
+
+/* =========================================================================
+   Module 1 — Poutres
+   ========================================================================= */
+const BEAM_CASES = [
+  ['ss_point', 'Simplement appuyée — charge ponctuelle'],
+  ['ss_udl', 'Simplement appuyée — charge répartie'],
+  ['cant_point', 'Console (encastrée) — charge ponctuelle'],
+  ['cant_udl', 'Console (encastrée) — charge répartie'],
+  ['ff_udl', 'Bi-encastrée — charge répartie']
+];
+const isPoint = s => s.case.endsWith('point');
+function beamSVG(s) {
+  const x0 = 60, x1 = 500, y = 92, L = s.L;
+  let g = `<svg viewBox="0 0 560 190" aria-label="Schéma de la poutre">`;
+  g += `<rect class="sk-steel" x="${x0}" y="${y}" width="${x1 - x0}" height="12" rx="2"/>`;
+  if (s.case.startsWith('ss')) g += pinSup(x0, y + 12) + pinSup(x1, y + 12, true);
+  else if (s.case.startsWith('cant')) g += wall(x0, y - 36, y + 48, -1);
+  else g += wall(x0, y - 36, y + 48, -1) + wall(x1, y - 36, y + 48, 1);
+  if (isPoint(s)) {
+    const a = Math.min(Math.max(s.a / L, 0), 1), xp = x0 + a * (x1 - x0);
+    g += arrowDown(xp, 26, y - 1) + `<text class="sk-txt l" x="${xp + 9}" y="38">P</text>`;
+    g += dimH(x0, xp, 150, 'a');
+  } else {
+    g += `<line class="sk-load" x1="${x0}" y1="46" x2="${x1}" y2="46"/>`;
+    for (let i = 0; i <= 16; i++) g += arrowDown(x0 + i * (x1 - x0) / 16, 46, y - 1);
+    g += `<text class="sk-txt l" x="${(x0 + x1) / 2}" y="36" text-anchor="middle">w</text>`;
+  }
+  g += dimH(x0, x1, 176, 'L');
+  return g + '</svg>';
+}
+const MOD_BEAM = {
+  id: 'beam', name: 'Poutres',
+  desc: 'Réactions, effort tranchant, moment fléchissant, contraintes et flèche pour les cas de charge courants.',
+  icon: '<path d="M3 9h18v3H3z"/><path d="M6 12l-2 5h4zM18 12l-2 5h4z"/><path d="M12 3v4m-2-2 2 2 2-2"/>',
+  groups: [
+    { title: 'Configuration', fields: [
+      { id: 'case', type: 'sel', label: 'Appuis et chargement', def: 'ss_point', opts: BEAM_CASES,
+        onChange: s => { if (s.case === 'cant_point') s.a = s.L; else if (s.case === 'ss_point') s.a = s.L / 2; } },
+      { id: 'L', label: 'Portée', sym: 'L', q: 'len', def: 3 },
+      { id: 'P', label: 'Charge ponctuelle', sym: 'P', q: 'force', def: 10e3, when: isPoint },
+      { id: 'a', label: 'Position de la charge', sym: 'a', q: 'len', def: 1.5, when: isPoint, hint: s => s.case === 'cant_point' ? 'Mesurée depuis l\'encastrement' : 'Mesurée depuis l\'appui gauche' },
+      { id: 'w', label: 'Charge répartie', sym: 'w', q: 'dload', def: 5e3, when: s => !isPoint(s) }
+    ] },
+    { title: 'Matériau', fields: [
+      { id: 'mat', type: 'sel', label: 'Matériau', def: 'a36', opts: matOpts, onChange: matChange },
+      { id: 'E', label: 'Module d\'élasticité', sym: 'E', q: 'mod', def: 200e9, custom: 'mat' },
+      { id: 'Sy', label: 'Limite d\'élasticité', sym: 'Sy', q: 'stress', def: 250e6, custom: 'mat' }
+    ] },
+    { title: 'Section', fields: secFields('beam', { sec: 'rect', b: .05, h: .1, t: .005, D: .08, di: .06, Ic: 4.1667e-6, cc: .05 }) }
+  ],
+  notes: [
+    'Théorie des poutres d\'Euler-Bernoulli : petites déformations, matériau linéaire élastique, homogène et isotrope ; les sections planes restent planes.',
+    'Section constante sur toute la portée. Déformation due à l\'effort tranchant négligée (valide pour des poutres élancées, L/h > 10 environ).',
+    'Charges statiques ; poids propre de la poutre non inclus (l\'ajouter à w au besoin).',
+    'σ = M·c/I à la fibre extrême et τ = V·Q/(I·b) à l\'axe neutre. Aucune concentration de contraintes, aucun déversement (flambement latéral) ni voilement local n\'est vérifié.',
+    'Section rectangulaire ou HSS : flexion autour de l\'axe fort (h dans le sens de la charge).',
+    'Limites de flèche indicatives : L/360 (poutre sur appuis), L/180 (console). Vérifier le code de conception applicable.'
+  ],
+  compute(s) {
+    const R = newRes(), { L, E, Sy } = s, sec = secProps(s), pt = isPoint(s), P = s.P, w = s.w, a = s.a;
+    if (!(L > 0)) R.errors.push('La portée L doit être positive.');
+    if (!(E > 0)) R.errors.push('Le module E doit être positif.');
+    if (sec.err) R.errors.push(sec.err);
+    if (pt && !(a >= 0 && a <= L)) R.errors.push('La position a doit être comprise entre 0 et L.');
+    if (pt && !isFinite(P)) R.errors.push('Charge P invalide.');
+    if (!pt && !isFinite(w)) R.errors.push('Charge w invalide.');
+    if (R.errors.length) return R;
+    const I = sec.I, EI = E * I;
+    let fV, fM, fY, reac = [], forms = [];
+    switch (s.case) {
+      case 'ss_point': {
+        const b = L - a, R1 = P * b / L, R2 = P * a / L;
+        fV = x => x < a ? R1 : R1 - P;
+        fM = x => x <= a ? R1 * x : R1 * x - P * (x - a);
+        fY = x => x <= a ? P * b * x * (L * L - b * b - x * x) / (6 * EI * L) : P * a * (L - x) * (2 * L * x - x * x - a * a) / (6 * EI * L);
+        reac = [['Réaction gauche R₁', R1, 'force'], ['Réaction droite R₂', R2, 'force']];
+        forms = ['R₁ = P·b/L ; R₂ = P·a/L', 'M_max = P·a·b/L', 'δ(x≤a) = P·b·x·(L²−b²−x²)/(6EIL)', 'Centrée : δ_max = PL³/(48EI)'];
+        break;
+      }
+      case 'ss_udl': {
+        const R1 = w * L / 2;
+        fV = x => w * (L / 2 - x); fM = x => w * x * (L - x) / 2; fY = x => w * x * (L ** 3 - 2 * L * x * x + x ** 3) / (24 * EI);
+        reac = [['Réaction gauche R₁', R1, 'force'], ['Réaction droite R₂', R1, 'force']];
+        forms = ['R = wL/2', 'M_max = wL²/8', 'δ_max = 5wL⁴/(384EI)'];
+        break;
+      }
+      case 'cant_point': {
+        fV = x => x < a ? P : 0; fM = x => x < a ? -P * (a - x) : 0;
+        fY = x => x <= a ? P * x * x * (3 * a - x) / (6 * EI) : P * a * a * (3 * x - a) / (6 * EI);
+        reac = [['Réaction à l\'encastrement R', P, 'force'], ['Moment d\'encastrement M_A', -P * a, 'moment']];
+        forms = ['R = P ; M_A = −P·a', 'δ(x≤a) = P·x²·(3a−x)/(6EI)', 'En bout : δ_max = PL³/(3EI)'];
+        break;
+      }
+      case 'cant_udl': {
+        fV = x => w * (L - x); fM = x => -w * (L - x) ** 2 / 2; fY = x => w * x * x * (6 * L * L - 4 * L * x + x * x) / (24 * EI);
+        reac = [['Réaction à l\'encastrement R', w * L, 'force'], ['Moment d\'encastrement M_A', -w * L * L / 2, 'moment']];
+        forms = ['R = wL ; M_A = −wL²/2', 'δ_max = wL⁴/(8EI)'];
+        break;
+      }
+      case 'ff_udl': {
+        fV = x => w * (L / 2 - x); fM = x => w * (6 * L * x - 6 * x * x - L * L) / 12; fY = x => w * x * x * (L - x) ** 2 / (24 * EI);
+        reac = [['Réactions R₁ = R₂', w * L / 2, 'force'], ['Moments d\'encastrement', -w * L * L / 12, 'moment'], ['Moment à mi-portée', w * L * L / 24, 'moment']];
+        forms = ['R = wL/2 ; M_appuis = −wL²/12', 'M_centre = wL²/24', 'δ_max = wL⁴/(384EI)'];
+        break;
+      }
+    }
+    forms.push('σ = M·c/I', 'τ = V·Q/(I·b)');
+    let xs = linspace(0, L, 300);
+    if (pt && a > 0 && a < L && !xs.includes(a)) { xs.push(a); xs.sort((p, q) => p - q); }
+    const Vx = [], Vy = [], Mx = [], My = [], Yy = [];
+    let Mmax = 0, xM = 0, Ymax = 0, xY = 0, Vmax = 0;
+    for (const x of xs) {
+      const m = fM(x), y = fY(x);
+      Mx.push(x); My.push(m); Yy.push(y);
+      if (Math.abs(m) > Math.abs(Mmax) + 1e-12) { Mmax = m; xM = x; }
+      if (Math.abs(y) > Math.abs(Ymax)) { Ymax = y; xY = x; }
+      if (pt && x === a && a > 0 && a < L) { Vx.push(x, x); Vy.push(fV(x - 1e-9 * L), fV(x + 1e-9 * L)); }
+      else { Vx.push(x); Vy.push(fV(x)); }
+    }
+    Vy.forEach(v => { if (Math.abs(v) > Math.abs(Vmax)) Vmax = v; });
+    const sigma = Math.abs(Mmax) * sec.c / I;
+    const tau = isFinite(sec.Q) ? Math.abs(Vmax) * sec.Q / (I * sec.bw) : NaN;
+    const SF = Sy / sigma, ratio = L / Math.abs(Ymax), lim = s.case.startsWith('cant') ? 180 : 360;
+    R.kpis = [
+      { label: 'Moment fléchissant max', v: Math.abs(Mmax), q: 'moment', sub: `à x = ${valTxt(xM, 'len')}` },
+      { label: 'Contrainte de flexion max', v: sigma, q: 'stress', tone: tone(sigma / Sy), sub: `${fmtNum(sigma / Sy * 100, 3)} % de Sy` },
+      { label: 'Flèche maximale', v: Math.abs(Ymax), q: 'dim', tone: ratio >= lim ? 'ok' : 'warn', sub: `L/${fmtNum(ratio, 3)} à x = ${valTxt(xY, 'len')}` },
+      { label: 'Facteur de sécurité (Sy)', v: SF, q: 'none', tone: sfTone(SF), sub: 'Sy / σ_max' }
+    ];
+    R.checks.push(sigma < Sy ? { s: SF >= 1.5 ? 'ok' : 'warn', t: `Contrainte σ = ${valTxt(sigma, 'stress')} ${sigma < Sy ? '<' : '≥'} Sy = ${valTxt(Sy, 'stress')} (n = ${fmtNum(SF, 3)})` } : { s: 'bad', t: `Plastification : σ = ${valTxt(sigma, 'stress')} ≥ Sy = ${valTxt(Sy, 'stress')}` });
+    R.checks.push({ s: ratio >= lim ? 'ok' : 'warn', t: `Flèche L/${fmtNum(ratio, 3)} ${ratio >= lim ? '≥' : '<'} L/${lim} (limite indicative)` });
+    if (Math.abs(Ymax) > L / 20) R.checks.push({ s: 'warn', t: 'Flèche > L/20 : l\'hypothèse des petites déformations n\'est plus valable.' });
+    if ((s.sec === 'rect' || s.sec === 'rhs') && L / s.h < 10) R.checks.push({ s: 'info', t: 'Poutre courte (L/h < 10) : la déformation d\'effort tranchant peut devenir significative.' });
+    R.util = [{ label: 'Flexion σ / Sy', r: sigma / Sy }, { label: `Flèche δ / (L/${lim})`, r: Math.abs(Ymax) / (L / lim) }];
+    if (isFinite(tau)) R.util.splice(1, 0, { label: 'Cisaillement τ / (0,577·Sy)', r: tau / (0.577 * Sy) });
+    R.tables = [
+      { title: 'Réactions d\'appui', rows: reac },
+      { title: 'Efforts et contraintes', rows: [
+        ['Effort tranchant max |V|', Math.abs(Vmax), 'force'], ['Moment max |M|', Math.abs(Mmax), 'moment'],
+        ['Contrainte de flexion σ', sigma, 'stress'], ['Cisaillement max τ (axe neutre)', isFinite(tau) ? tau : 'n.d.', 'stress'],
+        ['Flèche max δ', Math.abs(Ymax), 'dim']] },
+      { title: 'Propriétés de section', rows: [
+        ['Aire A', isFinite(sec.A) ? sec.A : 'n.d.', 'area'], ['Moment d\'inertie I', I, 'inertia'], ['Fibre extrême c', sec.c, 'dim'],
+        ['Module de section S = I/c', I / sec.c, 'secmod'],
+        ['Rigidité EI', SYS === 'si' ? `${fmtNum(E * I / 1e3)}<span class="u">kN·m²</span>` : `${fmtNum(E * I / (4.4482216 * 0.0254 * 0.0254))}<span class="u">lbf·in²</span>`, null]] }
+    ];
+    R.formulas = forms;
+    R.schematic = beamSVG(s);
+    const cx = x => conv(x, 'len');
+    R.charts = [
+      { title: 'Diagramme de l\'effort tranchant', sub: `V_max = ${valTxt(Math.abs(Vmax), 'force')}`, o: { height: 190, xLabel: `Position x (${unit('len')})`, xName: 'x', xUnit: unit('len'), yLabel: `V (${unit('force')})`, yZero: true,
+        series: [{ name: 'V', unit: unit('force'), color: 'var(--c3)', area: true, x: Vx.map(cx), y: Vy.map(v => conv(v, 'force')) }] } },
+      { title: 'Diagramme du moment fléchissant', sub: `M_max = ${valTxt(Math.abs(Mmax), 'moment')}`, o: { height: 220, xLabel: `Position x (${unit('len')})`, xName: 'x', xUnit: unit('len'), yLabel: `M (${unit('moment')})`, yZero: true,
+        series: [{ name: 'M', unit: unit('moment'), color: 'var(--c1)', area: true, x: Mx.map(cx), y: My.map(v => conv(v, 'moment')) }],
+        markers: [{ x: cx(xM), y: conv(Mmax, 'moment'), color: 'var(--c1)', label: `${fmtNum(conv(Mmax, 'moment'))} ${unit('moment')}`, below: Mmax < 0 }] } },
+      { title: 'Déformée (flèche)', sub: `δ_max = ${valTxt(Math.abs(Ymax), 'dim')}`, o: { height: 200, xLabel: `Position x (${unit('len')})`, xName: 'x', xUnit: unit('len'), yLabel: `Flèche (${unit('dim')})`, yZero: true,
+        series: [{ name: 'Flèche', unit: unit('dim'), color: 'var(--c2)', area: true, x: Mx.map(cx), y: Yy.map(v => -conv(v, 'dim')) }],
+        markers: [{ x: cx(xY), y: -conv(Ymax, 'dim'), color: 'var(--c2)', label: `${fmtNum(-conv(Ymax, 'dim'))} ${unit('dim')}`, below: true }] } }
+    ];
+    R.summary = [
+      { l: 'Cas', t: BEAM_CASES.find(c => c[0] === s.case)[1] },
+      { l: 'L', v: L, q: 'len' }, pt ? { l: 'P', v: P, q: 'force' } : { l: 'w', v: w, q: 'dload' },
+      { l: 'M_max', v: Math.abs(Mmax), q: 'moment' }, { l: 'σ_max', v: sigma, q: 'stress' }, { l: 'δ_max', v: Math.abs(Ymax), q: 'dim' }, { l: 'n', v: SF, q: 'none' }
+    ];
+    return R;
+  }
+};
+
+/* =========================================================================
+   Module 2 — Assemblages boulonnés
+   ========================================================================= */
+const BOLTS = {
+  iso: [['M5', 5, .8, 14.2], ['M6', 6, 1, 20.1], ['M8', 8, 1.25, 36.6], ['M10', 10, 1.5, 58], ['M12', 12, 1.75, 84.3], ['M14', 14, 2, 115], ['M16', 16, 2, 157], ['M20', 20, 2.5, 245], ['M24', 24, 3, 353], ['M30', 30, 3.5, 561], ['M36', 36, 4, 817]]
+    .map(([n, d, p, At]) => ({ n, d: d * 1e-3, pitch: `pas ${String(p).replace('.', ',')} mm`, At: At * 1e-6 })),
+  unc: [['1/4"-20', .25, 20, .0318], ['5/16"-18', .3125, 18, .0524], ['3/8"-16', .375, 16, .0775], ['7/16"-14', .4375, 14, .1063], ['1/2"-13', .5, 13, .1419], ['9/16"-12', .5625, 12, .182], ['5/8"-11', .625, 11, .226], ['3/4"-10', .75, 10, .334], ['7/8"-9', .875, 9, .462], ['1"-8', 1, 8, .606], ['1-1/4"-7', 1.25, 7, .969], ['1-1/2"-6', 1.5, 6, 1.405]]
+    .map(([n, d, tpi, At]) => ({ n, d: d * .0254, pitch: `${tpi} filets/po`, At: At * 6.4516e-4 }))
+};
+const GRADES = { iso: [['4.6', 'Classe 4.6'], ['5.8', 'Classe 5.8'], ['8.8', 'Classe 8.8'], ['10.9', 'Classe 10.9'], ['12.9', 'Classe 12.9']], unc: [['2', 'SAE Grade 2'], ['5', 'SAE Grade 5'], ['8', 'SAE Grade 8']] };
+function boltGrade(std, g, d) {
+  let T, f;
+  if (std === 'iso') {
+    f = 1e6;
+    T = { '4.6': [225, 240, 400], '5.8': [380, 420, 520], '8.8': d <= 16.01e-3 ? [580, 640, 800] : [600, 660, 830], '10.9': [830, 940, 1040], '12.9': [970, 1100, 1220] }[g];
+  } else {
+    f = 6894757.3; const dIn = d / .0254;
+    T = g === '2' ? (dIn <= .751 ? [55, 57, 74] : [33, 36, 60]) : g === '5' ? (dIn <= 1.001 ? [85, 92, 120] : [74, 81, 105]) : [120, 130, 150];
+  }
+  return { Sp: T[0] * f, Sy: T[1] * f, Su: T[2] * f };
+}
+const MEMB = { steel: { n: 'Acier', E: 206.8e9, A: .78715, B: .62873 }, alu: { n: 'Aluminium', E: 71e9, A: .79670, B: .63816 }, ci: { n: 'Fonte grise', E: 100e9, A: .77871, B: .61616 }, cu: { n: 'Cuivre', E: 118.6e9, A: .79568, B: .63553 } };
+const boltOf = s => BOLTS[s.std].find(b => b.n === s.size) || BOLTS[s.std][4];
+function boltSVG(s) {
+  let g = `<svg viewBox="0 0 340 210" aria-label="Schéma de l'assemblage boulonné">`;
+  g += `<rect class="sk-steel" x="40" y="60" width="260" height="42"/><rect class="sk-steel" x="40" y="102" width="260" height="42"/>`;
+  g += `<rect class="sk-bg" x="156" y="60" width="28" height="84"/>`;
+  g += `<rect class="sk-steel" x="160" y="44" width="20" height="120" style="fill:var(--steel2)"/>`;
+  g += `<rect class="sk-steel" x="140" y="40" width="60" height="20" rx="3" style="fill:var(--steel2)"/><rect class="sk-steel" x="140" y="144" width="60" height="20" rx="3" style="fill:var(--steel2)"/>`;
+  for (let y = 150; y < 176; y += 5) g += `<line class="sk-thin" x1="160" x2="180" y1="${y}" y2="${y + 3}"/>`;
+  g += `<line class="sk-load" x1="170" y1="36" x2="170" y2="8"/><path class="sk-loadf" d="M165 14L175 14L170 4Z"/><text class="sk-txt l" x="180" y="18">P (traction)</text>`;
+  g += `<line class="sk-load" x1="170" y1="168" x2="170" y2="196"/><path class="sk-loadf" d="M165 190L175 190L170 200Z"/>`;
+  g += `<line class="sk-load" x1="300" y1="81" x2="328" y2="81"/><path class="sk-loadf" d="M322 76L322 86L332 81Z"/><line class="sk-load" x1="40" y1="123" x2="12" y2="123"/><path class="sk-loadf" d="M18 118L18 128L8 123Z"/><text class="sk-txt l" x="318" y="70">V</text>`;
+  g += `<line class="sk-dim" x1="220" y1="60" x2="220" y2="144"/><line class="sk-dim" x1="214" y1="60" x2="226" y2="60"/><line class="sk-dim" x1="214" y1="144" x2="226" y2="144"/><text class="sk-txt m" x="228" y="106">l (serrage)</text>`;
+  g += `<text class="sk-txt m" x="60" y="190">${esc(boltOf(s).n)} · ${esc((GRADES[s.std].find(x => x[0] === s.grade) || ['', ''])[1])}</text>`;
+  return g + '</svg>';
+}
+const MOD_BOLT = {
+  id: 'bolt', name: 'Assemblages boulonnés',
+  desc: 'Précharge, couple de serrage, rigidité du joint, charge dans le boulon et vérification en traction, séparation, glissement et cisaillement.',
+  icon: '<path d="M8 3h8l2 3-2 3H8L6 6z"/><path d="M10 9v12h4V9"/><path d="M10 13h4M10 16h4M10 19h4"/>',
+  groups: [
+    { title: 'Boulon', fields: [
+      { id: 'std', type: 'sel', label: 'Norme de filetage', def: 'iso', opts: [['iso', 'ISO métrique (gros pas)'], ['unc', 'Unifié UNC (pouces)']],
+        onChange: s => { if (s.std === 'iso') { s.size = 'M12'; s.grade = '8.8'; } else { s.size = '1/2"-13'; s.grade = '5'; } } },
+      { id: 'size', type: 'sel', label: 'Diamètre nominal', def: 'M12', opts: s => BOLTS[s.std].map(b => [b.n, `${b.n} — ${b.pitch}`]) },
+      { id: 'grade', type: 'sel', label: 'Classe de résistance', def: '8.8', opts: s => GRADES[s.std] },
+      { id: 'shank', type: 'sel', label: 'Tige dans la zone serrée', def: 'thread', opts: [['thread', 'Entièrement filetée'], ['smooth', 'Fût lisse (non fileté)']] },
+      { id: 'Eb', label: 'Module du boulon', sym: 'Eb', q: 'mod', def: 206.8e9 }
+    ] },
+    { title: 'Assemblage', fields: [
+      { id: 'grip', label: 'Longueur de serrage', sym: 'l', q: 'dim', def: .03, hint: 'Épaisseur totale des pièces serrées' },
+      { id: 'memb', type: 'sel', label: 'Matériau des pièces', def: 'steel', opts: Object.entries(MEMB).map(([k, m]) => [k, m.n]) },
+      { id: 'nb', label: 'Nombre de boulons', sym: 'n', q: 'none', def: 4 },
+      { id: 'mu', label: 'Coefficient de frottement des surfaces', sym: 'μ', q: 'none', def: .2, hint: '0,2 acier propre ; 0,33–0,5 surfaces préparées (grenaillées)' },
+      { id: 'plane', type: 'sel', label: 'Plan de cisaillement', def: 'thread', opts: [['thread', 'Dans le filetage (At)'], ['shank', 'Dans le fût (Ad)']] }
+    ] },
+    { title: 'Serrage', fields: [
+      { id: 'pre', label: 'Précharge (% de la charge d\'épreuve)', sym: 'Fi/Fp', q: 'pct', def: .75, hint: '75 % assemblage démontable ; 90 % permanent' },
+      { id: 'K', label: 'Facteur de couple', sym: 'K', q: 'none', def: .2, hint: '0,20 non lubrifié ; 0,15–0,18 lubrifié ; 0,12 bisulfure' }
+    ] },
+    { title: 'Chargement total', fields: [
+      { id: 'Fa', label: 'Effort axial (traction)', sym: 'P_tot', q: 'force', def: 20e3 },
+      { id: 'Fv', label: 'Effort de cisaillement', sym: 'V_tot', q: 'force', def: 10e3 }
+    ] }
+  ],
+  notes: [
+    'Méthode de Shigley (Budynas & Nisbett) : F_b = F_i + C·P, F_m = F_i − (1−C)·P, C = k_b/(k_b + k_m).',
+    'Rigidité des pièces k_m selon Wileman et al. : k_m = E·d·A·exp(B·d/l), pièces d\'un même matériau. Rigidité du boulon : k_b = A·E_b/l avec A = At (fileté) ou Ad (fût lisse).',
+    'Charge d\'épreuve Fp = Sp·At ; précharge F_i = (Fi/Fp)·Fp. Couple T = K·F_i·d : la dispersion réelle de la précharge au couple est de ±25 à 30 %.',
+    'Charges réparties également entre les boulons, axiales et centrées : effet de levier (prying), moments et excentricités non pris en compte.',
+    'Si le frottement μ·F_m est insuffisant, le cisaillement est repris par le boulon (τ = V/A). La contrainte combinée de von Mises σ_vm = √(σ² + 3τ²) est calculée de façon conservatrice.',
+    'Non vérifiés : fatigue, arrachement du filetage/taraudage, pression de matage sous tête, relaxation et effets thermiques.'
+  ],
+  compute(s) {
+    const R = newRes(), bt = boltOf(s), { d, At } = bt, Ad = PI * d * d / 4, gr = boltGrade(s.std, s.grade, d), mb = MEMB[s.memb];
+    const n = Math.round(s.nb), l = s.grip;
+    if (!(n >= 1)) R.errors.push('Le nombre de boulons doit être ≥ 1.');
+    if (!(l > 0)) R.errors.push('La longueur de serrage doit être positive.');
+    if (!(s.Eb > 0)) R.errors.push('Le module du boulon doit être positif.');
+    if (!(s.pre > 0 && s.pre <= 1)) R.errors.push('La précharge doit être comprise entre 0 et 100 % de Fp.');
+    if (!(s.Fa >= 0) || !(s.Fv >= 0)) R.errors.push('Les efforts doivent être positifs ou nuls.');
+    if (R.errors.length) return R;
+    const Fp = gr.Sp * At, Fi = s.pre * Fp, T = s.K * Fi * d;
+    const kb = (s.shank === 'smooth' ? Ad : At) * s.Eb / l;
+    const km = mb.E * d * mb.A * Math.exp(mb.B * d / l);
+    const C = kb / (kb + km);
+    const P = s.Fa / n, V = s.Fv / n, P0 = Fi / (1 - C);
+    const Fb = P < P0 ? Fi + C * P : P, Fm = Math.max(Fi - (1 - C) * P, 0);
+    const sb = Fb / At, nL = P > 0 ? (Fp - Fi) / (C * P) : Infinity, n0 = P > 0 ? P0 / P : Infinity;
+    const Rslip = s.mu * Fm, slipOK = V <= Rslip, nSlip = V > 0 ? Rslip / V : Infinity;
+    const As = s.plane === 'shank' ? Ad : At, tau = V / As, svm = Math.sqrt(sb * sb + 3 * tau * tau), nY = gr.Sy / svm;
+    R.kpis = [
+      { label: 'Précharge F_i', v: Fi, q: 'force', sub: `${fmtNum(s.pre * 100, 3)} % de Fp = ${valTxt(Fp, 'force')}` },
+      { label: 'Couple de serrage', v: T, q: 'torque', sub: `K = ${fmtNum(s.K, 3)}` },
+      { label: 'Contrainte dans le boulon', v: sb, q: 'stress', tone: tone(sb / gr.Sp), sub: `${fmtNum(sb / gr.Sp * 100, 3)} % de Sp` },
+      { label: 'Facteur de sécurité (von Mises)', v: nY, q: 'none', tone: sfTone(nY, 1.2), sub: 'Sy / σ_vm' }
+    ];
+    R.checks.push(nL >= 1 ? { s: nL >= 1.5 ? 'ok' : 'warn', t: `Charge d'épreuve : facteur de charge n_L = ${isFinite(nL) ? fmtNum(nL, 3) : '∞'} (F_b ≤ Fp)` } : { s: 'bad', t: `Charge d'épreuve dépassée : F_b = ${valTxt(Fb, 'force')} > Fp = ${valTxt(Fp, 'force')}` });
+    R.checks.push(n0 > 1 ? { s: n0 >= 1.5 ? 'ok' : 'warn', t: `Pas de séparation du joint : n₀ = ${isFinite(n0) ? fmtNum(n0, 3) : '∞'} (P₀ = ${valTxt(P0, 'force')} par boulon)` } : { s: 'bad', t: `Séparation du joint : P = ${valTxt(P, 'force')} ≥ P₀ = ${valTxt(P0, 'force')}` });
+    if (V > 0) R.checks.push(slipOK ? { s: nSlip >= 1.3 ? 'ok' : 'warn', t: `Pas de glissement : μ·F_m = ${valTxt(Rslip, 'force')} ≥ V = ${valTxt(V, 'force')} (n = ${fmtNum(nSlip, 3)})` } : { s: 'warn', t: `Glissement : μ·F_m = ${valTxt(Rslip, 'force')} < V = ${valTxt(V, 'force')} — le boulon travaille en cisaillement` });
+    R.checks.push({ s: sfTone(nY, 1.2), t: `Von Mises σ_vm = ${valTxt(svm, 'stress')} vs Sy = ${valTxt(gr.Sy, 'stress')} (n = ${fmtNum(nY, 3)})` });
+    R.util = [{ label: 'F_b / Fp (épreuve)', r: Fb / Fp }, { label: 'P / P₀ (séparation)', r: P / P0 }];
+    if (V > 0) R.util.push({ label: 'V / μ·F_m (glissement)', r: Rslip > 0 ? V / Rslip : Infinity });
+    R.util.push({ label: 'σ_vm / Sy', r: svm / gr.Sy });
+    R.tables = [
+      { title: 'Boulon', rows: [['Diamètre nominal d', d, 'dim'], ['Section résistante At', At, 'area'], ['Section du fût Ad', Ad, 'area'],
+        ['Résistance d\'épreuve Sp', gr.Sp, 'stress'], ['Limite élastique Sy', gr.Sy, 'stress'], ['Résistance ultime Su', gr.Su, 'stress'], ['Charge d\'épreuve Fp', Fp, 'force']] },
+      { title: 'Rigidités', rows: [['Rigidité du boulon k_b', kb, 'stiff'], ['Rigidité des pièces k_m', km, 'stiff'], ['Constante du joint C', C, 'none'], ['Module des pièces E_m', mb.E, 'mod']] },
+      { title: 'Par boulon', rows: [['Effort axial P', P, 'force'], ['Effort de cisaillement V', V, 'force'], ['Effort dans le boulon F_b', Fb, 'force'],
+        ['Effort de serrage résiduel F_m', Fm, 'force'], ['Contrainte de précharge F_i/At', Fi / At, 'stress'], ['Contrainte axiale σ = F_b/At', sb, 'stress'],
+        ['Cisaillement τ = V/A', tau, 'stress'], ['Von Mises σ_vm', svm, 'stress'], ['Charge de séparation P₀', P0, 'force']] }
+    ];
+    R.formulas = ['Fi = (Fi/Fp)·Sp·At', 'T = K·Fi·d', 'C = kb/(kb+km)', 'Fb = Fi + C·P', 'n_L = (Sp·At − Fi)/(C·P)', 'n₀ = Fi/(P·(1−C))', 'σ_vm = √(σ² + 3τ²)'];
+    R.schematic = boltSVG(s);
+    const xmax = Math.max(P0 * 1.35, P * 1.2), xs = linspace(0, xmax, 200);
+    const cf = v => conv(v, 'force');
+    R.charts = [{ title: 'Diagramme de l\'assemblage (par boulon)', sub: 'Efforts en fonction de la charge extérieure P', o: {
+      height: 250, xLabel: `Charge extérieure P (${unit('force')})`, xName: 'P', xUnit: unit('force'), yLabel: `Effort (${unit('force')})`, yZero: true,
+      series: [
+        { name: 'Effort dans le boulon F_b', unit: unit('force'), color: 'var(--c1)', x: xs.map(cf), y: xs.map(p => cf(p < P0 ? Fi + C * p : p)) },
+        { name: 'Serrage des pièces F_m', unit: unit('force'), color: 'var(--c3)', x: xs.map(cf), y: xs.map(p => cf(Math.max(Fi - (1 - C) * p, 0))) }],
+      hlines: [{ y: cf(Fp), label: 'Charge d\'épreuve Fp', color: 'var(--bad)' }],
+      vlines: [{ x: cf(P0), label: 'Séparation P₀', color: 'var(--faint)' }],
+      markers: [{ x: cf(P), y: cf(Fb), color: 'var(--c1)', label: 'Point de fonctionnement' }] } }];
+    R.summary = [{ l: 'Boulon', t: `${bt.n} ${(GRADES[s.std].find(x => x[0] === s.grade) || ['', ''])[1]}` }, { l: 'n', v: n, q: 'none' }, { l: 'Fi', v: Fi, q: 'force' },
+      { l: 'T', v: T, q: 'torque' }, { l: 'σb', v: sb, q: 'stress' }, { l: 'n_vm', v: nY, q: 'none' }];
+    return R;
+  }
+};
+
+/* =========================================================================
+   Module 3 — Colonnes / flambage
+   ========================================================================= */
+const ENDS = {
+  pp: { n: 'Rotulé – rotulé', th: 1, rec: 1 },
+  fp: { n: 'Encastré – rotulé', th: .699, rec: .8 },
+  ff: { n: 'Encastré – encastré', th: .5, rec: .65 },
+  fl: { n: 'Encastré – libre (mât)', th: 2, rec: 2.1 },
+  fg: { n: 'Encastré – guidé (translation libre)', th: 1, rec: 1.2 }
+};
+const Kof = s => s.kmode === 'custom' ? s.K : ENDS[s.ends][s.kmode];
+function modeShape(e, t) { // t de 0 (bas) à 1 (haut) → déplacement latéral normalisé
+  switch (e) {
+    case 'pp': return Math.sin(PI * t);
+    case 'fl': return 1 - Math.cos(PI * t / 2);
+    case 'ff': return (1 - Math.cos(2 * PI * t)) / 2;
+    case 'fg': return (1 - Math.cos(PI * t)) / 2;
+    case 'fp': { const k = 4.4934; return (Math.sin(k * t) - k * t + k * (1 - Math.cos(k * t))) / 6.0; }
+  }
+  return 0;
+}
+function colSVG(s) {
+  const top = 26, bot = 214, x = 110, e = s.ends;
+  let g = `<svg viewBox="0 0 260 240" aria-label="Schéma de la colonne">`;
+  g += `<line class="sk-thin" x1="${x}" y1="${top}" x2="${x}" y2="${bot}" style="stroke-dasharray:4 4"/>`;
+  let d = '';
+  for (let i = 0; i <= 40; i++) { const t = i / 40; d += (i ? 'L' : 'M') + (x + 34 * modeShape(e, t)).toFixed(1) + ' ' + (bot - t * (bot - top)).toFixed(1); }
+  g += `<path class="sk-acc" d="${d}" style="stroke-width:7;stroke:var(--steel2);opacity:.9"/><path class="sk-acc" d="${d}" style="stroke-width:1.6"/>`;
+  g += `<line class="sk-line" x1="${x - 34}" y1="${bot}" x2="${x + 34}" y2="${bot}"/>`;
+  for (let i = -30; i <= 30; i += 8) g += `<line class="sk-hatch" x1="${x + i}" y1="${bot}" x2="${x + i - 7}" y2="${bot + 8}"/>`;
+  if (e === 'pp') g += `<circle class="sk-line" cx="${x}" cy="${bot - 5}" r="5" style="fill:var(--panel)"/>`;
+  const xt = x + 34 * modeShape(e, 1);
+  if (e === 'pp' || e === 'fp') g += `<circle class="sk-line" cx="${xt}" cy="${top + 5}" r="5" style="fill:var(--panel)"/><line class="sk-line" x1="${xt - 20}" y1="${top - 1}" x2="${xt + 20}" y2="${top - 1}"/>`;
+  if (e === 'ff' || e === 'fg') { g += `<line class="sk-line" x1="${xt - 30}" y1="${top}" x2="${xt + 30}" y2="${top}"/>`; for (let i = -26; i <= 30; i += 8) g += `<line class="sk-hatch" x1="${xt + i}" y1="${top}" x2="${xt + i - 7}" y2="${top - 8}"/>`; }
+  g += `<line class="sk-load" x1="${xt}" y1="${top - 24}" x2="${xt}" y2="${top - 6}"/><path class="sk-loadf" d="M${xt - 5} ${top - 10}L${xt + 5} ${top - 10}L${xt} ${top - 2}Z"/><text class="sk-txt l" x="${xt + 10}" y="${top - 10}">P</text>`;
+  g += `<text class="sk-txt m" x="170" y="100">K = ${fmtNum(Kof(s), 3)}</text><text class="sk-txt m" x="170" y="120">Le = K·L</text><text class="sk-txt m" x="170" y="140">${esc(ENDS[e].n.split(' (')[0])}</text>`;
+  return g + '</svg>';
+}
+const MOD_COL = {
+  id: 'col', name: 'Colonnes / flambage',
+  desc: 'Charge critique de flambage d\'Euler (et de Johnson pour les colonnes intermédiaires) selon les conditions d\'appui.',
+  icon: '<path d="M8 3h8M8 21h8"/><path d="M12 3c3 4 3 14 0 18"/><path d="M12 3v18" stroke-dasharray="2 2.5"/>',
+  groups: [
+    { title: 'Géométrie et appuis', fields: [
+      { id: 'L', label: 'Longueur de la colonne', sym: 'L', q: 'len', def: 2 },
+      { id: 'ends', type: 'sel', label: 'Conditions d\'appui', def: 'pp', opts: Object.entries(ENDS).map(([k, e]) => [k, e.n]) },
+      { id: 'kmode', type: 'sel', label: 'Coefficient de longueur effective K', def: 'rec', opts: [['rec', 'Valeur de conception recommandée'], ['th', 'Valeur théorique'], ['custom', 'Personnalisé']] },
+      { id: 'K', label: 'Coefficient K', sym: 'K', q: 'none', def: 1, when: s => s.kmode === 'custom' }
+    ] },
+    { title: 'Matériau', fields: [
+      { id: 'mat', type: 'sel', label: 'Matériau', def: 'a36', opts: matOpts, onChange: matChange },
+      { id: 'E', label: 'Module d\'élasticité', sym: 'E', q: 'mod', def: 200e9, custom: 'mat' },
+      { id: 'Sy', label: 'Limite d\'élasticité', sym: 'Sy', q: 'stress', def: 250e6, custom: 'mat' }
+    ] },
+    { title: 'Section', fields: secFields('col', { sec: 'tube', b: .05, h: .05, t: .004, D: .06, di: .05, Ic: 5.208e-7, Ac: 2.5e-3 }) },
+    { title: 'Chargement', fields: [
+      { id: 'P', label: 'Charge axiale appliquée', sym: 'P', q: 'force', def: 50e3 },
+      { id: 'nd', label: 'Facteur de sécurité visé', sym: 'n_d', q: 'none', def: 2.5 }
+    ] }
+  ],
+  notes: [
+    'Euler (colonnes longues) : P_cr = π²·E·I/(K·L)², valable pour un élancement λ = K·L/r ≥ λ_c = √(2π²E/Sy).',
+    'Johnson (colonnes intermédiaires, λ < λ_c) : P_cr = A·[Sy − (Sy·λ/2π)²/E]. Euler n\'est alors pas conservateur.',
+    'Colonne idéalement droite, chargée axialement et de façon centrée ; matériau élastique, section constante. Imperfections, excentricités et contraintes résiduelles non incluses (les normes AISC/CSA/EC3 appliquent des courbes réduites).',
+    'Le flambage se produit autour de l\'axe de plus faible inertie (I_min). Flambage local des parois minces et flambage en torsion non vérifiés.',
+    'Valeurs de K recommandées d\'après AISC (commentaire, tableau C-A-7.1) : les encastrements réels ne sont jamais parfaits.',
+    'Facteurs de sécurité usuels : 2 à 3 pour les structures, davantage pour les tiges de vérins ou en présence de chocs.'
+  ],
+  compute(s) {
+    const R = newRes(), sec = secProps(s), K = Kof(s), { L, E, Sy, P } = s;
+    if (!(L > 0)) R.errors.push('La longueur L doit être positive.');
+    if (!(K > 0)) R.errors.push('Le coefficient K doit être positif.');
+    if (!(E > 0 && Sy > 0)) R.errors.push('E et Sy doivent être positifs.');
+    if (sec.err) R.errors.push(sec.err);
+    if (!(P >= 0)) R.errors.push('La charge P doit être positive ou nulle.');
+    if (R.errors.length) return R;
+    const A = sec.A, I = sec.Imin, Le = K * L, r = Math.sqrt(I / A), lam = Le / r, lamC = Math.sqrt(2 * PI * PI * E / Sy);
+    const PcrE = PI * PI * E * I / (Le * Le), PcrJ = A * (Sy - Math.pow(Sy * lam / (2 * PI), 2) / E);
+    const euler = lam >= lamC, Pcr = euler ? PcrE : PcrJ, scr = Pcr / A, SF = P > 0 ? Pcr / P : Infinity, Pall = Pcr / s.nd, sig = P / A;
+    R.kpis = [
+      { label: 'Charge critique P_cr', v: Pcr, q: 'force', sub: euler ? 'Formule d\'Euler' : 'Formule de Johnson' },
+      { label: 'Facteur de sécurité', v: SF, q: 'none', tone: sfTone(SF, s.nd), sub: `P_cr / P (visé : ${fmtNum(s.nd, 3)})` },
+      { label: 'Élancement λ', v: lam, q: 'none', sub: `λ_c = ${fmtNum(lamC, 4)} → ${euler ? 'colonne longue' : 'colonne intermédiaire'}` },
+      { label: 'Charge admissible', v: Pall, q: 'force', tone: P <= Pall ? 'ok' : 'bad', sub: `P_cr / ${fmtNum(s.nd, 3)}` }
+    ];
+    R.checks.push(SF >= s.nd ? { s: 'ok', t: `P = ${valTxt(P, 'force')} ≤ P_adm = ${valTxt(Pall, 'force')}` } : { s: SF >= 1 ? 'warn' : 'bad', t: SF >= 1 ? `Facteur de sécurité ${fmtNum(SF, 3)} inférieur à la cible ${fmtNum(s.nd, 3)}` : `Flambage : P = ${valTxt(P, 'force')} > P_cr = ${valTxt(Pcr, 'force')}` });
+    R.checks.push(sig < Sy ? { s: 'ok', t: `Compression simple σ = P/A = ${valTxt(sig, 'stress')} < Sy` } : { s: 'bad', t: `Écrasement : σ = P/A = ${valTxt(sig, 'stress')} ≥ Sy` });
+    R.checks.push(euler ? { s: 'info', t: `Colonne longue (λ ≥ λ_c) : la formule d'Euler s'applique.` } : { s: 'info', t: `Colonne intermédiaire (λ < λ_c) : Johnson retenu. Euler donnerait ${valTxt(PcrE, 'force')} (non conservateur).` });
+    if (lam < 20) R.checks.push({ s: 'info', t: 'Colonne très courte (λ < 20) : la résistance est gouvernée par l\'écrasement plutôt que par le flambage.' });
+    R.util = [{ label: 'P / P_adm', r: P / Pall }, { label: 'P / P_cr', r: P / Pcr }, { label: 'σ / Sy', r: sig / Sy }];
+    R.tables = [
+      { title: 'Section', rows: [['Aire A', A, 'area'], ['Inertie minimale I_min', I, 'inertia'], ['Rayon de giration r', r, 'dim']] },
+      { title: 'Flambage', rows: [['Coefficient K', K, 'none'], ['Longueur effective Le', Le, 'len'], ['Élancement λ = Le/r', lam, 'none'], ['Élancement de transition λ_c', lamC, 'none'],
+        ['P_cr Euler', PcrE, 'force'], ['P_cr Johnson', lam < lamC ? PcrJ : 'n.a.', 'force'], ['Contrainte critique σ_cr', scr, 'stress'], ['Contrainte appliquée σ = P/A', sig, 'stress']] }
+    ];
+    R.formulas = ['P_cr = π²EI/(KL)²', 'λ = KL/r, r = √(I/A)', 'λ_c = √(2π²E/Sy)', 'Johnson : P_cr = A[Sy − (Sy·λ/2π)²/E]'];
+    R.schematic = colSVG(s);
+    const lmax = Math.max(2.4 * lamC, 1.25 * lam), ls = linspace(1, lmax, 300), cs = v => conv(v, 'stress'), ymax = cs(Sy * 1.25);
+    R.charts = [{ title: 'Contrainte critique en fonction de l\'élancement', sub: 'Courbes d\'Euler et de Johnson', o: {
+      height: 270, xLabel: 'Élancement λ = K·L/r', xName: 'λ', xUnit: '', yLabel: `σ_cr (${unit('stress')})`, yMin: 0, yMax: ymax,
+      series: [
+        { name: 'Euler', unit: unit('stress'), color: 'var(--c1)', x: ls, y: ls.map(l => { const v = cs(PI * PI * E / (l * l)); return v <= ymax ? v : NaN; }) },
+        { name: 'Johnson', unit: unit('stress'), color: 'var(--c2)', x: ls, y: ls.map(l => l <= lamC ? cs(Sy - Math.pow(Sy * l / (2 * PI), 2) / E) : NaN) },
+        { name: 'Euler (non applicable)', unit: unit('stress'), color: 'var(--c1)', dash: true, noHover: true, x: ls, y: ls.map(l => { const v = cs(PI * PI * E / (l * l)); return l < lamC && v <= ymax ? v : NaN; }) }],
+      hlines: [{ y: cs(Sy), label: 'Sy', color: 'var(--faint)' }],
+      vlines: [{ x: lamC, label: 'λ_c', color: 'var(--faint)' }],
+      markers: [{ x: lam, y: cs(scr), color: 'var(--c1)', label: 'σ_cr' }, { x: lam, y: cs(sig), color: 'var(--c2)', label: 'σ appliquée', below: true }] } }];
+    R.summary = [{ l: 'Appuis', t: ENDS[s.ends].n }, { l: 'L', v: L, q: 'len' }, { l: 'K', v: K, q: 'none' }, { l: 'λ', v: lam, q: 'none' }, { l: 'P_cr', v: Pcr, q: 'force' }, { l: 'n', v: SF, q: 'none' }];
+    return R;
+  }
+};
+
+/* =========================================================================
+   Module 4 — Hydraulique
+   ========================================================================= */
+function hydSVG() {
+  let g = `<svg viewBox="0 0 540 170" aria-label="Schéma du vérin">`;
+  g += `<rect class="sk-steel" x="40" y="40" width="300" height="80" rx="6"/><rect class="sk-bg" x="50" y="50" width="280" height="60"/>`;
+  g += `<rect class="sk-oil" x="50" y="50" width="130" height="60"/>`;
+  g += `<rect class="sk-steel" x="180" y="50" width="18" height="60" style="fill:var(--steel2)"/>`;
+  g += `<rect class="sk-steel" x="198" y="68" width="250" height="24" style="fill:var(--steel2)"/><rect class="sk-steel" x="330" y="60" width="18" height="40"/>`;
+  g += `<rect class="sk-steel" x="70" y="22" width="16" height="18"/><rect class="sk-steel" x="300" y="22" width="16" height="18"/>`;
+  g += `<text class="sk-txt m" x="60" y="16">A (sortie)</text><text class="sk-txt m" x="286" y="16">B (rentrée)</text>`;
+  g += `<line class="sk-dim" x1="24" y1="50" x2="24" y2="110"/><line class="sk-dim" x1="18" y1="50" x2="30" y2="50"/><line class="sk-dim" x1="18" y1="110" x2="30" y2="110"/><text class="sk-txt m" x="8" y="84">D</text>`;
+  g += `<line class="sk-dim" x1="420" y1="68" x2="420" y2="92"/><text class="sk-txt m" x="426" y="84">d</text>`;
+  g += `<line class="sk-load" x1="452" y1="80" x2="500" y2="80"/><path class="sk-loadf" d="M494 74L494 86L506 80Z"/><text class="sk-txt l" x="470" y="70">F, v</text>`;
+  g += `<text class="sk-txt m" x="100" y="146">Pression p · rendement η</text>`;
+  return g + '</svg>';
+}
+const MOD_HYD = {
+  id: 'hyd', name: 'Hydraulique',
+  desc: 'Force d\'un vérin selon la pression, débit requis pour une vitesse donnée, pression requise pour une charge et puissance hydraulique.',
+  icon: '<rect x="2" y="8" width="13" height="8" rx="1.5"/><path d="M15 12h7M9 8v8"/><path d="M5 5V3h3v2"/>',
+  groups: [
+    { title: 'Vérin', fields: [
+      { id: 'D', label: 'Diamètre d\'alésage (piston)', sym: 'D', q: 'dim', def: .08 },
+      { id: 'd', label: 'Diamètre de la tige', sym: 'd', q: 'dim', def: .045 },
+      { id: 'S', label: 'Course', sym: 'S', q: 'dim', def: .5 },
+      { id: 'eta', label: 'Rendement mécanique', sym: 'η', q: 'pct', def: .95, hint: 'Frottement des joints : 0,90 à 0,97' }
+    ] },
+    { title: 'Conditions de service', fields: [
+      { id: 'p', label: 'Pression disponible', sym: 'p', q: 'press', def: 160e5 },
+      { id: 'F', label: 'Charge à déplacer', sym: 'F', q: 'force', def: 50e3 },
+      { id: 'v', label: 'Vitesse désirée', sym: 'v', q: 'speed', def: .1 }
+    ] }
+  ],
+  notes: [
+    'Force : F = p·A·η avec A = πD²/4 en sortie et A = π(D² − d²)/4 en rentrée. Contre-pression dans la chambre opposée négligée.',
+    'Pression requise : p = F/(A·η). Débit : Q = A·v (théorique, fuites internes et rendement volumétrique non inclus : majorer de 5 à 10 %).',
+    'Puissance hydraulique : P = p·Q. Pertes de charge dans les conduites, distributeurs et filtres non incluses.',
+    'Diamètres de conduites calculés avec des vitesses d\'écoulement recommandées usuelles : 5 m/s (pression), 3 m/s (retour), 1,2 m/s (aspiration).',
+    'Charges statiques, sans effets d\'accélération ni de choc. Vérifier le flambage de la tige avec le module « Colonnes / flambage » (souvent K = 2 pour un vérin articulé non guidé).'
+  ],
+  compute(s) {
+    const R = newRes(), { D, d, S, eta, p, F, v } = s;
+    if (!(D > 0)) R.errors.push('Le diamètre d\'alésage doit être positif.');
+    if (!(d >= 0 && d < D)) R.errors.push('La tige doit avoir un diamètre 0 ≤ d < D.');
+    if (!(eta > 0 && eta <= 1)) R.errors.push('Le rendement doit être compris entre 0 et 100 %.');
+    if (!(p >= 0 && F >= 0 && v >= 0 && S >= 0)) R.errors.push('Pression, charge, vitesse et course doivent être positives.');
+    if (R.errors.length) return R;
+    const Ap = PI * D * D / 4, Aa = PI * (D * D - d * d) / 4, Ar = PI * d * d / 4, phi = Ap / Aa;
+    const Fe = p * Ap * eta, Fr = p * Aa * eta, pe = F / (Ap * eta), pr = F / (Aa * eta);
+    const Qe = Ap * v, Qr = Aa * v, Pw = pe * Qe, PwMax = p * Qe, Ve = Ap * S, Vr = Aa * S, tS = v > 0 ? S / v : Infinity, vr = Qe / Aa;
+    const dPipe = (Q, u) => Math.sqrt(4 * Q / (PI * u)), Qmax = Math.max(Qe, Qr, Ap * vr);
+    R.kpis = [
+      { label: 'Force de poussée (sortie)', v: Fe, q: 'force', tone: Fe >= F ? 'ok' : 'bad', sub: `rentrée : ${valTxt(Fr, 'force')}` },
+      { label: 'Pression requise (sortie)', v: pe, q: 'press', tone: pe <= p ? 'ok' : 'bad', sub: `rentrée : ${valTxt(pr, 'press')}` },
+      { label: 'Débit requis (sortie)', v: Qe, q: 'flow', sub: `rentrée à même vitesse : ${valTxt(Qr, 'flow')}` },
+      { label: 'Puissance hydraulique', v: Pw, q: 'power', sub: `à p max : ${valTxt(PwMax, 'power')}` }
+    ];
+    R.checks.push(pe <= p ? { s: pe <= .9 * p ? 'ok' : 'warn', t: `Sortie : pression requise ${valTxt(pe, 'press')} ≤ pression disponible ${valTxt(p, 'press')}` } : { s: 'bad', t: `Sortie : pression requise ${valTxt(pe, 'press')} > disponible — augmenter D ou la pression` });
+    R.checks.push(pr <= p ? { s: 'ok', t: `Rentrée : pression requise ${valTxt(pr, 'press')} pour la même charge` } : { s: 'warn', t: `Rentrée : la charge F exigerait ${valTxt(pr, 'press')} (> p) — acceptable si la charge ne s'applique qu'en sortie` });
+    R.checks.push({ s: 'info', t: `Avec le débit de sortie, la tige rentre à ${valTxt(vr, 'speed')} (φ = ${fmtNum(phi, 3)}) et le débit de retour côté piston atteint ${valTxt(Ap * vr, 'flow')}.` });
+    R.util = [{ label: 'p requise / p dispo (sortie)', r: pe / p }, { label: 'p requise / p dispo (rentrée)', r: pr / p }];
+    R.tables = [
+      { title: 'Surfaces', rows: [['Surface du piston A_p', Ap, 'area'], ['Surface annulaire A_a', Aa, 'area'], ['Section de la tige', Ar, 'area'], ['Rapport des surfaces φ = A_p/A_a', phi, 'none']] },
+      { title: 'Forces et pressions', rows: [['Force de sortie à p', Fe, 'force'], ['Force de rentrée à p', Fr, 'force'], ['Pression requise en sortie', pe, 'press'], ['Pression requise en rentrée', pr, 'press'], ['Contrainte dans la tige F/A_tige', Ar > 0 ? F / Ar : 'n.a.', 'stress']] },
+      { title: 'Débits et cycle', rows: [['Débit de sortie Q = A_p·v', Qe, 'flow'], ['Débit de rentrée Q = A_a·v', Qr, 'flow'], ['Volume par course (sortie)', Ve, 'vol'], ['Volume par course (rentrée)', Vr, 'vol'], ['Durée d\'une course', tS, 'time'], ['Vitesse de rentrée à Q sortie', vr, 'speed']] },
+      { title: 'Conduites (diamètre intérieur min.)', rows: [['Pression (5 m/s)', dPipe(Qmax, 5), 'dim'], ['Retour (3 m/s)', dPipe(Qmax, 3), 'dim'], ['Aspiration (1,2 m/s)', dPipe(Qmax, 1.2), 'dim']] }
+    ];
+    R.formulas = ['F = p·A·η', 'A_p = πD²/4 ; A_a = π(D²−d²)/4', 'p = F/(A·η)', 'Q = A·v', 'P = p·Q'];
+    R.schematic = hydSVG();
+    const pm = Math.max(p * 1.4, pe * 1.2), ps = linspace(0, pm, 60), cp = x => conv(x, 'press'), cf = x => conv(x, 'force');
+    R.charts = [{ title: 'Force du vérin en fonction de la pression', sub: `η = ${fmtNum(eta * 100, 3)} %`, o: {
+      height: 250, xLabel: `Pression (${unit('press')})`, xName: 'p', xUnit: unit('press'), yLabel: `Force (${unit('force')})`, yZero: true, xMin: 0,
+      series: [
+        { name: 'Sortie (côté piston)', unit: unit('force'), color: 'var(--c1)', x: ps.map(cp), y: ps.map(x => cf(x * Ap * eta)) },
+        { name: 'Rentrée (côté tige)', unit: unit('force'), color: 'var(--c3)', x: ps.map(cp), y: ps.map(x => cf(x * Aa * eta)) }],
+      hlines: [{ y: cf(F), label: 'Charge F', color: 'var(--c2)' }],
+      vlines: [{ x: cp(p), label: 'p disponible', color: 'var(--faint)' }],
+      markers: [{ x: cp(pe), y: cf(F), color: 'var(--c2)', label: `p requise ${fmtNum(cp(pe))} ${unit('press')}`, below: true }] } }];
+    R.summary = [{ l: 'D × d', t: `${valTxt(D, 'dim')} × ${valTxt(d, 'dim')}` }, { l: 'p', v: p, q: 'press' }, { l: 'F sortie', v: Fe, q: 'force' }, { l: 'p requise', v: pe, q: 'press' }, { l: 'Q', v: Qe, q: 'flow' }, { l: 'P', v: Pw, q: 'power' }];
+    return R;
+  }
+};
+
+/* =========================================================================
+   Module 5 — Soudures
+   ========================================================================= */
+const ELECTRODES = { E60: 427e6, E70: 482e6, E80: 551e6, E90: 620e6, E100: 689e6, E110: 758e6 };
+function awsMin(t) { // AWS D1.1 — taille minimale du cordon d'angle selon l'épaisseur
+  const i = t / .0254;
+  return i <= .25 ? .125 * .0254 : i <= .5 ? .1875 * .0254 : i <= .75 ? .25 * .0254 : .3125 * .0254;
+}
+function weldSVG(s) {
+  let g = `<svg viewBox="0 0 320 200" aria-label="Schéma du joint soudé">`;
+  if (s.type === 'fillet') {
+    g += `<rect class="sk-steel" x="30" y="130" width="260" height="26"/><rect class="sk-steel" x="146" y="30" width="26" height="100"/>`;
+    g += `<path class="sk-weld" d="M146 130L146 96L112 130Z"/><path class="sk-weld" d="M172 130L172 96L206 130Z"/>`;
+    g += `<line class="sk-line" x1="146" y1="130" x2="129" y2="113" style="stroke-dasharray:3 2"/><text class="sk-txt m" x="60" y="104">gorge a = 0,707·h</text>`;
+    g += `<line class="sk-dim" x1="172" y1="176" x2="206" y2="176"/><line class="sk-dim" x1="172" y1="170" x2="172" y2="182"/><line class="sk-dim" x1="206" y1="170" x2="206" y2="182"/><text class="sk-txt m" x="185" y="194">h</text>`;
+    g += `<line class="sk-load" x1="159" y1="4" x2="159" y2="26"/><path class="sk-loadf" d="M154 20L164 20L159 30Z"/><text class="sk-txt l" x="168" y="18">F_n</text>`;
+    g += `<text class="sk-txt l" x="200" y="60">F_v ⊙</text><text class="sk-txt m" x="200" y="76">(le long du cordon)</text>`;
+  } else {
+    g += `<rect class="sk-steel" x="20" y="80" width="130" height="36"/><rect class="sk-steel" x="170" y="80" width="130" height="36"/>`;
+    g += `<path class="sk-weld" d="M136 80L184 80L166 116L154 116Z"/><path class="sk-weld" d="M150 116L170 116L166 122L154 122Z" style="fill-opacity:.55"/>`;
+    g += `<line class="sk-load" x1="20" y1="98" x2="10" y2="98"/><path class="sk-loadf" d="M14 92L14 104L4 98Z"/>`;
+    g += `<line class="sk-load" x1="300" y1="98" x2="318" y2="98"/><path class="sk-loadf" d="M310 92L310 104L320 98Z"/><text class="sk-txt l" x="270" y="70">F_n</text>`;
+    g += `<line class="sk-dim" x1="104" y1="80" x2="104" y2="116"/><line class="sk-dim" x1="98" y1="80" x2="110" y2="80"/><line class="sk-dim" x1="98" y1="116" x2="110" y2="116"/><text class="sk-txt m" x="86" y="102">t</text>`;
+    g += `<text class="sk-txt m" x="60" y="160">Pénétration complète — gorge = t</text><text class="sk-txt l" x="120" y="54">F_v ⊙</text>`;
+  }
+  return g + '</svg>';
+}
+function weldStress(s, size, l) {
+  const { Fn, Fv, Mw } = s, M = Math.abs(Mw);
+  if (s.type === 'butt') {
+    const A = size * l, sig = Math.abs(Fn) / A + 6 * M / (size * l * l), tau = Math.abs(Fv) / A, svm = Math.sqrt(sig * sig + 3 * tau * tau);
+    return { A, a: size, sig, tau, svm, u: [sig / (.6 * s.Sy), tau / (.4 * s.Sy)] };
+  }
+  const a = .70711 * size, A = a * l, tn = Math.abs(Fn) / A + 6 * M / (a * l * l), tv = Math.abs(Fv) / A, tr = Math.hypot(tn, tv);
+  const tb = Math.hypot(Math.abs(Fn) / (size * l) + 6 * M / (size * l * l), Math.abs(Fv) / (size * l)), tall = .3 * ELECTRODES[s.el];
+  return { A, a, tn, tv, tr, tb, tall, u: [tr / tall, tb / (.4 * s.Sy)] };
+}
+const MOD_WELD = {
+  id: 'weld', name: 'Soudures',
+  desc: 'Contraintes dans les joints soudés bout à bout et d\'angle, vérification selon les contraintes admissibles AISC/AWS et dimensionnement du cordon.',
+  icon: '<path d="M3 17h18M12 17V5"/><path d="M12 17l-5 0 5-5zM12 17h5l-5-5z"/>',
+  groups: [
+    { title: 'Joint', fields: [
+      { id: 'type', type: 'sel', label: 'Type de soudure', def: 'fillet', opts: [['fillet', 'Soudure d\'angle (cordon)'], ['butt', 'Bout à bout (pénétration complète)']] },
+      { id: 'h', label: 'Taille du cordon (côté)', sym: 'h', q: 'dim', def: .006, when: s => s.type === 'fillet' },
+      { id: 't', label: s => s.type === 'fillet' ? 'Épaisseur de la plaque la plus épaisse' : 'Épaisseur de la plaque la plus mince', sym: 't', q: 'dim', def: .01 },
+      { id: 'lw', label: 'Longueur totale de soudure', sym: 'l', q: 'dim', def: .2 },
+      { id: 'el', type: 'sel', label: 'Électrode', def: 'E70', opts: Object.keys(ELECTRODES).map(k => [k, `${k}XX — Su = ${Math.round(ELECTRODES[k] / 1e6)} MPa`]), when: s => s.type === 'fillet' }
+    ] },
+    { title: 'Métal de base', fields: [
+      { id: 'mat', type: 'sel', label: 'Matériau', def: 'a36', opts: matOpts.filter(o => o[0] !== 'ti64'), onChange: matChange },
+      { id: 'Sy', label: 'Limite d\'élasticité', sym: 'Sy', q: 'stress', def: 250e6, custom: 'mat' },
+      { id: 'Su', label: 'Résistance à la traction', sym: 'Su', q: 'stress', def: 400e6, custom: 'mat' }
+    ] },
+    { title: 'Chargement', fields: [
+      { id: 'Fn', label: 'Effort normal (perpendiculaire au cordon)', sym: 'F_n', q: 'force', def: 50e3 },
+      { id: 'Fv', label: 'Effort de cisaillement (parallèle au cordon)', sym: 'F_v', q: 'force', def: 20e3 },
+      { id: 'Mw', label: 'Moment de flexion dans le plan', sym: 'M', q: 'moment', def: 0, hint: 'Moment autour de l\'axe perpendiculaire au cordon (facultatif)' }
+    ] }
+  ],
+  notes: [
+    'Soudure d\'angle : section de gorge a = 0,707·h (cordon à côtés égaux, 45°). Toutes les composantes sont traitées comme du cisaillement sur la gorge (méthode conservatrice de Shigley) ; l\'augmentation de résistance des cordons transversaux (facteur 1,5 AISC) est négligée.',
+    'Contraintes admissibles AISC (ASD), Shigley tableau 9-4 : cordon d\'angle τ ≤ 0,30·Su(électrode) ; métal de base en cisaillement τ ≤ 0,40·Sy ; soudure bout à bout à pénétration complète σ ≤ 0,60·Sy et τ ≤ 0,40·Sy.',
+    'Répartition uniforme des efforts le long du cordon. Le moment M est traité en considérant le cordon comme une ligne rectiligne (module w = l²/6).',
+    'Taille minimale selon AWS D1.1 en fonction de l\'épaisseur de la pièce la plus épaisse ; taille maximale le long d\'un bord : t (si t < 6 mm) ou t − 2 mm.',
+    'Chargement statique seulement : fatigue, contraintes résiduelles, défauts de soudage et fissuration par hydrogène non considérés.'
+  ],
+  compute(s) {
+    const R = newRes(), fil = s.type === 'fillet', size = fil ? s.h : s.t, l = s.lw;
+    if (!(size > 0)) R.errors.push(fil ? 'La taille du cordon doit être positive.' : 'L\'épaisseur doit être positive.');
+    if (!(l > 0)) R.errors.push('La longueur de soudure doit être positive.');
+    if (!(s.Sy > 0)) R.errors.push('Sy doit être positif.');
+    if (!(s.t > 0)) R.errors.push('L\'épaisseur de plaque doit être positive.');
+    if (R.errors.length) return R;
+    const w = weldStress(s, size, l), gov = Math.max(...w.u), n = 1 / gov;
+    const loaded = Math.abs(s.Fn) + Math.abs(s.Fv) + Math.abs(s.Mw) > 0;
+    const lreq = loaded ? bisect(x => Math.max(...weldStress(s, size, x).u) - 1, 1e-5, 1e3) : 0;
+    const sreq = loaded ? bisect(x => Math.max(...weldStress(s, x, l).u) - 1, 1e-6, 1) : 0;
+    if (fil) {
+      const hmin = awsMin(s.t), hmax = s.t < .006 ? s.t : s.t - .002;
+      R.kpis = [
+        { label: 'Contrainte résultante sur la gorge', v: w.tr, q: 'stress', tone: tone(w.u[0]), sub: `admissible 0,30·Su = ${valTxt(w.tall, 'stress')}` },
+        { label: 'Facteur de sécurité', v: n, q: 'none', tone: sfTone(n, 1), sub: 'par rapport aux admissibles' },
+        { label: 'Taille de cordon requise', v: sreq, q: 'dim', tone: sreq <= size ? 'ok' : 'bad', sub: `pour l = ${valTxt(l, 'dim')}` },
+        { label: 'Longueur requise', v: lreq, q: 'dim', tone: lreq <= l ? 'ok' : 'bad', sub: `pour h = ${valTxt(size, 'dim')}` }
+      ];
+      R.checks.push({ s: tone(w.u[0]), t: `Gorge : τ = ${valTxt(w.tr, 'stress')} ${w.u[0] <= 1 ? '≤' : '>'} 0,30·Su = ${valTxt(w.tall, 'stress')}` });
+      R.checks.push({ s: tone(w.u[1]), t: `Métal de base : τ = ${valTxt(w.tb, 'stress')} ${w.u[1] <= 1 ? '≤' : '>'} 0,40·Sy = ${valTxt(.4 * s.Sy, 'stress')}` });
+      R.checks.push(size >= hmin - 1e-9 ? { s: 'ok', t: `Taille ≥ minimum AWS D1.1 (${valTxt(hmin, 'dim')} pour t = ${valTxt(s.t, 'dim')})` } : { s: 'warn', t: `Taille inférieure au minimum AWS D1.1 : ${valTxt(hmin, 'dim')} pour t = ${valTxt(s.t, 'dim')}` });
+      if (size > hmax + 1e-9) R.checks.push({ s: 'warn', t: `Taille supérieure au maximum usuel le long d'un bord (${valTxt(hmax, 'dim')})` });
+      if (l < 4 * size) R.checks.push({ s: 'warn', t: 'Longueur < 4·h : la longueur effective du cordon est réduite (AISC J2.2b).' });
+      R.util = [{ label: 'Gorge τ / 0,30·Su', r: w.u[0] }, { label: 'Métal de base τ / 0,40·Sy', r: w.u[1] }];
+      R.tables = [
+        { title: 'Géométrie', rows: [['Gorge a = 0,707·h', w.a, 'dim'], ['Aire de gorge A = a·l', w.A, 'area'], ['Taille minimale AWS', hmin, 'dim'], ['Taille maximale (bord)', hmax, 'dim']] },
+        { title: 'Contraintes', rows: [['τ normal (F_n et M)', w.tn, 'stress'], ['τ parallèle (F_v)', w.tv, 'stress'], ['τ résultante', w.tr, 'stress'], ['Admissible cordon 0,30·Su', w.tall, 'stress'], ['τ métal de base', w.tb, 'stress'], ['Admissible base 0,40·Sy', .4 * s.Sy, 'stress']] }
+      ];
+      R.formulas = ['a = 0,707·h', 'τ = F/(a·l)', 'τ_M = 6M/(a·l²)', 'τ_r = √(τ_n² + τ_v²)', 'τ_adm = 0,30·Su_électrode'];
+    } else {
+      R.kpis = [
+        { label: 'Contrainte normale σ', v: w.sig, q: 'stress', tone: tone(w.u[0]), sub: `admissible 0,60·Sy = ${valTxt(.6 * s.Sy, 'stress')}` },
+        { label: 'Contrainte de cisaillement τ', v: w.tau, q: 'stress', tone: tone(w.u[1]), sub: `admissible 0,40·Sy = ${valTxt(.4 * s.Sy, 'stress')}` },
+        { label: 'Von Mises σ_vm', v: w.svm, q: 'stress', sub: `n = Sy/σ_vm = ${fmtNum(s.Sy / w.svm, 3)}` },
+        { label: 'Facteur de sécurité', v: n, q: 'none', tone: sfTone(n, 1), sub: 'par rapport aux admissibles' }
+      ];
+      R.checks.push({ s: tone(w.u[0]), t: `Traction/flexion : σ = ${valTxt(w.sig, 'stress')} ${w.u[0] <= 1 ? '≤' : '>'} 0,60·Sy = ${valTxt(.6 * s.Sy, 'stress')}` });
+      R.checks.push({ s: tone(w.u[1]), t: `Cisaillement : τ = ${valTxt(w.tau, 'stress')} ${w.u[1] <= 1 ? '≤' : '>'} 0,40·Sy = ${valTxt(.4 * s.Sy, 'stress')}` });
+      R.checks.push({ s: 'info', t: `Longueur requise : ${valTxt(lreq, 'dim')} ; épaisseur requise : ${valTxt(sreq, 'dim')}` });
+      R.util = [{ label: 'σ / 0,60·Sy', r: w.u[0] }, { label: 'τ / 0,40·Sy', r: w.u[1] }, { label: 'σ_vm / Sy', r: w.svm / s.Sy }];
+      R.tables = [
+        { title: 'Géométrie', rows: [['Gorge (épaisseur t)', w.a, 'dim'], ['Aire A = t·l', w.A, 'area'], ['Longueur requise', lreq, 'dim'], ['Épaisseur requise', sreq, 'dim']] },
+        { title: 'Contraintes', rows: [['σ = F_n/A + 6M/(t·l²)', w.sig, 'stress'], ['τ = F_v/A', w.tau, 'stress'], ['σ_vm = √(σ² + 3τ²)', w.svm, 'stress'], ['Admissible σ 0,60·Sy', .6 * s.Sy, 'stress'], ['Admissible τ 0,40·Sy', .4 * s.Sy, 'stress']] }
+      ];
+      R.formulas = ['σ = F_n/(t·l)', 'σ_M = 6M/(t·l²)', 'τ = F_v/(t·l)', 'σ_vm = √(σ² + 3τ²)'];
+    }
+    R.schematic = weldSVG(s);
+    if (loaded) {
+      const hs = linspace(size * .35, size * 3, 80), cd = x => conv(x, 'dim');
+      const lr = hs.map(h => bisect(x => Math.max(...weldStress(s, h, x).u) - 1, 1e-5, 1e3));
+      R.charts = [{ title: fil ? 'Longueur de cordon requise selon la taille' : 'Longueur requise selon l\'épaisseur', sub: 'Toute combinaison au-dessus de la courbe est acceptable', o: {
+        height: 250, xLabel: `${fil ? 'Taille du cordon h' : 'Épaisseur t'} (${unit('dim')})`, xName: fil ? 'h' : 't', xUnit: unit('dim'), yLabel: `Longueur requise (${unit('dim')})`, yMin: 0,
+        series: [{ name: 'Longueur requise', unit: unit('dim'), color: 'var(--c1)', area: true, x: hs.map(cd), y: lr.map(cd) }],
+        markers: [{ x: cd(size), y: cd(l), color: gov <= 1 ? 'var(--ok)' : 'var(--bad)', label: 'Conception actuelle' }] } }];
+    }
+    R.summary = [{ l: 'Type', t: fil ? `Angle h = ${valTxt(size, 'dim')}` : `Bout à bout t = ${valTxt(size, 'dim')}` }, { l: 'l', v: l, q: 'dim' }, { l: 'F_n', v: s.Fn, q: 'force' }, { l: 'F_v', v: s.Fv, q: 'force' },
+      fil ? { l: 'τ_r', v: w.tr, q: 'stress' } : { l: 'σ_vm', v: w.svm, q: 'stress' }, { l: 'n', v: n, q: 'none' }];
+    return R;
+  }
+};
+
+/* =========================================================================
+   Application
+   ========================================================================= */
+const MODS = [MOD_BEAM, MOD_BOLT, MOD_COL, MOD_HYD, MOD_WELD];
+const MOD = Object.fromEntries(MODS.map(m => [m.id, m]));
+const allFields = m => m.groups.flatMap(g => g.fields);
+const defaults = m => Object.fromEntries(allFields(m).map(f => [f.id, f.def]));
+function newRes() { return { errors: [], kpis: [], checks: [], util: [], tables: [], charts: [], formulas: [], summary: [], schematic: '' }; }
+
+const saved = store.get('mc.state', {});
+const S = {};
+MODS.forEach(m => { S[m.id] = Object.assign(defaults(m), saved[m.id] || {}); });
+let HIST = store.get('mc.history', []);
+if (!Array.isArray(HIST)) HIST = [];
+let cur = store.get('mc.tab', 'beam');
+if (!MOD[cur] && cur !== 'history') cur = 'beam';
+let lastRes = null, histFilter = 'all';
+
+const ICON_HIST = '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>';
+function renderNav() {
+  const b = (id, name, icon, extra = '') => `<button data-tab="${id}" class="${cur === id ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icon}</svg>${name}${extra}</button>`;
+  $('#nav').innerHTML = '<div class="nav-lbl">Modules</div>' + MODS.map(m => b(m.id, m.name, m.icon)).join('') +
+    '<div class="nav-lbl">Données</div>' + b('history', 'Historique', ICON_HIST, `<span class="badge">${HIST.length}</span>`);
+}
+$('#nav').addEventListener('click', e => {
+  const t = e.target.closest('button[data-tab]'); if (!t) return;
+  cur = t.dataset.tab; store.set('mc.tab', cur); renderNav(); renderView(); window.scrollTo({ top: 0 });
+});
+function renderUnits() { document.querySelectorAll('#units button').forEach(b => b.classList.toggle('on', b.dataset.u === SYS)); }
+$('#units').addEventListener('click', e => {
+  const b = e.target.closest('button[data-u]'); if (!b || b.dataset.u === SYS) return;
+  SYS = b.dataset.u; store.set('mc.units', SYS); renderUnits(); renderView();
+});
+function applyTheme(t) { if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); }
+applyTheme(store.get('mc.theme', null));
+$('#theme').addEventListener('click', () => {
+  const dark = document.documentElement.getAttribute('data-theme') ? document.documentElement.getAttribute('data-theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const t = dark ? 'light' : 'dark'; applyTheme(t); store.set('mc.theme', t);
+  if (cur !== 'history') compute();
+});
+
+/* ---------- Vue module ---------- */
+function renderView() {
+  const v = $('#view');
+  if (cur === 'history') { renderHistory(); return; }
+  const m = MOD[cur];
+  $('#title').textContent = m.name; $('#desc').textContent = m.desc;
+  v.innerHTML = `<div class="layout">
+    <div class="col-in"><div class="card inputs">
+      <div class="card-h" style="padding-bottom:4px"><h3>Données d'entrée</h3>
+        <button class="btn" id="reset" title="Rétablir les valeurs par défaut"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Défaut</button></div>
+      <div id="inputs"></div>
+      <div style="padding:6px 18px 18px"><button class="btn primary" id="save" style="width:100%;justify-content:center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h8V3M8 21v-7h8v7"/></svg>Enregistrer dans l'historique</button></div>
+    </div></div>
+    <div class="stack" id="out"></div></div>`;
+  renderInputs();
+  const host = $('#inputs');
+  host.addEventListener('input', onInput);
+  host.addEventListener('change', onSelect);
+  $('#reset').onclick = () => { S[cur] = defaults(m); renderInputs(); compute(); toast('Valeurs par défaut rétablies'); };
+  $('#save').onclick = saveHistory;
+  compute();
+}
+function fieldList() { return allFields(MOD[cur]); }
+function renderInputs() {
+  const m = MOD[cur], s = S[cur];
+  $('#inputs').innerHTML = m.groups.map(g => {
+    const fs = g.fields.filter(f => !f.when || f.when(s));
+    return `<fieldset class="grp"><legend>${g.title}</legend>${fs.map(f => fieldHTML(f, s)).join('')}</fieldset>`;
+  }).join('');
+}
+function fieldHTML(f, s) {
+  const label = typeof f.label === 'function' ? f.label(s) : f.label, hint = typeof f.hint === 'function' ? f.hint(s) : f.hint;
+  const sym = f.sym ? `<span class="sym">${esc(f.sym)}</span>` : '';
+  if (f.type === 'sel') {
+    const opts = typeof f.opts === 'function' ? f.opts(s) : f.opts;
+    if (!opts.some(o => o[0] === s[f.id])) s[f.id] = opts[0][0];
+    return `<label class="fld"><span class="lbl">${esc(label)}</span><div class="selw"><select data-id="${f.id}">${opts.map(([v, l]) => `<option value="${esc(v)}"${v === s[f.id] ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</label>`;
+  }
+  const u = unit(f.q);
+  return `<label class="fld"><span class="lbl"><span>${esc(label)}</span>${sym}</span><div class="inp"><input data-id="${f.id}" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" value="${dispVal(s[f.id], f.q)}" aria-label="${esc(label)}">${u ? `<span class="u">${u}</span>` : ''}</div>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</label>`;
+}
+function onInput(e) {
+  const el = e.target; if (el.tagName !== 'INPUT') return;
+  const f = fieldList().find(x => x.id === el.dataset.id), s = S[cur];
+  const raw = el.value.trim().replace(/\s/g, '').replace(',', '.');
+  const ok = /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(raw);
+  el.parentNode.classList.toggle('bad', !ok);
+  if (!ok) return;
+  s[f.id] = parseFloat(raw) * Q[f.q || 'none'][SYS][1];
+  if (f.custom && s[f.custom] !== 'custom') { s[f.custom] = 'custom'; const se = $(`select[data-id="${f.custom}"]`); if (se) se.value = 'custom'; }
+  compute();
+}
+function onSelect(e) {
+  const el = e.target; if (el.tagName !== 'SELECT') return;
+  const f = fieldList().find(x => x.id === el.dataset.id), s = S[cur];
+  s[f.id] = el.value;
+  if (f.onChange) f.onChange(s, el.value);
+  renderInputs();
+  const again = $(`select[data-id="${f.id}"]`); if (again) again.focus();
+  compute();
+}
+let persistT;
+function compute() {
+  const m = MOD[cur], s = S[cur];
+  let R;
+  try { R = m.compute(s); } catch (err) { R = newRes(); R.errors.push('Erreur de calcul : ' + err.message); console.error(err); }
+  lastRes = R;
+  renderResults(R);
+  clearTimeout(persistT); persistT = setTimeout(() => store.set('mc.state', S), 300);
+}
+function renderResults(R) {
+  const out = $('#out'), m = MOD[cur];
+  const notes = `<div class="card"><div class="card-h"><h3>Hypothèses et limites</h3></div><div class="card-b">${R.formulas.length ? `<div class="formulas">${R.formulas.map(f => `<code>${esc(f)}</code>`).join('')}</div>` : ''}<ul class="notes">${m.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
+  if (R.errors.length) {
+    out.innerHTML = `<div class="err">Vérifiez les données d'entrée :<ul>${R.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` + notes;
+    $('#save').disabled = true; return;
+  }
+  $('#save').disabled = false;
+  const kpis = `<div class="kpis">${R.kpis.map(k => `<div class="kpi ${k.tone || ''}"><div class="kl">${esc(k.label)}</div><div class="kv">${isFinite(k.v) ? fmtNum(conv(k.v, k.q)) : '∞'}${unit(k.q) ? `<span class="ku">${unit(k.q)}</span>` : ''}</div><div class="ks">${k.sub || ''}</div></div>`).join('')}</div>`;
+  const icon = { ok: '✓', warn: '!', bad: '✕', info: 'i' };
+  const checks = `<div class="checks">${R.checks.map(c => `<div class="chk ${c.s}"><span class="dot">${icon[c.s]}</span><span>${c.t}</span></div>`).join('')}</div>`;
+  const util = R.util.length ? `<div class="util" style="margin-top:16px">${R.util.map(u => { const r = isFinite(u.r) ? u.r : 9.99; return `<div class="ut-row"><span class="ul">${esc(u.label)}</span><div class="ut-bar"><i class="${tone(r)}" style="width:${Math.min(r, 1) * 100}%"></i></div><span class="uv">${isFinite(u.r) ? fmtNum(u.r * 100, 3) + ' %' : '∞'}</span></div>`; }).join('')}</div>` : '';
+  const tables = `<div class="tables">${R.tables.map(t => `<table class="dt"><tbody><tr class="th"><td colspan="2">${esc(t.title)}</td></tr>${t.rows.map(([l, v, q, note]) => `<tr><td>${esc(l)}${note ? `<small>${esc(note)}</small>` : ''}</td><td>${valHTML(v, q)}</td></tr>`).join('')}</tbody></table>`).join('')}</div>`;
+  out.innerHTML = kpis +
+    `<div class="grid2"><div class="card"><div class="card-h"><h3>Schéma</h3></div><div class="card-b schem">${R.schematic}</div></div>
+     <div class="card"><div class="card-h"><h3>Vérifications</h3></div><div class="card-b">${checks}${util}</div></div></div>` +
+    (R.charts.length ? `<div class="card"><div class="card-h"><h3>Graphiques</h3><span style="font-size:12px;color:var(--faint)">Survolez pour lire les valeurs</span></div><div class="card-b charts">${R.charts.map((c, i) => `<div><div class="chart-t">${esc(c.title)}<span>${c.sub || ''}</span></div><div class="chart" id="ch${i}"></div></div>`).join('')}</div></div>` : '') +
+    `<div class="card"><div class="card-h"><h3>Résultats détaillés</h3></div><div class="card-b">${tables}</div></div>` + notes;
+  R.charts.forEach((c, i) => chart($('#ch' + i), c.o));
+}
+
+/* ---------- Historique ---------- */
+function saveHistory() {
+  if (!lastRes || lastRes.errors.length) return;
+  HIST.unshift({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), mod: cur, ts: Date.now(), sys: SYS, state: JSON.parse(JSON.stringify(S[cur])), summary: lastRes.summary });
+  if (HIST.length > 100) HIST.length = 100;
+  store.set('mc.history', HIST); renderNav(); toast('Calcul enregistré dans l\'historique');
+}
+function renderHistory() {
+  $('#title').textContent = 'Historique des calculs';
+  $('#desc').textContent = 'Les calculs enregistrés sont conservés dans ce navigateur. Cliquez sur « Ouvrir » pour recharger les données d\'entrée dans le module.';
+  const list = HIST.filter(h => histFilter === 'all' || h.mod === histFilter);
+  const fmtDate = ts => new Intl.DateTimeFormat('fr-CA', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(ts));
+  $('#view').innerHTML = `<div class="hist-tools">
+      <div class="selw"><select id="hf"><option value="all">Tous les modules</option>${MODS.map(m => `<option value="${m.id}"${histFilter === m.id ? ' selected' : ''}>${m.name}</option>`).join('')}</select></div>
+      <span style="flex:1"></span>
+      <button class="btn" id="hcsv"${HIST.length ? '' : ' disabled'}>Exporter CSV</button>
+      <button class="btn" id="hclr"${HIST.length ? '' : ' disabled'}>Tout effacer</button></div>
+    <div class="hist">${list.length ? list.map(h => `<div class="card he"><span class="tag">${esc(MOD[h.mod] ? MOD[h.mod].name : h.mod)}</span>
+      <div><div class="when">${fmtDate(h.ts)}</div><div class="sum">${(h.summary || []).map(x => `<span>${esc(x.l)} <b>${x.t != null ? esc(x.t) : valTxt(x.v, x.q)}</b></span>`).join('')}</div></div>
+      <div class="acts"><button class="btn" data-open="${h.id}">Ouvrir</button><button class="btn icon" data-del="${h.id}" title="Supprimer" aria-label="Supprimer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div></div>`).join('')
+      : `<div class="card empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">${ICON_HIST}</svg><div><b>Aucun calcul enregistré</b></div><div>Utilisez « Enregistrer dans l'historique » dans un module pour conserver un calcul.</div></div>`}</div>`;
+  $('#hf').onchange = e => { histFilter = e.target.value; renderHistory(); };
+  $('#hclr').onclick = () => { if (confirm('Effacer tout l\'historique ?')) { HIST = []; store.set('mc.history', HIST); renderNav(); renderHistory(); } };
+  $('#hcsv').onclick = exportCSV;
+  $('#view').querySelector('.hist').addEventListener('click', e => {
+    const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]');
+    if (o) { const h = HIST.find(x => x.id === o.dataset.open); if (!h || !MOD[h.mod]) return; S[h.mod] = Object.assign(defaults(MOD[h.mod]), h.state); cur = h.mod; store.set('mc.tab', cur); renderNav(); renderView(); toast('Calcul rechargé'); }
+    if (d) { HIST = HIST.filter(x => x.id !== d.dataset.del); store.set('mc.history', HIST); renderNav(); renderHistory(); }
+  });
+}
+function exportCSV() {
+  const q = v => '"' + String(v).replace(/"/g, '""') + '"';
+  const rows = [['Date', 'Module', 'Résumé'].map(q).join(';')];
+  HIST.forEach(h => rows.push([new Date(h.ts).toISOString(), MOD[h.mod] ? MOD[h.mod].name : h.mod, (h.summary || []).map(x => `${x.l} = ${x.t != null ? x.t : valTxt(x.v, x.q)}`).join(' | ')].map(q).join(';')));
+  const blob = new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'mecacalc-historique.csv'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+renderNav(); renderUnits(); renderView();
+</script>
+</body>
+</html>
