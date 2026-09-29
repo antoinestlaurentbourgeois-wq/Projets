@@ -14,6 +14,6 @@ Fonctionnalités : unités métriques / impériales (bascule globale), calcul in
 
 ## Utilisation
 
-Ouvrir `index.html` dans un navigateur. Aucune installation requise (fonctionne hors ligne ; la police Inter est chargée depuis Google Fonts si disponible).
+Ouvrir `index.html` dans un navigateur. Aucune installation requise. Le fichier fonctionne hors ligne et ne contacte aucun serveur : rien n'est chargé ni envoyé sur Internet.
 
 > Outil d'aide au calcul préliminaire : les résultats doivent être validés selon les normes applicables.
