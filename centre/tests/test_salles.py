@@ -571,3 +571,50 @@ def test_les_salles_rafraichissent_les_etats_sans_la_page_centre(centre, simulat
     reseau.repondre(URL_GEMMA, lambda c, e: sse("ok"))
     evts, _ = envoyer(centre, "crew", "salut")
     assert evts[0]["t"] == "erreur" and "éteint" in evts[0]["message"]
+
+
+def sse_crew(*morceaux, usage):
+    """Flux Crew réel : dernier morceau `choices: []` avec `usage` (dont cout_usd), puis [DONE]."""
+    lignes = []
+    for m in morceaux:
+        lignes += ["data: " + json.dumps({"choices": [{"delta": {"content": m}}]}), ""]
+    lignes += ["data: " + json.dumps({"object": "chat.completion.chunk", "choices": [], "usage": usage}), "", "data: [DONE]", ""]
+    return 200, iter(lignes)
+
+
+def test_crew_cout_reel_depuis_usage(centre, simulateur, reseau):
+    allumer(centre, simulateur)
+    usage = {"prompt_tokens": 210, "completion_tokens": 123, "total_tokens": 333, "cout_usd": 0.0042,
+             "appels": [{"modele": "deepseek/deepseek-flash", "local": False, "entree": 210, "sortie": 123, "cout_usd": 0.0042}]}
+    reseau.repondre(URL_CREW, lambda c, e: sse_crew("Salut", usage=usage))
+    evts, conv = envoyer(centre, "crew", "q")
+    assert conv["messages"][-1]["cout_usd"] == 0.0042                      # exact, pas une estimation
+    assert centre.couts.totaux()["aujourdhui"]["par_ia"]["crew"] == pytest.approx(0.0042, abs=1e-4)
+    assert "coût réel Crew" in [e for e in evts if e["t"] == "cout"][0]["texte"]
+    assert json.loads(open(centre.config.chemin("depenses.jsonl")).read().splitlines()[-1])["estime"] is False
+
+
+def test_crew_appel_local_ne_coute_rien(centre, simulateur, reseau):
+    allumer(centre, simulateur)
+    reseau.repondre(URL_CREW, lambda c, e: sse_crew("ok", usage={"prompt_tokens": 5, "completion_tokens": 5, "cout_usd": 0.0, "appels": []}))
+    evts, conv = envoyer(centre, "crew", "q")
+    assert conv["messages"][-1]["cout_usd"] == 0 and centre.couts.totaux()["aujourdhui"]["total"] == 0
+    assert [e for e in evts if e["t"] == "cout"][0]["texte"] == "Gratuit (local)"
+
+
+def test_crew_consulte_la_memoire_lui_meme(centre, simulateur, reseau):
+    allumer(centre, simulateur)
+    reseau.repondre(URL_CREW, lambda c, e: sse_crew("ok", usage={"prompt_tokens": 1, "completion_tokens": 1, "cout_usd": 0.0}))
+    _, conv = envoyer(centre, "crew", "contrat client Durand prix secret", memoire=True)
+    envoye = json.dumps(reseau.appels[-1][2])
+    assert "12000" not in envoye and "[Mémoire" not in envoye               # le Centre n'ajoute pas d'extraits : Crew s'en charge
+    assert conv["prive"] is False and "Crew consulte lui-même" in conv["messages"][0]["contexte"][0]["message"]
+
+
+def test_memoire_delai_long_pour_la_premiere_recherche(centre, simulateur, monkeypatch):
+    allumer(centre, simulateur)
+    vus = []
+    original = simulateur.http
+    simulateur.http = lambda m, u, delai, entetes=None, corps_json=None: (vus.append((u, delai)) or original(m, u, delai, entetes, corps_json))
+    centre.salles.memoire.chercher("couple serrage vis")
+    assert [d for u, d in vus if "chercher" in u] == [60]

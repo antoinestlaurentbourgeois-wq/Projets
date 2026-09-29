@@ -19,15 +19,24 @@ class Memoire:
     def __init__(self, centre):
         self.centre = centre
 
+    DELAI = 60      # la première recherche charge les modèles sur la carte graphique (~10 s)
+
     def _appel(self, methode, url, corps=None):
-        from .service import ErreurService
-        crew_actif = self.centre.etats["crew"].code == self.centre.L.ACTIF
-        if not crew_actif:
+        c = self.centre
+        if c.etats["crew"].code != c.L.ACTIF:
             return None, "Crew est éteint : la mémoire n'est pas disponible."
+        R = c.L.R
+        cle = c.C.analyser_env(c.sys.lire_fichier(R.FICHIER_ENV_CREW), R.NOM_CLE_CREW)
+        if not cle:
+            return None, f"Clé {R.NOM_CLE_CREW} introuvable."
         try:
-            statut, texte = self.centre.crew._appel(methode, url, corps)
-        except self.centre.C.ErreurCrew as e:
-            return None, str(e)
+            statut, texte = c.sys.http(methode, url, self.DELAI, {"Authorization": "Bearer " + cle}, corps)
+        finally:
+            del cle
+        if statut is None:
+            return None, "Crew ne répond pas."
+        if statut in (401, 403):
+            return None, "Clé Crew refusée."
         if statut == 404:
             return None, "La mémoire n'est pas encore exposée par le serveur Crew."
         if statut != 200:

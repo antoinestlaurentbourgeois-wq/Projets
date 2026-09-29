@@ -121,8 +121,9 @@ class OpenAICompat:
                 if texte:
                     yield {"t": "delta", "texte": texte}
         if usage:
-            yield {"t": "usage", "entree": int(usage.get("prompt_tokens") or 0),
-                   "sortie": int(usage.get("completion_tokens") or 0), "cout_usd": None}
+            cout = usage.get("cout_usd")               # fourni par Crew : coût RÉEL calculé chez lui
+            yield {"t": "usage", "entree": int(usage.get("prompt_tokens") or 0), "sortie": int(usage.get("completion_tokens") or 0),
+                   "cout_usd": float(cout) if isinstance(cout, (int, float)) and not isinstance(cout, bool) else None}
         yield {"t": "fin", "annule": annule}
 
     def lister_modeles(self, url_modeles):

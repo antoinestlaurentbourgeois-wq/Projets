@@ -81,3 +81,5 @@ Puis suivez `VERIFICATIONS.md`, `VERIFICATIONS-phase2.md` … `VERIFICATIONS-pha
 - Réglages : variables d'environnement `CENTRE_PANNEAU` (dossier du panneau), `CENTRE_DONNEES` (dossier des données),
   `CENTRE_HOTES` (noms d'hôte supplémentaires acceptés, pour Tailscale en phase 4).
 - **Licence GLAMMBOX :** aucun code de GLAMMBOX n'est utilisé en phase 1 (voir `INCONNUS.md`).
+
+**Crew :** le coût de la salle Crew est le coût **réel** renvoyé par Crew (`usage.cout_usd`). Crew consulte lui-même la mémoire avant chaque tâche : la case « Utiliser la mémoire » n'ajoute donc rien dans la salle Crew. La première recherche en mémoire peut prendre ~10 s (chargement des modèles).

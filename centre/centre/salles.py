@@ -466,7 +466,10 @@ class Salles:
                 prive = True
             blocs.append(f"[Tiroir : {e['titre']}]\n{e['texte']}")
             contexte.append({"type": "tiroir", "id": e["id"], "titre": e["titre"], "zone": e["zone"]})
-        if options.get("memoire"):
+        if options.get("memoire") and salle == "crew":
+            contexte.append({"type": "memoire", "chemin": None, "zone": None,
+                             "message": "Crew consulte lui-même la mémoire avant chaque tâche (privé gardé en local)."})
+        elif options.get("memoire"):
             passages, msg = self.memoire.chercher(texte, 5, nuage=nuage)
             for p in passages:
                 if p["zone"] != ZONE_PARTAGEABLE:
@@ -624,6 +627,10 @@ class Salles:
                    (salle == "crew" and (prive or self.mode_crew() in MODES_CREW_LOCAUX)))
         e = usage["entree"] if usage and usage.get("entree") else jetons(sum(len(m["content"]) for m in req.messages) + len(req.systeme))
         s = usage["sortie"] if usage and usage.get("sortie") else jetons(reponse)
+        if salle == "crew" and usage and isinstance(usage.get("cout_usd"), (int, float)):
+            usd = float(usage["cout_usd"])           # coût réel renvoyé par Crew (0 pour les appels locaux)
+            return {"usd": round(usd, 6), "estime": False, "detail": f"{e}+{s} jetons",
+                    "texte": "Gratuit (local)" if usd == 0 else f"{usd:.4f} $ (coût réel Crew)"}
         if gratuit:
             texte = "Gratuit (local)" if salle in ("gemma", "crew") else "Inclus dans l'abonnement"
             return {"usd": 0.0, "estime": False, "detail": f"{e}+{s} jetons", "texte": texte}

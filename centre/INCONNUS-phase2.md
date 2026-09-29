@@ -33,7 +33,7 @@
     Gemini (compatibilité OpenAI) `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`. Toutes supposées compatibles OpenAI avec `stream_options.include_usage`.
 11. **Grok « par abonnement ».** Le cockpit GLAMMBOX n'a pas pu être lu ; conformément au retour local, Grok passe par `XAI_API_KEY` (API officielle).
 12. **Tarifs au jeton** : les valeurs par défaut sont des **placeholders** non vérifiés (`PRIX_DEFAUT`). L'interface les marque « indicatif, non vérifié » jusqu'à ce que vous les régliez dans Coûts.
-13. **Coût de Crew.** Crew n'expose pas ses dépenses ; j'estime d'après le nombre de caractères (ou l'usage si le serveur le renvoie) au prix indicatif « crew », sauf en modes locaux (gratuit).
+13. **(RÉSOLU) Coût de Crew.** Le Centre utilise maintenant le `usage.cout_usd` réel renvoyé par Crew (dernier morceau du flux, ou `usage` sans flux) : plus d'estimation. Ancien texte :  Crew n'expose pas ses dépenses ; j'estime d'après le nombre de caractères (ou l'usage si le serveur le renvoie) au prix indicatif « crew », sauf en modes locaux (gratuit).
     Le journal de `/travaux` (« Aiguillage … → DeepSeek Flash ») pourrait affiner ça : à ajouter côté Crew si vous voulez un champ de coût.
 14. **Crew et contenu privé.** Pour un contenu privé je demande le modèle `crew-confidentiel` à `/v1/chat/completions` (jamais `crew-normal`). Je suppose que ce nom de modèle force bien le traitement 100 % local.
 15. **Abonnements et plafonds.** Une salle « abonnement » compte 0 $ de dépense, mais est quand même **bloquée** quand un plafond est atteint (prudence).
