@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2456d6">
+<title>Centre de contrôle</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/s/icone.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/s/icone-192.png">
+<link rel="stylesheet" href="/s/style.css">
+</head>
+<body>
+<header class="haut">
+  <h1>Centre de contrôle</h1>
+  <nav class="onglets" id="onglets" aria-label="Pages">
+    <button data-page="centre">Centre</button>
+    <button data-page="couts">Coûts</button>
+    <button data-page="journal">Journal</button>
+  </nav>
+  <button class="bouton" id="deconnexion">Se déconnecter</button>
+</header>
+<main id="page" aria-live="polite"></main>
+<dialog id="dialogue"><h3 id="dialogue-titre"></h3><p id="dialogue-texte"></p><div class="boutons" id="dialogue-boutons"></div></dialog>
+<script src="/s/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2456d6">
+<title>Centre de contrôle : connexion</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/s/icone.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/s/icone-192.png">
+<link rel="stylesheet" href="/s/style.css">
+</head>
+<body>
+<main class="connexion-page">
+  <h1>Centre de contrôle</h1>
+  <div id="non-defini" class="bandeau erreur cache">
+    <strong>Le verrou n'est pas encore défini.</strong>
+    Sur le PC, double-cliquez sur <code>definir_verrou.bat</code> (dossier <code>scripts</code>) pour choisir
+    votre NIP et votre mot secret, puis rechargez cette page.
+  </div>
+  <form id="formulaire" class="carte" autocomplete="off">
+    <label class="champ"><span>NIP (chiffres)</span>
+      <input id="nip" type="password" inputmode="numeric" autocomplete="off" required></label>
+    <label class="champ"><span>Mot secret</span>
+      <input id="secret" type="password" autocomplete="off" required></label>
+    <div id="erreur" class="bandeau erreur cache" role="alert"></div>
+    <button id="envoyer" class="bouton principal" type="submit">Se connecter</button>
+  </form>
+  <p class="doux">Cette page n'est accessible que depuis ce PC, ou par votre réseau privé Tailscale.</p>
+</main>
+<script src="/s/connexion.js"></script>
+</body>
+</html>
