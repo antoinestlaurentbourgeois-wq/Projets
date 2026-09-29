@@ -5,7 +5,8 @@ Une seule application, dans votre navigateur (et plus tard sur votre téléphone
 **Phase 2 :** les **Salles** (une par IA : Crew, Claude, ChatGPT/Codex, Gemini, Grok, DeepSeek, gemma) et le **Tiroir** partagé.
 **Phase 3 :** la **Voix** : conversation en direct (OpenAI Realtime ou Grok Voice, voix du nuage) avec outils pour consulter toutes les salles et la mémoire,
 et talkie-walkie (appuyer pour parler). Coût en direct, coupure automatique au plafond, désactivée en modes Confidentiel/Ultra.
-L'accès téléphone (phase 4) et les extras (phase 5) viennent ensuite.
+**Phase 4 :** l'**accès téléphone** par Tailscale Serve (HTTPS, réseau privé seulement) : voir `TELEPHONE.md` et la revue `SECURITE-TELEPHONE.md`.
+Les extras (phase 5) viennent ensuite.
 
 Le panneau tkinter reste en place et fonctionne toujours : c'est votre solution de secours.
 

@@ -46,7 +46,15 @@
     if (signal) opts.signal = signal;
     return fetch(url, opts).then(function (r) {
       if (r.status === 401) { location.replace("/connexion"); throw new Error("session"); }
-      if (!r.ok) return r.json().catch(function () { return {}; }).then(function (d) { throw new Error(d.erreur || ("Erreur " + r.status)); });
+      if (!r.ok) return r.json().catch(function () { return {}; }).then(function (d) {
+        if (r.status === 403 && d.nip_requis && !opts._nip) {      // appareil distant : NIP à confirmer, puis on recommence
+          return C.demanderNip().then(function (ok) {
+            if (!ok) throw new Error("NIP non confirmé : action annulée.");
+            return lireFlux(url, Object.assign({}, opts, { _nip: true }), surEvenement, signal);
+          });
+        }
+        throw new Error(d.erreur || ("Erreur " + r.status));
+      });
       var lecteur = r.body.getReader(), dec = new TextDecoder(), tampon = "";
       function pomper() {
         return lecteur.read().then(function (x) {

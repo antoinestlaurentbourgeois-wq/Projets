@@ -41,6 +41,8 @@ class Verrou:
         self.duree_session = duree_session
         self.horloge = horloge
         self._sessions = {}           # empreinte du jeton -> instant d'expiration
+        self._meta = {}               # empreinte du jeton -> {debut, distant, agent}
+        self._nip_ok = {}             # empreinte du jeton -> instant jusqu'auquel le NIP est « confirmé »
         self._echecs = 0
         self._bloque_jusqua = 0.0
         self._verrou = threading.Lock()
@@ -78,6 +80,8 @@ class Verrou:
         os.replace(temporaire, self.chemin)
         with self._verrou:
             self._sessions.clear()    # un changement de secret déconnecte tout le monde
+            self._meta.clear()
+            self._nip_ok.clear()
             self._echecs = 0
             self._bloque_jusqua = 0.0
 
@@ -86,7 +90,7 @@ class Verrou:
     def attente_restante(self):
         return max(0, int(self._bloque_jusqua - self.horloge() + 0.999))
 
-    def connexion(self, nip, secret):
+    def connexion(self, nip, secret, meta=None):
         """Renvoie un jeton de session, ou lève ErreurVerrou (message sans détail sur ce qui est faux)."""
         if not self.est_defini():
             raise ErreurVerrou("Le verrou n'est pas encore défini sur le PC.")
@@ -113,7 +117,10 @@ class Verrou:
             self._bloque_jusqua = 0.0
             jeton = secrets.token_urlsafe(32)
             self._purger()
-            self._sessions[self._hacher(jeton)] = self.horloge() + self.duree_session
+            h = self._hacher(jeton)
+            self._sessions[h] = self.horloge() + self.duree_session
+            m = dict(meta or {})
+            self._meta[h] = {"debut": self.horloge(), "distant": bool(m.get("distant")), "agent": str(m.get("agent", ""))[:120]}
             return jeton
 
     @staticmethod
@@ -123,9 +130,14 @@ class Verrou:
     def _purger(self):
         maintenant = self.horloge()
         for h in [h for h, fin in self._sessions.items() if fin <= maintenant]:
-            del self._sessions[h]
+            self._oublier(h)
 
     # ----- sessions -----------------------------------------------------------
+
+    def _oublier(self, h):
+        self._sessions.pop(h, None)
+        self._meta.pop(h, None)
+        self._nip_ok.pop(h, None)
 
     def session_valide(self, jeton):
         if not jeton:
@@ -135,7 +147,7 @@ class Verrou:
             if fin is None:
                 return False
             if fin <= self.horloge():
-                del self._sessions[self._hacher(jeton)]
+                self._oublier(self._hacher(jeton))
                 return False
             return True
 
@@ -145,4 +157,55 @@ class Verrou:
 
     def deconnexion(self, jeton):
         with self._verrou:
-            self._sessions.pop(self._hacher(jeton or ""), None)
+            self._oublier(self._hacher(jeton or ""))
+
+    # ----- confirmation du NIP (actions sensibles depuis un appareil distant) ------------------------------
+
+    DUREE_NIP = 300
+
+    def confirmer_nip(self, jeton, nip):
+        """Vérifie le NIP d'une session ouverte ; valable 5 minutes. Un échec compte comme un échec de connexion."""
+        if not self.session_valide(jeton):
+            raise ErreurVerrou("Session expirée.")
+        with self._verrou:
+            reste = self.attente_restante()
+            if reste:
+                raise ErreurVerrou(f"Trop d'essais. Patientez {reste} s avant de réessayer.")
+        try:
+            with open(self.chemin, encoding="utf-8") as f:
+                d = json.load(f)
+            ok = hmac.compare_digest(_empreinte(str(nip or ""), bytes.fromhex(d["sel_nip"])).hex(), d["nip"])
+        except (OSError, ValueError, KeyError):
+            raise ErreurVerrou("Fichier du verrou illisible.")
+        with self._verrou:
+            if not ok:
+                self._echecs += 1
+                if self._echecs >= ESSAIS_AVANT_ATTENTE:
+                    self._bloque_jusqua = self.horloge() + min(ATTENTE_MAX, ATTENTE_BASE * 2 ** (self._echecs - ESSAIS_AVANT_ATTENTE))
+                raise ErreurVerrou("NIP incorrect.")
+            self._echecs = 0
+            self._nip_ok[self._hacher(jeton)] = self.horloge() + self.DUREE_NIP
+
+    def nip_recent(self, jeton):
+        with self._verrou:
+            fin = self._nip_ok.get(self._hacher(jeton or ""))
+            return bool(fin and fin > self.horloge())
+
+    # ----- appareils connectés ---------------------------------------------------------------------------------
+
+    def sessions(self, jeton_courant=None):
+        courant = self._hacher(jeton_courant) if jeton_courant else None
+        with self._verrou:
+            self._purger()
+            return sorted(({"id": h[:8], "debut": m["debut"], "distant": m["distant"], "agent": m["agent"],
+                            "courante": h == courant, "expire": self._sessions[h]} for h, m in self._meta.items()
+                           if h in self._sessions), key=lambda x: -x["debut"])
+
+    def deconnecter_autres(self, jeton_courant):
+        """Ferme toutes les sessions sauf la courante. Renvoie le nombre de sessions fermées."""
+        garde = self._hacher(jeton_courant or "")
+        with self._verrou:
+            autres = [h for h in self._sessions if h != garde]
+            for h in autres:
+                self._oublier(h)
+            return len(autres)

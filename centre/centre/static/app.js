@@ -23,14 +23,35 @@
   }
   function vider(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
-  function api(methode, url, corps) {
+  function api(methode, url, corps, dejaNip) {
     var opts = { method: methode, credentials: "same-origin", headers: { "X-Centre": "1" } };
     if (corps !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(corps); }
     return fetch(url, opts).then(function (r) {
       if (r.status === 401) { location.replace("/connexion"); return Promise.reject(new Error("session")); }
       return r.json().catch(function () { return {}; }).then(function (d) {
-        if (!r.ok) { var e = new Error(d.erreur || ("Erreur " + r.status)); e.statut = r.status; e.donnees = d; throw e; }
+        if (!r.ok) {
+          if (r.status === 403 && d.nip_requis && !dejaNip) {     // appareil distant : confirmer le NIP puis recommencer
+            return demanderNip().then(function (ok) {
+              if (!ok) throw new Error("NIP non confirmé : action annulée.");
+              return api(methode, url, corps, true);
+            });
+          }
+          var e = new Error(d.erreur || ("Erreur " + r.status)); e.statut = r.status; e.donnees = d; throw e;
+        }
         return d;
+      });
+    });
+  }
+
+  // Confirmation du NIP (valable 5 minutes), demandée seulement sur un appareil distant pour les actions sensibles.
+  function demanderNip() {
+    return formulaire("Confirmez votre NIP", "Cette action est sensible et vous êtes connecté à distance. Entrez votre NIP (valable 5 minutes).",
+      [{ nom: "nip", label: "NIP", type: "password" }], "Confirmer").then(function (v) {
+      if (!v || !v.nip) return false;
+      return fetch("/api/confirmer-nip", { method: "POST", credentials: "same-origin", headers: { "X-Centre": "1", "Content-Type": "application/json" },
+        body: JSON.stringify({ nip: v.nip }) }).then(function (r) {
+        if (r.ok) return true;
+        return r.json().catch(function () { return {}; }).then(function (d) { return informer("NIP refusé", d.erreur || "NIP incorrect.").then(function () { return false; }); });
       });
     });
   }
@@ -91,7 +112,7 @@
 
   // ---------------------------------------------------------------- pages
   var page = document.getElementById("page");
-  var Centre = window.Centre = { pages: {}, h: h, vider: vider, api: api, demander: demander, informer: informer,
+  var Centre = window.Centre = { pages: {}, h: h, vider: vider, api: api, demanderNip: demanderNip, demander: demander, informer: informer,
     confirmer: confirmer, formulaire: formulaire, dollars: dollars, page: page, aller: function (n) { aller(n); },
     courante: function () { return pageCourante; }, arreterMinuterie: function () { clearTimeout(minuterie); } };
   var pageCourante = null;
@@ -433,12 +454,33 @@
     }).catch(function (e) { el.textContent = e.message; });
   }
 
+  function carteSecurite(sec, zone) {
+    var lignes = sec.sessions.map(function (x) {
+      return h("tr", null, h("td", null, x.agent || "(navigateur inconnu)", x.courante ? h("span", { class: "badge partageable", texte: "cet appareil" }) : null),
+        h("td", { texte: x.distant ? "à distance" : "sur le PC" }), h("td", { texte: new Date(x.debut * 1000).toLocaleString("fr-CA") }));
+    });
+    return h("div", { class: "carte" }, h("h2", { texte: "Sécurité et appareils connectés" }),
+      h("p", { class: "doux", texte: (sec.distant ? "Vous êtes connecté à distance. " : "Vous êtes sur le PC. ") +
+        (sec.hotes_autorises.length ? "Accès distant autorisé pour : " + sec.hotes_autorises.join(", ") + (sec.identite_exigee ? " (identité Tailscale exigée" + (sec.utilisateurs_tailscale.length ? " : " + sec.utilisateurs_tailscale.join(", ") : "") + ")." : " — identité Tailscale NON exigée.") : "Aucun accès distant configuré (le Centre n'est joignable que depuis ce PC).") }),
+      lignes.length ? h("table", { class: "tab" }, h("thead", null, h("tr", null, h("th", { texte: "Appareil" }), h("th", { texte: "Depuis" }), h("th", { texte: "Ouverte le" }))), h("tbody", null, lignes)) : null,
+      h("button", { class: "bouton danger", type: "button", disabled: sec.sessions.length < 2, texte: "Déconnecter tous les autres appareils", onclick: function () {
+        confirmer("Déconnecter les autres appareils ?", "Toutes les sessions ouvertes, sauf celle-ci, seront fermées. Elles devront se reconnecter avec le NIP et le mot secret.", "Déconnecter", "danger").then(function (ok) {
+          if (!ok) return;
+          return api("POST", "/api/securite/deconnecter-autres", {}).then(function (r) { return informer("Fait", r.fermees + " session(s) fermée(s)."); }).then(function () { vider(zone); pageJournalDans(zone); });
+        }).catch(function (e) { if (e.message !== "session") informer("Impossible", e.message); });
+      } }));
+  }
+
   // ------------------------------------------------ page Journal
   function pageJournal() {
     var zone = h("div");
     page.appendChild(zone);
-    Promise.all([api("GET", "/api/recus"), api("GET", "/api/journal")]).then(function (r) {
-      var recus = r[0].recus, lignes = r[1].lignes;
+    pageJournalDans(zone);
+  }
+  function pageJournalDans(zone) {
+    Promise.all([api("GET", "/api/recus"), api("GET", "/api/journal"), api("GET", "/api/securite")]).then(function (r) {
+      var recus = r[0].recus, lignes = r[1].lignes, sec = r[2];
+      zone.appendChild(carteSecurite(sec, zone));
       zone.appendChild(h("div", { class: "carte" }, h("h2", { texte: "Reçus (actions récentes)" }),
         recus.length ? h("table", { class: "tab" }, h("tbody", null, recus.map(function (x) {
           return h("tr", null, h("td", { texte: x.ts.replace("T", " ").slice(0, 19) }), h("td", { texte: x.action }),

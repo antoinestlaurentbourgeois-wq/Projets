@@ -61,6 +61,10 @@ class Config:
     atelier: str = ""
     # Chemins des programmes officiels, si le PATH ne suffit pas (réglages.json, jamais modifiable par le navigateur).
     chemins_programmes: dict = field(default_factory=dict)
+    # Accès distant (Tailscale Serve, phase 4) : toute requête venant d'un nom d'hôte distant doit porter l'identité
+    # Tailscale (en-tête ajouté par « tailscale serve », jamais par « funnel » ni par Internet).
+    exiger_identite_tailscale: bool = True
+    utilisateurs_tailscale: tuple = ()
 
     def __post_init__(self):
         if not self.atelier:
@@ -76,6 +80,10 @@ class Config:
             if isinstance(r.get("hotes_autorises"), list):
                 extra = tuple(str(h).strip().lower() for h in r["hotes_autorises"] if str(h).strip())
                 self.hotes_autorises = tuple(dict.fromkeys(self.hotes_autorises + extra))
+            if isinstance(r.get("utilisateurs_tailscale"), list):
+                self.utilisateurs_tailscale = tuple(str(u).strip().lower() for u in r["utilisateurs_tailscale"] if str(u).strip())
+            if r.get("exiger_identite_tailscale") is False:
+                self.exiger_identite_tailscale = False
             if isinstance(r.get("atelier"), str) and r["atelier"].strip() and not os.environ.get("CENTRE_ATELIER"):
                 self.atelier = r["atelier"].strip()
             if isinstance(r.get("chemins_programmes"), dict):

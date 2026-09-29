@@ -98,6 +98,7 @@ def test_hote_tailscale_autorise_seulement_si_configure(centre, verrou):
     centre.config.hotes_autorises = ("pc.tail1234.ts.net",)
     c = TestClient(creer_app(centre, verrou), base_url="https://pc.tail1234.ts.net")
     c.headers["X-Centre"] = "1"
+    c.headers["Tailscale-User-Login"] = "moi@example.com"
     assert c.post("/api/connexion", json={"nip": NIP, "secret": SECRET}).status_code == 200
     assert c.get("/api/etat").status_code == 200
 

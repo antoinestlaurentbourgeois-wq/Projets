@@ -54,6 +54,9 @@ ENTETES_SECURITE = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
+    "Permissions-Policy": "microphone=(self), camera=(), geolocation=(), payment=(), usb=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
 }
 
 
@@ -71,13 +74,30 @@ class Garde:
     def __init__(self, app, verrou, config):
         self.app, self.verrou, self.config = app, verrou, config
         p = config.port
-        self.hotes = {f"127.0.0.1:{p}", f"localhost:{p}", *config.hotes_autorises}
+        self.locaux = {f"127.0.0.1:{p}", f"localhost:{p}"}
+        self.hotes = self.locaux | set(config.hotes_autorises)
 
     def _hote_ok(self, hote):
         hote = hote.lower()
         return hote in self.hotes or hote.split(":")[0] in self.config.hotes_autorises
 
+    def _identite_ok(self, scope, hote):
+        """Accès distant : l'identité Tailscale (ajoutée par « tailscale serve ») est exigée. Une exposition publique par
+        erreur (« tailscale funnel », redirection de port…) n'apporte pas cet en-tête : elle est donc refusée."""
+        if hote.lower() in self.locaux or not self.config.exiger_identite_tailscale:
+            return True
+        login = _entete(scope, "tailscale-user-login").strip().lower()
+        if not login:
+            return False
+        autorises = self.config.utilisateurs_tailscale
+        return not autorises or login in autorises
+
     async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            hote = _entete(scope, "host")
+            scope["centre_distant"] = hote.lower() not in self.locaux
+            if scope["centre_distant"] and scope["type"] == "http":
+                send = self._avec_hsts(send)
         if scope["type"] == "websocket":
             return await self._websocket(scope, receive, send)
         if scope["type"] != "http":
@@ -87,6 +107,8 @@ class Garde:
         methode = scope["method"]
         if not self._hote_ok(hote):
             return await self._refuser(scope, receive, send, 421, "Adresse non autorisée.")
+        if not self._identite_ok(scope, hote):
+            return await self._refuser(scope, receive, send, 403, "Accès refusé.")
         if methode not in ("GET", "HEAD", "OPTIONS"):
             origine = _entete(scope, "origin")
             if _entete(scope, "x-centre") != "1" or (origine and urlparse(origine).netloc.lower() != hote.lower()):
@@ -99,6 +121,15 @@ class Garde:
             return await self._refuser(scope, receive, send, 401, "Connexion requise.")
         await self.app(scope, receive, send)
 
+    @staticmethod
+    def _avec_hsts(send):
+        async def envoyer(message):
+            if message["type"] == "http.response.start":
+                message.setdefault("headers", [])
+                message["headers"] = list(message["headers"]) + [(b"strict-transport-security", b"max-age=31536000")]
+            await send(message)
+        return envoyer
+
     async def _websocket(self, scope, receive, send):
         """Une WebSocket n'est acceptée que si : hôte connu, origine = hôte (contre le « cross-site WebSocket
         hijacking »), session valide. Sinon la poignée de main est refusée avant tout échange."""
@@ -106,8 +137,8 @@ class Garde:
         origine = _entete(scope, "origin")
         jeton = self._jeton(scope)
         scope["centre_jeton"] = jeton
-        ok = (self._hote_ok(hote) and origine and urlparse(origine).netloc.lower() == hote.lower()
-              and self.verrou.session_valide(jeton))
+        ok = (self._hote_ok(hote) and self._identite_ok(scope, hote) and origine
+              and urlparse(origine).netloc.lower() == hote.lower() and self.verrou.session_valide(jeton))
         if not ok:
             await receive()                                  # message « websocket.connect »
             return await send({"type": "websocket.close", "code": 1008})
@@ -183,7 +214,8 @@ def creer_app(centre=None, verrou=None, config=None):
         if d is None:
             return _erreur("Requête illisible.")
         try:
-            jeton = await run_in_threadpool(verrou.connexion, str(d.get("nip", "")), str(d.get("secret", "")))
+            meta = {"distant": bool(request.scope.get("centre_distant")), "agent": request.headers.get("user-agent", "")}
+            jeton = await run_in_threadpool(verrou.connexion, str(d.get("nip", "")), str(d.get("secret", "")), meta)
         except ErreurVerrou as e:
             centre.recus.ajouter("connexion", "refusee", motif=str(e))
             journal.warning("Connexion refusée : %s", e)
@@ -194,6 +226,40 @@ def creer_app(centre=None, verrou=None, config=None):
         rep.set_cookie(COOKIE, jeton, max_age=config.duree_session, httponly=True, samesite="strict",
                        secure=secure, path="/")
         return rep
+
+    def sensible(request):
+        """Depuis un appareil distant, une action sensible exige un NIP confirmé dans les 5 dernières minutes."""
+        if request.scope.get("centre_distant") and not verrou.nip_recent(request.scope.get("centre_jeton")):
+            centre.recus.ajouter("nip_requis", "refuse", chemin=request.url.path, session=session_courte(request))
+            return _json({"erreur": "Confirmez votre NIP pour cette action.", "nip_requis": True}, 403)
+        return None
+
+    async def api_confirmer_nip(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            await run_in_threadpool(verrou.confirmer_nip, request.scope.get("centre_jeton"), str(d.get("nip", "")))
+        except ErreurVerrou as e:
+            centre.recus.ajouter("confirmation_nip", "refusee", session=session_courte(request))
+            return _erreur(str(e), 429 if "Patientez" in str(e) else 401, attente=verrou.attente_restante())
+        centre.recus.ajouter("confirmation_nip", "ok", session=session_courte(request))
+        return _json({"ok": True, "duree": verrou.DUREE_NIP})
+
+    async def api_securite(request):
+        jeton = request.scope.get("centre_jeton")
+        return _json({"sessions": verrou.sessions(jeton), "distant": bool(request.scope.get("centre_distant")),
+                      "hotes_autorises": list(config.hotes_autorises), "identite_exigee": config.exiger_identite_tailscale,
+                      "utilisateurs_tailscale": list(config.utilisateurs_tailscale),
+                      "nip_confirme": verrou.nip_recent(jeton)})
+
+    async def api_deconnecter_autres(request):
+        refus = sensible(request)
+        if refus:
+            return refus
+        n = verrou.deconnecter_autres(request.scope.get("centre_jeton"))
+        centre.recus.ajouter("deconnexion_des_autres", "ok", nombre=n, session=session_courte(request))
+        return _json({"fermees": n})
 
     async def api_deconnexion(request):
         verrou.deconnexion(request.scope.get("centre_jeton"))
@@ -215,6 +281,9 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json({"liees": liees})
 
     async def api_action_lancer(request):
+        refus = sensible(request)
+        if refus:
+            return refus
         d = await _corps(request)
         if d is None:
             return _erreur("Requête illisible.")
@@ -232,6 +301,9 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json(await run_in_threadpool(centre.lire_mode))
 
     async def api_mode_changer(request):
+        refus = sensible(request)
+        if refus:
+            return refus
         d = await _corps(request)
         if d is None or not isinstance(d.get("mode"), str):
             return _erreur("Mode manquant.")
@@ -244,6 +316,9 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json(await run_in_threadpool(centre.moteurs))
 
     async def api_ouvrir(request):
+        refus = sensible(request)
+        if refus:
+            return refus
         d = await _corps(request)
         if d is None or not isinstance(d.get("ident"), str):
             return _erreur("Application manquante.")
@@ -265,6 +340,9 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json(await run_in_threadpool(couts_complet))
 
     async def api_couts_plafonds(request):
+        refus = sensible(request)
+        if refus:
+            return refus
         d = await _corps(request)
         if d is None:
             return _erreur("Requête illisible.")
@@ -327,6 +405,9 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json(await run_in_threadpool(faire))
 
     async def api_salle_reglage(request):
+        refus = sensible(request)
+        if refus:
+            return refus
         d = await _corps(request)
         if d is None:
             return _erreur("Requête illisible.")
@@ -390,6 +471,9 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json({"id": c["id"], "titre": c["titre"]})
 
     async def api_conversation_supprimer(request):
+        refus = sensible(request)
+        if refus:
+            return refus
         cid = request.path_params["cid"]
         if cid in salles.en_cours():
             return _erreur("Arrêtez d'abord la réponse en cours.", 409)
@@ -427,6 +511,9 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json({"arrete": salles.arreter(request.path_params["cid"])})
 
     async def api_approbation(request):
+        refus = sensible(request)
+        if refus:
+            return refus
         d = await _corps(request)
         if d is None or not isinstance(d.get("decisions"), dict):
             return _erreur("Décisions manquantes.")
@@ -468,6 +555,9 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json({k: v for k, v in e.items() if k != "texte"}, 201)
 
     async def api_tiroir_zone(request):
+        refus = sensible(request)
+        if refus:
+            return refus
         d = await _corps(request)
         if d is None:
             return _erreur("Requête illisible.")
@@ -493,6 +583,9 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json({"passages": passages, "message": msg})
 
     async def api_tarifs(request):
+        refus = sensible(request)
+        if refus:
+            return refus
         d = await _corps(request)
         if d is None:
             return _erreur("Requête illisible.")
@@ -572,6 +665,8 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/sw.js", page), Route("/s/{nom}", statique),
         Route("/api/verrou", api_verrou), Route("/api/connexion", api_connexion, methods=["POST"]),
         Route("/api/deconnexion", api_deconnexion, methods=["POST"]),
+        Route("/api/confirmer-nip", api_confirmer_nip, methods=["POST"]), Route("/api/securite", api_securite),
+        Route("/api/securite/deconnecter-autres", api_deconnecter_autres, methods=["POST"]),
         Route("/api/etat", api_etat), Route("/api/plan", api_plan),
         Route("/api/action", api_action_lire), Route("/api/action", api_action_lancer, methods=["POST"]),
         Route("/api/crew/mode", api_mode_lire), Route("/api/crew/mode", api_mode_changer, methods=["PUT"]),
