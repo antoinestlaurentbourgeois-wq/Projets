@@ -46,6 +46,7 @@
         zone.appendChild(h("button", { class: "bouton " + (b.style || ""), type: "button", texte: b.texte,
           onclick: function () { dlg.close(); resolve(b.valeur); } }));
       });
+      vider(document.getElementById("dialogue-champs"));
       dlg.onclose = function () { resolve(null); };
       dlg.showModal();
     });
@@ -55,10 +56,44 @@
     return demander(titre, texte, [{ texte: "Annuler", valeur: false }, { texte: oui || "Oui", valeur: true, style: style || "principal" }])
       .then(function (v) { return v === true; });
   }
+  // Formulaire modal : champs [{nom, label, type: text|textarea|select|checkbox|password, options:[{valeur,texte}], valeur}]
+  function formulaire(titre, texte, champs, oui) {
+    return new Promise(function (resolve) {
+      document.getElementById("dialogue-titre").textContent = titre;
+      document.getElementById("dialogue-texte").textContent = texte || "";
+      var zoneChamps = document.getElementById("dialogue-champs");
+      vider(zoneChamps);
+      var controles = {};
+      champs.forEach(function (c) {
+        var el;
+        if (c.type === "textarea") el = h("textarea", { rows: "5", id: "f-" + c.nom });
+        else if (c.type === "select") el = h("select", { id: "f-" + c.nom }, (c.options || []).map(function (o) { return h("option", { value: o.valeur, texte: o.texte }); }));
+        else if (c.type === "checkbox") el = h("input", { type: "checkbox", id: "f-" + c.nom });
+        else el = h("input", { type: c.type || "text", id: "f-" + c.nom, autocomplete: "off" });
+        if (c.type === "checkbox") el.checked = !!c.valeur; else if (c.valeur != null) el.value = c.valeur;
+        controles[c.nom] = el;
+        zoneChamps.appendChild(h("label", { class: "champ", for: "f-" + c.nom }, h("span", { texte: c.label }), el));
+      });
+      var zone = document.getElementById("dialogue-boutons");
+      vider(zone);
+      function fermer(v) { dlg.close(); resolve(v); }
+      zone.appendChild(h("button", { class: "bouton", type: "button", texte: "Annuler", onclick: function () { fermer(null); } }));
+      zone.appendChild(h("button", { class: "bouton principal", type: "button", texte: oui || "OK", onclick: function () {
+        var v = {};
+        Object.keys(controles).forEach(function (k) { v[k] = controles[k].type === "checkbox" ? controles[k].checked : controles[k].value; });
+        fermer(v);
+      } }));
+      dlg.onclose = function () { vider(zoneChamps); resolve(null); };
+      dlg.showModal();
+    });
+  }
   function dollars(n) { return (Number(n) || 0).toLocaleString("fr-CA", { style: "currency", currency: "USD" }); }
 
   // ---------------------------------------------------------------- pages
   var page = document.getElementById("page");
+  var Centre = window.Centre = { pages: {}, h: h, vider: vider, api: api, demander: demander, informer: informer,
+    confirmer: confirmer, formulaire: formulaire, dollars: dollars, page: page, aller: function (n) { aller(n); },
+    courante: function () { return pageCourante; }, arreterMinuterie: function () { clearTimeout(minuterie); } };
   var pageCourante = null;
   var minuterie = null;
   var etat = { centre: null, ouvert: { mode: false, explication: null, moteurs: false }, moteurs: null, derniereSignature: "" };
@@ -79,7 +114,7 @@
     if (location.hash !== "#" + nom) history.replaceState(null, "", "#" + nom);
     vider(page);
     etat.derniereSignature = "";
-    ({ centre: pageCentre, couts: pageCouts, journal: pageJournal }[nom] || pageCentre)();
+    (Centre.pages[nom] || pageCentre)();
   }
 
   // ------------------------------------------------ page Centre
@@ -358,6 +393,22 @@
     });
     zone.appendChild(form);
 
+    // Tarifs au jeton (texte) : modifiables
+    var tt = d.tarifs_texte || {};
+    var lignesT = Object.keys(tt).map(function (k) {
+      var e = h("input", { type: "number", min: "0", step: "0.01", value: String(tt[k].entree), "aria-label": "Entrée " + (d.ia[k] || k) });
+      var so = h("input", { type: "number", min: "0", step: "0.01", value: String(tt[k].sortie), "aria-label": "Sortie " + (d.ia[k] || k) });
+      var etat = h("span", { class: "msg", texte: tt[k].verifie ? "réglé par vous" : "indicatif, non vérifié" });
+      var b = h("button", { class: "petit", type: "button", texte: "Enregistrer", onclick: function () {
+        api("PUT", "/api/couts/tarifs", { salle: k, entree: e.value, sortie: so.value }).then(function () { etat.textContent = "réglé par vous"; })
+          .catch(function (x) { etat.textContent = x.message; });
+      } });
+      return h("tr", null, h("td", { texte: d.ia[k] || k }), h("td", null, e), h("td", null, so), h("td", null, b, " ", etat));
+    });
+    zone.appendChild(h("div", { class: "carte" }, h("h2", { texte: "Tarifs au jeton (texte)" }),
+      h("p", { class: "doux", texte: "Dollars US par million de jetons. Les valeurs « indicatives » ne sont PAS vérifiées : réglez les vrais tarifs de chaque fournisseur pour que les estimations et les plafonds soient justes. Les IA locales et les abonnements ne coûtent rien de plus." }),
+      h("table", { class: "tab" }, h("thead", null, h("tr", null, h("th", { texte: "IA" }), h("th", { texte: "Entrée" }), h("th", { texte: "Sortie" }), h("th", { texte: "" }))), h("tbody", null, lignesT))));
+
     var t = d.tarifs;
     zone.appendChild(h("div", { class: "carte" }, h("h2", { texte: "Tarifs de référence (vérifiés le " + t.verifie_le + ", à revérifier)" }),
       h("ul", { class: "doux" },
@@ -398,6 +449,10 @@
     }).catch(function (e) { if (e.message !== "session") zone.appendChild(h("div", { class: "bandeau erreur", texte: e.message })); });
   }
 
+  Centre.pages.centre = pageCentre;
+  Centre.pages.couts = pageCouts;
+  Centre.pages.journal = pageJournal;
+
   // ------------------------------------------------ démarrage
   Array.prototype.forEach.call(document.querySelectorAll("#onglets button"), function (b) {
     b.addEventListener("click", function () { aller(b.dataset.page); });
@@ -409,5 +464,5 @@
     if (!document.hidden && pageCourante === "centre") { clearTimeout(minuterie); aller("centre"); }
   });
   if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js").catch(function () {}); }
-  aller((location.hash || "#centre").slice(1));
+  window.addEventListener("load", function () { aller((location.hash || "#centre").slice(1)); });
 })();

@@ -108,3 +108,52 @@ pre.journal { background: var(--fond); border: 1px solid var(--bord); border-rad
 header.haut .bouton { padding: 6px 10px; font-size: .85rem; }
 @media (max-width: 520px) { header.haut { padding: 6px 12px; gap: 6px; } header.haut h1 { font-size: 1rem; }
   nav.onglets button { padding: 6px 8px; } }
+
+/* ---- Salles, tiroir ---- */
+textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--bord); border-radius: 10px; background: var(--fond);
+  resize: vertical; min-height: 44px; font: inherit; color: inherit; }
+select { padding: 8px 10px; border: 1px solid var(--bord); border-radius: 8px; background: var(--fond); max-width: 100%; }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; -webkit-overflow-scrolling: touch; }
+.chip { flex: 0 0 auto; border: 1px solid var(--bord); background: var(--carte); border-radius: 999px; padding: 8px 14px; font-weight: 600; white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-texte); border-color: var(--accent); }
+.chip.indispo { opacity: .55; }
+.chip .voyant { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: middle; }
+details.convs { margin-bottom: 10px; }
+details.convs summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.liste-convs { max-height: 240px; overflow-y: auto; border: 1px solid var(--bord); border-radius: 10px; background: var(--carte); }
+.liste-convs button { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--bord);
+  padding: 8px 12px; }
+.liste-convs button[aria-current="true"] { background: var(--fond); font-weight: 700; }
+.liste-convs .doux { display: block; }
+.fil { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.bulle { border: 1px solid var(--bord); border-radius: 12px; padding: 10px 14px; background: var(--carte); overflow-wrap: anywhere; }
+.bulle.user { background: var(--fond); margin-left: 8%; }
+.bulle.assistant { margin-right: 4%; }
+.bulle.erreur { border-color: var(--rouge); background: var(--erreur-fond); }
+.bulle .meta { font-size: .8rem; color: var(--doux); margin-bottom: 4px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.bulle p { margin: .4em 0; white-space: pre-wrap; }
+.bulle pre { background: var(--fond); border: 1px solid var(--bord); border-radius: 8px; padding: 8px; overflow-x: auto; font-size: .85rem; }
+.bulle code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; }
+.bulle .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.petit { border: 1px solid var(--bord); background: var(--fond); border-radius: 8px; padding: 4px 10px; font-size: .85rem; }
+.badge { border-radius: 999px; padding: 1px 8px; font-size: .75rem; border: 1px solid var(--bord); }
+.badge.prive { border-color: var(--rouge); color: var(--rouge); } .badge.partageable { border-color: var(--vert); color: var(--vert); }
+.barre-envoi { position: sticky; bottom: 0; background: var(--fond); padding: 8px 0 4px; }
+.barre-envoi .options { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 6px 0; font-size: .9rem; }
+.barre-envoi .boutons { display: flex; gap: 8px; margin-top: 6px; }
+.barre-envoi .boutons .bouton { flex: 1; }
+.demande-approbation { border: 1px solid var(--alerte-bord); background: var(--alerte-fond); border-radius: 10px; padding: 10px 14px; margin: 8px 0; }
+.demande-approbation .ligne { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.demande-approbation .ligne .texte { flex: 1 1 200px; overflow-wrap: anywhere; }
+.rangee-titre { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rangee-titre h2 { flex: 1 1 auto; margin: 0; }
+
+/* En-tête : sur téléphone, les onglets défilent sur une ligne à part */
+header.haut nav.onglets { overflow-x: auto; max-width: 100%; }
+header.haut nav.onglets button { white-space: nowrap; }
+@media (max-width: 720px) {
+  header.haut { row-gap: 0; }
+  header.haut h1 { order: 1; }
+  header.haut #deconnexion { order: 2; }
+  header.haut nav.onglets { order: 3; flex: 1 0 100%; }
+}

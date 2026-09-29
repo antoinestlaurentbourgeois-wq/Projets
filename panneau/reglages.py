@@ -98,6 +98,11 @@ DELAI_ARRET_CREW = 20
 # Serveur Crew : adresses protégées par la clé CREW_API_KEY (lue dans le .env).
 URL_CREW_MODE = "http://127.0.0.1:8765/mode"
 URL_CREW_MOTEURS = "http://127.0.0.1:8765/moteurs"
+# Mémoire de Crew (adresses prévues, pas encore exposées par le serveur : simulées en attendant).
+URL_CREW_MEMOIRE_ETAT = "http://127.0.0.1:8765/memoire/etat"
+URL_CREW_MEMOIRE_CHERCHER = "http://127.0.0.1:8765/memoire/chercher"
+URL_CREW_CHAT = "http://127.0.0.1:8765/v1/chat/completions"
+URL_LMSTUDIO_CHAT = "http://127.0.0.1:1234/v1/chat/completions"
 FICHIER_ENV_CREW = DOSSIER_CREW + r"\.env"
 NOM_CLE_CREW = "CREW_API_KEY"
 # Fichier du mode, utilisé seulement quand le serveur Crew est éteint.

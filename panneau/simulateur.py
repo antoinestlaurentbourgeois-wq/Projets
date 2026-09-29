@@ -78,6 +78,13 @@ class Simulateur:
         # Clés attendues par les serveurs simulés (le panneau, lui, lit ses clés ailleurs).
         self.cle_crew_serveur = "cle-crew-secrete"
         self.cle_webui_serveur = "cle-webui-secrete"
+        self.memoire_disponible = True           # /memoire/* exposé par Crew ?
+        self.memoire_docs = [                    # bibliothèque simulée
+            {"chemin": "partageable/notes/mecanique.md", "zone": "partageable",
+             "texte": "Le couple de serrage des vis M8 est de 25 newton mètres"},
+            {"chemin": "prive/clients/contrat.md", "zone": "prive",
+             "texte": "Le contrat du client Durand prévoit un prix secret de 12000 euros"},
+        ]
         self.ouvertures = []                     # adresses et programmes ouverts
         self.requetes = []                       # (méthode, url, a_une_cle) pour les tests
 
@@ -176,7 +183,8 @@ class Simulateur:
         with self._verrou:
             auth = (entetes or {}).get("Authorization", "")
             self.requetes.append((methode, url, bool(auth)))
-            if url.startswith(R.URL_CREW_MODE) or url.startswith(R.URL_CREW_MOTEURS):
+            if url.startswith(R.URL_CREW_MODE) or url.startswith(R.URL_CREW_MOTEURS) \
+                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]):
                 return self._crew_api(methode, url, auth, corps_json)
             if url.startswith(R.URL_WEBUI_BASE + "/api/v1/chats"):
                 return self._webui_api(url, auth)
@@ -353,6 +361,8 @@ class Simulateur:
                  "detail": "Clé DEEPSEEK_API_KEY présente"},
             ] + self.moteurs_crew_supplementaires
             return 200, json.dumps({"moteurs": moteurs}, ensure_ascii=False)
+        if url in (R.URL_CREW_MEMOIRE_ETAT, R.URL_CREW_MEMOIRE_CHERCHER):
+            return self._crew_memoire(methode, url, corps_json)
         # /mode : comme le vrai serveur, le mode est gardé dans mode_crew.json.
         if methode == "PUT":
             demande = (corps_json or {}).get("mode")
@@ -361,6 +371,32 @@ class Simulateur:
             self.fichiers[R.FICHIER_MODE_CREW] = json.dumps({"mode": demande})
         actuel = json.loads(self.fichiers.get(R.FICHIER_MODE_CREW) or "{}").get("mode", "econome")
         return 200, json.dumps({"mode": actuel, "modes": self.modes_crew}, ensure_ascii=False)
+
+    # ----- serveur Crew : /memoire/* (adresses prévues) ---------------------------------
+
+    def _crew_memoire(self, methode, url, corps_json):
+        if not self.memoire_disponible:
+            return 404, '{"detail": "Not Found"}'
+        if url == R.URL_CREW_MEMOIRE_ETAT:
+            par_zone = {"prive": 0, "partageable": 0}
+            for d in self.memoire_docs:
+                par_zone[d["zone"]] = par_zone.get(d["zone"], 0) + 1
+            return 200, json.dumps({"fichiers": len(self.memoire_docs), "morceaux": len(self.memoire_docs) * 3,
+                                    "par_zone": par_zone, "derniere_indexation": "2026-09-29T03:00:00"})
+        if methode != "POST" or not isinstance(corps_json, dict) or not corps_json.get("question"):
+            return 422, '{"detail": "question manquante"}'
+        mots = {m for m in corps_json["question"].lower().split() if len(m) > 2}
+        zones = corps_json.get("zones")
+        passages = []
+        for d in self.memoire_docs:
+            if zones and d["zone"] not in zones:
+                continue
+            communs = mots & set(d["texte"].lower().split())
+            if communs:
+                passages.append({"chemin": d["chemin"], "zone": d["zone"], "texte": d["texte"],
+                                 "score": round(len(communs) / max(1, len(mots)), 3), "voies": ["mots"]})
+        passages.sort(key=lambda p: -p["score"])
+        return 200, json.dumps({"passages": passages[:int(corps_json.get("nombre") or 5)]}, ensure_ascii=False)
 
     # ----- Open WebUI : conversations ------------------------------------------
 

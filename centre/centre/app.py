@@ -19,14 +19,17 @@ from urllib.parse import urlparse
 from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from .config import Config
 from .service import Centre, ErreurService
 from .verrou import ErreurVerrou, Verrou
 from .couts import ErreurCouts, IA, TARIFS_REFERENCE, libelle_ia
+from .conversations import ErreurConversation
 from .journal import lire_fin_journal, masquer
+from .salles import ErreurSalle, SALLES
+from .tiroir import ErreurTiroir
 
 journal = logging.getLogger("centre")
 
@@ -236,6 +239,7 @@ def creer_app(centre=None, verrou=None, config=None):
         st = centre.couts_json()
         st["ia"] = {k: libelle_ia(k) for k in IA}
         st["tarifs"] = TARIFS_REFERENCE
+        st["tarifs_texte"] = centre.salles.tarifs.lire()
         return st
 
     async def api_couts(request):
@@ -265,6 +269,221 @@ def creer_app(centre=None, verrou=None, config=None):
         lignes = await run_in_threadpool(lire_fin_journal, config.dossier_donnees, 200)
         return _json({"lignes": [masquer(l) for l in lignes]})
 
+
+    # ----- salles de discussion -------------------------------------------------------------------------------------
+
+    salles = centre.salles
+
+    def sse(evenement):
+        return "data: " + json.dumps(evenement, ensure_ascii=False) + "\n\n"
+
+    def flux(execution, depuis=0):
+        """Générateur SSE : relit les événements d'une exécution ; peut être repris à tout moment."""
+        n = depuis
+        while True:
+            nouveaux, fini = execution.lire(n, 15.0)
+            for e in nouveaux:
+                yield sse(e)
+            n += len(nouveaux)
+            if fini:
+                return
+            if not nouveaux:
+                yield ": ping\n\n"
+
+    def reponse_flux(execution, depuis=0):
+        entetes = dict(ENTETES_SECURITE)
+        entetes["X-Accel-Buffering"] = "no"
+        return StreamingResponse(flux(execution, depuis), media_type="text/event-stream", headers=entetes)
+
+    def erreur_salle(e):
+        return _erreur(str(e), getattr(e, "code", 400), **getattr(e, "extra", {}))
+
+    async def api_salles(request):
+        def faire():
+            mode, libelle = salles.politique.mode()
+            nuage, msg = salles.politique.nuage_autorise()
+            return {"salles": salles.catalogue(), "actives": salles.en_cours(),
+                    "politique": {"mode": mode, "libelle": libelle, "nuage": nuage, "message": msg},
+                    "memoire": salles.memoire.etat()}
+        return _json(await run_in_threadpool(faire))
+
+    async def api_salle_reglage(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            r = await run_in_threadpool(salles.definir_reglage, request.path_params["salle"], d.get("auth"), d.get("modele"))
+        except ErreurSalle as e:
+            return erreur_salle(e)
+        centre.recus.ajouter("reglage_salle", "ok", salle=request.path_params["salle"], reglage=r, session=session_courte(request))
+        return _json(r)
+
+    async def api_salle_modeles(request):
+        try:
+            return _json({"modeles": await run_in_threadpool(salles.modeles_disponibles, request.path_params["salle"])})
+        except ErreurSalle as e:
+            return erreur_salle(e)
+
+    async def api_salle_estimation(request):
+        try:
+            n = int(request.query_params.get("longueur", "0"))
+            h = 0
+            cid = request.query_params.get("conversation")
+            if cid:
+                h = sum(len(m.get("texte", "")) for m in salles.conversation(cid)["messages"][-20:])
+            return _json(await run_in_threadpool(salles.estimer, request.path_params["salle"], max(0, n), h))
+        except ValueError:
+            return _erreur("Longueur invalide.")
+        except ErreurSalle as e:
+            return erreur_salle(e)
+
+    async def api_conversations(request):
+        salle = request.query_params.get("salle")
+        return _json({"conversations": await run_in_threadpool(salles.conversations.lister, salle if salle in SALLES else None),
+                      "actives": salles.en_cours()})
+
+    async def api_conversation_creer(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            c = await run_in_threadpool(salles.creer_conversation, str(d.get("salle", "")), str(d.get("titre", "")))
+        except ErreurSalle as e:
+            return erreur_salle(e)
+        return _json(c, 201)
+
+    async def api_conversation_lire(request):
+        try:
+            c = await run_in_threadpool(salles.conversation, request.path_params["cid"])
+        except ErreurSalle as e:
+            return erreur_salle(e)
+        c["en_cours"] = request.path_params["cid"] in salles.en_cours()
+        return _json(c)
+
+    async def api_conversation_renommer(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            c = await run_in_threadpool(salles.conversations.renommer, request.path_params["cid"], d.get("titre"))
+        except ErreurConversation as e:
+            return erreur_salle(e)
+        return _json({"id": c["id"], "titre": c["titre"]})
+
+    async def api_conversation_supprimer(request):
+        cid = request.path_params["cid"]
+        if cid in salles.en_cours():
+            return _erreur("Arrêtez d'abord la réponse en cours.", 409)
+        try:
+            await run_in_threadpool(salles.conversations.supprimer, cid)
+        except ErreurConversation as e:
+            return erreur_salle(e)
+        centre.recus.ajouter("conversation_supprimee", "ok", conversation=cid, session=session_courte(request))
+        return _json({"ok": True})
+
+    async def api_message(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        options = {"memoire": bool(d.get("memoire")), "autoriser_ecriture": bool(d.get("autoriser_ecriture")),
+                   "tiroir": [str(x) for x in d.get("tiroir", [])[:10]] if isinstance(d.get("tiroir"), list) else []}
+        try:
+            ex = await run_in_threadpool(salles.demarrer_envoi, request.path_params["cid"], str(d.get("texte", "")),
+                                         options, session_courte(request))
+        except ErreurSalle as e:
+            return erreur_salle(e)
+        return reponse_flux(ex)
+
+    async def api_flux(request):
+        ex = salles.execution(request.path_params["cid"])
+        if ex is None:
+            return _erreur("Aucune réponse en cours ni récente.", 404)
+        try:
+            depuis = max(0, int(request.query_params.get("depuis", "0")))
+        except ValueError:
+            depuis = 0
+        return reponse_flux(ex, depuis)
+
+    async def api_arreter(request):
+        return _json({"arrete": salles.arreter(request.path_params["cid"])})
+
+    async def api_approbation(request):
+        d = await _corps(request)
+        if d is None or not isinstance(d.get("decisions"), dict):
+            return _erreur("Décisions manquantes.")
+        decisions = {str(k): str(v) for k, v in d["decisions"].items()}
+        try:
+            ex = await run_in_threadpool(salles.demarrer_approbation, request.path_params["cid"], decisions, session_courte(request))
+        except ErreurSalle as e:
+            return erreur_salle(e)
+        return reponse_flux(ex)
+
+    async def api_relais(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            r = await run_in_threadpool(salles.preparer_relais, request.path_params["cid"], str(d.get("vers", "")),
+                                        d.get("message_id"), str(d.get("portee", "reponse")))
+        except ErreurSalle as e:
+            return erreur_salle(e)
+        return _json(r, 201)
+
+    async def api_tiroir_lister(request):
+        return _json({"elements": await run_in_threadpool(salles.tiroir.lister)})
+
+    async def api_tiroir_lire(request):
+        try:
+            return _json(await run_in_threadpool(salles.tiroir.obtenir, request.path_params["ident"]))
+        except ErreurTiroir as e:
+            return erreur_salle(e)
+
+    async def api_tiroir_ajouter(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            e = await run_in_threadpool(salles.tiroir.ajouter, d.get("titre"), d.get("texte"), d.get("zone", "prive"), d.get("origine", ""))
+        except ErreurTiroir as ex:
+            return erreur_salle(ex)
+        return _json({k: v for k, v in e.items() if k != "texte"}, 201)
+
+    async def api_tiroir_zone(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            e = await run_in_threadpool(salles.tiroir.changer_zone, request.path_params["ident"], d.get("zone"))
+        except ErreurTiroir as ex:
+            return erreur_salle(ex)
+        centre.recus.ajouter("tiroir_zone", "ok", ident=e["id"], zone=e["zone"], session=session_courte(request))
+        return _json({"id": e["id"], "zone": e["zone"]})
+
+    async def api_tiroir_supprimer(request):
+        try:
+            await run_in_threadpool(salles.tiroir.supprimer, request.path_params["ident"])
+        except ErreurTiroir as ex:
+            return erreur_salle(ex)
+        return _json({"ok": True})
+
+    async def api_memoire_chercher(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        passages, msg = await run_in_threadpool(salles.memoire.chercher, d.get("question"), 5, False)
+        return _json({"passages": passages, "message": msg})
+
+    async def api_tarifs(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            t = await run_in_threadpool(salles.tarifs.definir, str(d.get("salle", "")), d.get("entree"), d.get("sortie"))
+        except ErreurSalle as e:
+            return erreur_salle(e)
+        centre.recus.ajouter("tarifs", "ok", salle=d.get("salle"), session=session_courte(request))
+        return _json({"tarifs_texte": t})
+
     routes = [
         Route("/", page), Route("/connexion", page), Route("/manifest.webmanifest", page),
         Route("/sw.js", page), Route("/s/{nom}", statique),
@@ -277,6 +496,22 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/couts", api_couts), Route("/api/couts/plafonds", api_couts_plafonds, methods=["PUT"]),
         Route("/api/couts/deepseek", api_couts_deepseek),
         Route("/api/recus", api_recus), Route("/api/journal", api_journal),
+        Route("/api/salles", api_salles), Route("/api/salles/{salle}/reglage", api_salle_reglage, methods=["PUT"]),
+        Route("/api/salles/{salle}/modeles", api_salle_modeles), Route("/api/salles/{salle}/estimation", api_salle_estimation),
+        Route("/api/conversations", api_conversations), Route("/api/conversations", api_conversation_creer, methods=["POST"]),
+        Route("/api/conversations/{cid}", api_conversation_lire),
+        Route("/api/conversations/{cid}", api_conversation_renommer, methods=["PUT"]),
+        Route("/api/conversations/{cid}", api_conversation_supprimer, methods=["DELETE"]),
+        Route("/api/conversations/{cid}/messages", api_message, methods=["POST"]),
+        Route("/api/conversations/{cid}/flux", api_flux),
+        Route("/api/conversations/{cid}/arreter", api_arreter, methods=["POST"]),
+        Route("/api/conversations/{cid}/approbation", api_approbation, methods=["POST"]),
+        Route("/api/conversations/{cid}/relais", api_relais, methods=["POST"]),
+        Route("/api/tiroir", api_tiroir_lister), Route("/api/tiroir", api_tiroir_ajouter, methods=["POST"]),
+        Route("/api/tiroir/{ident}", api_tiroir_lire), Route("/api/tiroir/{ident}", api_tiroir_zone, methods=["PUT"]),
+        Route("/api/tiroir/{ident}", api_tiroir_supprimer, methods=["DELETE"]),
+        Route("/api/memoire/chercher", api_memoire_chercher, methods=["POST"]),
+        Route("/api/couts/tarifs", api_tarifs, methods=["PUT"]),
     ]
 
     @asynccontextmanager

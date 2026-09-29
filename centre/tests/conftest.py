@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 import os
 import sys
 
@@ -27,6 +28,87 @@ from centre.verrou import Verrou  # noqa: E402
 NIP, SECRET = "123456", "motsecret-de-test"
 
 
+class FauxReseau:
+    """Remplace centre.reseau.Reseau : réponses écrites d'avance, aucune vraie connexion."""
+
+    def __init__(self):
+        self.routes = {}          # url -> fonction(corps, entetes) -> (code, lignes)
+        self.appels = []          # (methode, url, corps, entetes)
+        self.modeles = {}         # url -> liste d'identifiants
+
+    def repondre(self, url, gestionnaire):
+        self.routes[url] = gestionnaire
+
+    def flux_post(self, url, entetes, corps, delai=600, annulation=None):
+        self.appels.append(("POST", url, corps, dict(entetes)))
+        g = self.routes.get(url)
+        if g is None:
+            return None, "connexion refusée"
+        return g(corps, entetes)
+
+    def requete(self, methode, url, entetes=None, corps=None, delai=30, octets=False, max_octets=0):
+        self.appels.append((methode, url, corps, dict(entetes or {})))
+        if url in self.modeles:
+            return 200, json.dumps({"data": [{"id": m} for m in self.modeles[url]]})
+        g = self.routes.get(url)
+        if g is None:
+            return None, "connexion refusée"
+        code, contenu = g(corps, entetes or {})
+        return code, contenu if isinstance(contenu, (str, bytes)) else "\n".join(contenu)
+
+
+def sse(*morceaux, usage=None, erreur=None):
+    """Lignes d'un flux « compatible OpenAI »."""
+    lignes = []
+    for m in morceaux:
+        lignes += ["data: " + json.dumps({"choices": [{"delta": {"content": m}}]}), ""]
+    if usage:
+        lignes += ["data: " + json.dumps({"choices": [], "usage": {"prompt_tokens": usage[0], "completion_tokens": usage[1]}}), ""]
+    lignes += ["data: [DONE]", ""]
+    return 200, iter(lignes)
+
+
+class FauxProc:
+    def __init__(self, lignes, stderr="", code=0, attente=None):
+        self._lignes, self._stderr, self.code, self.attente = lignes, stderr, code, attente
+        self.termine = False
+
+    def lignes(self):
+        for l in self._lignes:
+            if self.attente is not None:
+                self.attente.wait(5)
+                if self.termine:
+                    return
+            yield l
+
+    def terminer(self):
+        self.termine = True
+        if self.attente is not None:
+            self.attente.set()
+
+    def attendre(self, delai=10):
+        return self.code
+
+    def stderr_texte(self):
+        return self._stderr
+
+
+class FauxProcessus:
+    def __init__(self):
+        self.installes = {"claude": "C:/bin/claude.exe", "codex": "C:/bin/codex.cmd", "gemini": "C:/bin/gemini.cmd"}
+        self.scenarios = {}       # nom du programme -> FauxProc ou fonction(args, stdin) -> FauxProc
+        self.lances = []          # dicts {args, cwd, env, stdin}
+
+    def trouver(self, nom, candidats=()):
+        return self.installes.get(nom)
+
+    def lancer(self, args, cwd=None, env=None, stdin_texte=None):
+        self.lances.append({"args": list(args), "cwd": cwd, "env": env, "stdin": stdin_texte})
+        nom = os.path.basename(args[0]).split(".")[0]
+        sc = self.scenarios[nom]
+        return sc(args, stdin_texte) if callable(sc) else sc
+
+
 class Horloge:
     def __init__(self):
         self.t = 1_000_000.0
@@ -46,9 +128,19 @@ def simulateur():
 
 
 @pytest.fixture
-def centre(tmp_path, simulateur):
+def reseau():
+    return FauxReseau()
+
+
+@pytest.fixture
+def processus():
+    return FauxProcessus()
+
+
+@pytest.fixture
+def centre(tmp_path, simulateur, reseau, processus):
     config = Config(dossier_donnees=str(tmp_path / "donnees"), rafraichir_en_fond=False)
-    return Centre(config, systeme=simulateur)
+    return Centre(config, systeme=simulateur, reseau=reseau, processus=processus)
 
 
 @pytest.fixture

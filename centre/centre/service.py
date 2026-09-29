@@ -11,6 +11,7 @@ import threading
 import time
 
 from .config import Config
+from .cles import Cles
 from .couts import Couts, SoldeDeepSeek
 from .journal import Recus, preparer_journal
 
@@ -40,7 +41,7 @@ SEQUENCES = {"tout_demarrer": "Tout démarrer", "mode_jeu": "Mode jeu"}
 
 
 class Centre:
-    def __init__(self, config=None, systeme=None, http_sortant=None):
+    def __init__(self, config=None, systeme=None, http_sortant=None, reseau=None, processus=None):
         self.config = config or Config()
         os.makedirs(self.config.dossier_donnees, exist_ok=True)
         preparer_journal(self.config.dossier_donnees)
@@ -52,7 +53,8 @@ class Centre:
         self.recus = Recus(self.config.chemin("recus.jsonl"))
         self.couts = Couts(self.config.chemin("depenses.jsonl"), self.config.chemin("plafonds.json"))
         kw = {"http": http_sortant} if http_sortant else {}
-        self.deepseek = SoldeDeepSeek(self._cle_deepseek, **kw)
+        self.gestion_cles = Cles(self.sys)
+        self.deepseek = SoldeDeepSeek(lambda: self.gestion_cles.lire("deepseek"), **kw)
 
         self._verrou = threading.RLock()
         self.etats = {c.ident: self.L.Etat(self.L.INCONNU, "Pas encore vérifié") for c in self.L.COMPOSANTS}
@@ -65,15 +67,8 @@ class Centre:
         self._rafraichissement = threading.Lock()
         self._arret = threading.Event()
         self._fil = None
-
-    # ----- clés (jamais exposées) ------------------------------------------------------
-
-    def _cle_deepseek(self):
-        try:
-            v = self.sys.valeur_variable_utilisateur("DEEPSEEK_API_KEY")
-        except Exception:
-            v = None
-        return v or os.environ.get("DEEPSEEK_API_KEY") or None
+        from .salles import Salles          # après tout le reste : Salles s'appuie sur ce Centre
+        self.salles = Salles(self, reseau=reseau, processus=processus)
 
     # ----- vérification en arrière-plan ---------------------------------------------------
 

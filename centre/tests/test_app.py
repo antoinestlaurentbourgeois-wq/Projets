@@ -293,9 +293,10 @@ def test_aucun_secret_dans_les_reponses_ni_les_fichiers(client, centre, simulate
     client.get("/api/couts/deepseek?forcer=1")
     textes = [client.get(c).text for c in ("/", "/api/etat", "/api/crew/mode", "/api/crew/moteurs", "/api/couts",
                                            "/api/couts/deepseek", "/api/recus", "/api/journal", "/api/action")]
-    for nom in os.listdir(centre.config.dossier_donnees):
-        if nom != "verrou.json":
-            textes.append(open(centre.config.chemin(nom), encoding="utf-8", errors="replace").read())
+    for racine, _, noms in os.walk(centre.config.dossier_donnees):
+        for nom in noms:
+            if nom != "verrou.json":
+                textes.append(open(os.path.join(racine, nom), encoding="utf-8", errors="replace").read())
     brut = "\n".join(textes)
     for s in secrets:
         assert s not in brut, s

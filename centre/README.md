@@ -1,8 +1,9 @@
 # Centre de contrôle
 
 Une seule application, dans votre navigateur (et plus tard sur votre téléphone), pour piloter toute votre IA.
-**Phase 1 (ce dossier) :** le socle, la page **Centre** (tout ce que fait le panneau « Mon IA locale ») et la page **Coûts**.
-Les salles de discussion (phase 2), la voix (phase 3) et l'accès téléphone (phase 4) viendront ensuite.
+**Phase 1 :** le socle, la page **Centre** (tout ce que fait le panneau « Mon IA locale ») et la page **Coûts**.
+**Phase 2 :** les **Salles** (une par IA : Crew, Claude, ChatGPT/Codex, Gemini, Grok, DeepSeek, gemma) et le **Tiroir** partagé.
+La voix (phase 3), l'accès téléphone (phase 4) et les extras (phase 5) viennent ensuite.
 
 Le panneau tkinter reste en place et fonctionne toujours : c'est votre solution de secours.
 
@@ -15,6 +16,11 @@ Le panneau tkinter reste en place et fonctionne toujours : c'est votre solution 
   et clic sur le nom d'Open WebUI, LM Studio ou Docker pour les ouvrir sur le PC.
 - **Coûts** : dépenses estimées par IA (aujourd'hui, ce mois-ci), solde DeepSeek, **plafonds par jour et par mois** que vous réglez.
   Au plafond, les IA payantes seront refusées avec un message clair (les salles de la phase 2 s'y brancheront ; les IA locales ne sont jamais bloquées).
+- **Salles** : discussion écrite avec chaque IA, réponses en continu, historique sur le PC, bouton **« Demander aussi à… »** (deuxième avis),
+  mémoire de Crew, tiroir partagé, coût estimé avant chaque envoi. **La confidentialité est appliquée par le serveur** : en mode Confidentiel/Ultra
+  seules gemma et Crew répondent, et un contenu privé ne va jamais à une IA du nuage. Claude, Codex et Gemini (programmes officiels, votre abonnement)
+  travaillent dans `I:\IA\ATELIER`, en lecture seule ; toute action sensible passe par un **bouton d'approbation**. Jamais de `--dangerously-skip-permissions`.
+  Voir `VERIFICATIONS-phase2.md` et `INCONNUS-phase2.md`.
 - **Journal** : les « reçus » (qui a fait quoi, quand) et le journal du serveur. Aucune clé n'y apparaît jamais.
 - **Application installable** (PWA) : dans Chrome ou Edge, menu ⋮ → « Installer l'application ».
 
