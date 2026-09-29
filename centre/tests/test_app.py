@@ -119,6 +119,7 @@ def test_entetes_de_securite(client):
     for chemin in ("/", "/api/etat"):
         r = client.get(chemin)
         assert "default-src 'self'" in r.headers["content-security-policy"]
+        assert "media-src 'self' blob:" in r.headers["content-security-policy"] and "unsafe" not in r.headers["content-security-policy"]
         assert r.headers["x-frame-options"] == "DENY" and r.headers["x-content-type-options"] == "nosniff"
 
 

@@ -41,7 +41,7 @@ SEQUENCES = {"tout_demarrer": "Tout démarrer", "mode_jeu": "Mode jeu"}
 
 
 class Centre:
-    def __init__(self, config=None, systeme=None, http_sortant=None, reseau=None, processus=None):
+    def __init__(self, config=None, systeme=None, http_sortant=None, reseau=None, processus=None, amont=None):
         self.config = config or Config()
         os.makedirs(self.config.dossier_donnees, exist_ok=True)
         preparer_journal(self.config.dossier_donnees)
@@ -69,6 +69,8 @@ class Centre:
         self._fil = None
         from .salles import Salles          # après tout le reste : Salles s'appuie sur ce Centre
         self.salles = Salles(self, reseau=reseau, processus=processus)
+        from .voix import Voix
+        self.voix = Voix(self, self.salles.reseau, amont=amont)
 
     # ----- vérification en arrière-plan ---------------------------------------------------
 

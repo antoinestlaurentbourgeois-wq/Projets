@@ -43,12 +43,12 @@ def reparer_flux(config):
             setattr(sys, nom, open(config.chemin("console.log"), "a", encoding="utf-8", buffering=1))
 
 
-def demarrer(config, systeme=None, reseau=None, processus=None):
+def demarrer(config, systeme=None, reseau=None, processus=None, amont=None):
     reparer_flux(config)
     import uvicorn
     from .app import creer_app
     from .service import Centre
-    centre = Centre(config, systeme=systeme, reseau=reseau, processus=processus)
+    centre = Centre(config, systeme=systeme, reseau=reseau, processus=processus, amont=amont)
     app = creer_app(centre)
     # Adresse imposée : jamais autre chose que 127.0.0.1.
     uvicorn.run(app, host=HOTE, port=config.port, log_level="warning", access_log=False)
@@ -63,12 +63,12 @@ def demo():
     Verrou(config.chemin("verrou.json")).definir("123456", "motsecret-demo")
     print("MODE DEMO : tout est simulé.  Adresse : http://127.0.0.1:%d   NIP : 123456   Mot secret : motsecret-demo"
           % config.port)
-    from .simulation import ProcessusDemo, ReseauDemo
+    from .simulation import AmontDemo, ProcessusDemo, ReseauDemo
     sim = Simulateur(temps_reel=True)
     sim.delai_docker, sim.delai_webui, sim.delai_crew = 2, 1, 1
     sim.tout_allumer()
     sim.cles.update({"GEMINI_API_KEY": "cle-demo", "XAI_API_KEY": "cle-demo", "OPENAI_API_KEY": "cle-demo"})
-    demarrer(config, sim, ReseauDemo(), ProcessusDemo())
+    demarrer(config, sim, ReseauDemo(), ProcessusDemo(), AmontDemo())
 
 
 def tests_panneau():

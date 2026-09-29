@@ -39,6 +39,10 @@ class ReseauDemo:
     def requete(self, methode, url, entetes=None, corps=None, delai=30, octets=False, max_octets=0):
         if url.endswith("/models"):
             return 200, json.dumps({"data": [{"id": "modele-demo-1"}, {"id": "modele-demo-2"}]})
+        if url.endswith("/audio/transcriptions") or url.endswith("/v1/stt"):
+            return 200, json.dumps({"text": "Bonjour, ceci est une question posée à voix haute (transcription simulée)."})
+        if url.endswith("/audio/speech") or url.endswith("/v1/tts"):
+            return 200, (_wav_bip() if octets else "")
         return 404, "{}"
 
 
@@ -90,3 +94,70 @@ class ProcessusDemo:
                           json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": texte}}),
                           json.dumps({"type": "turn.completed", "usage": {"input_tokens": 5, "output_tokens": 5}})])
         return _Proc(texte.split("\n"))
+
+
+# ------------------------------------------------------------------------------------------------
+# Voix simulée (mode démo) : un « fournisseur » qui répond par une phrase et un petit bip
+# ------------------------------------------------------------------------------------------------
+
+def _bip_pcm16(secondes=0.25, hz=440, rate=24000):
+    import math, struct
+    n = int(secondes * rate)
+    return b"".join(struct.pack("<h", int(6000 * math.sin(2 * math.pi * hz * i / rate))) for i in range(n))
+
+
+def _wav_bip(secondes=0.6, hz=523, rate=24000):
+    import struct
+    pcm = _bip_pcm16(secondes, hz, rate)
+    return (b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
+            + b"data" + struct.pack("<I", len(pcm)) + pcm)
+
+
+class ConnexionDemo:
+    def __init__(self):
+        import asyncio
+        self._q = asyncio.Queue()
+        self.n_audio = 0
+        self.repondu = False
+
+    async def send(self, message):
+        import asyncio
+        m = json.loads(message)
+        if m.get("type") == "input_audio_buffer.append":
+            self.n_audio += 1
+            if self.n_audio == 10 and not self.repondu:
+                self.repondu = True
+                asyncio.get_running_loop().create_task(self._repondre())
+
+    async def _repondre(self):
+        import asyncio
+        put = lambda e: self._q.put_nowait(json.dumps(e))
+        put({"type": "input_audio_buffer.speech_started"})
+        await asyncio.sleep(0.2)
+        put({"type": "input_audio_buffer.speech_stopped"})
+        put({"type": "conversation.item.input_audio_transcription.completed", "transcript": "Bonjour (voix simulée)"})
+        import base64
+        for _ in range(4):
+            put({"type": "response.output_audio.delta", "delta": base64.b64encode(_bip_pcm16()).decode()})
+            await asyncio.sleep(0.1)
+        put({"type": "response.output_audio_transcript.done", "transcript": "Bonjour ! Ceci est une réponse vocale SIMULÉE : aucun vrai service n'est utilisé."})
+        put({"type": "response.done", "response": {"usage": {"input_tokens": 400, "output_tokens": 300,
+             "input_token_details": {"audio_tokens": 300, "text_tokens": 100},
+             "output_token_details": {"audio_tokens": 250, "text_tokens": 50}}, "output": []}})
+
+    async def close(self):
+        self._q.put_nowait(None)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        x = await self._q.get()
+        if x is None:
+            raise StopAsyncIteration
+        return x
+
+
+class AmontDemo:
+    async def ouvrir(self, url, entetes):
+        return ConnexionDemo()

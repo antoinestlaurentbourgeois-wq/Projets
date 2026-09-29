@@ -393,6 +393,8 @@
     }).catch(function (x) { C.informer("Impossible", x.message); });
   }
 
+  C.lireFlux = lireFlux;
+  C.rendre = rendre;
   C.pages.salles = pageSalles;
   C.pages.tiroir = pageTiroir;
 })();

@@ -8,6 +8,7 @@ Sécurité, dans l'ordre pour chaque requête :
   3. Session : tout exige une session valide, sauf la page de connexion et ses fichiers.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -20,7 +21,8 @@ from starlette.applications import Starlette
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
-from starlette.routing import Route
+from starlette.routing import Route, WebSocketRoute
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from .config import Config
 from .service import Centre, ErreurService
@@ -30,6 +32,7 @@ from .conversations import ErreurConversation
 from .journal import lire_fin_journal, masquer
 from .salles import ErreurSalle, SALLES
 from .tiroir import ErreurTiroir
+from .voix import ErreurVoix
 
 journal = logging.getLogger("centre")
 
@@ -45,7 +48,7 @@ PAGES = {  # chemin -> fichier du dossier static
     "/": "app.html",
 }
 ENTETES_SECURITE = {
-    "Content-Security-Policy": ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "Content-Security-Policy": ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; "
                                 "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -75,6 +78,8 @@ class Garde:
         return hote in self.hotes or hote.split(":")[0] in self.config.hotes_autorises
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            return await self._websocket(scope, receive, send)
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         hote = _entete(scope, "host")
@@ -92,6 +97,20 @@ class Garde:
             if methode == "GET" and not chemin.startswith("/api/"):
                 return await RedirectResponse("/connexion", 303, headers=ENTETES_SECURITE)(scope, receive, send)
             return await self._refuser(scope, receive, send, 401, "Connexion requise.")
+        await self.app(scope, receive, send)
+
+    async def _websocket(self, scope, receive, send):
+        """Une WebSocket n'est acceptée que si : hôte connu, origine = hôte (contre le « cross-site WebSocket
+        hijacking »), session valide. Sinon la poignée de main est refusée avant tout échange."""
+        hote = _entete(scope, "host")
+        origine = _entete(scope, "origin")
+        jeton = self._jeton(scope)
+        scope["centre_jeton"] = jeton
+        ok = (self._hote_ok(hote) and origine and urlparse(origine).netloc.lower() == hote.lower()
+              and self.verrou.session_valide(jeton))
+        if not ok:
+            await receive()                                  # message « websocket.connect »
+            return await send({"type": "websocket.close", "code": 1008})
         await self.app(scope, receive, send)
 
     @staticmethod
@@ -484,6 +503,70 @@ def creer_app(centre=None, verrou=None, config=None):
         centre.recus.ajouter("tarifs", "ok", salle=d.get("salle"), session=session_courte(request))
         return _json({"tarifs_texte": t})
 
+    # ----- voix ------------------------------------------------------------------------------------------------------
+
+    voix = centre.voix
+
+    async def api_voix_options(request):
+        return _json(await run_in_threadpool(voix.options))
+
+    async def api_voix_transcrire(request):
+        try:
+            if int(request.headers.get("content-length", "0")) > 8_000_000:
+                return _erreur("Enregistrement trop gros.", 413)
+        except ValueError:
+            return _erreur("Requête invalide.")
+        octets = await request.body()
+        fournisseur = request.query_params.get("fournisseur", "openai")
+        if fournisseur not in ("openai", "xai"):
+            return _erreur("Fournisseur inconnu.", 400)
+        try:
+            duree = float(request.query_params.get("duree", "0"))
+        except ValueError:
+            duree = 0.0
+        try:
+            r = await run_in_threadpool(voix.transcrire, octets, request.headers.get("content-type", ""), fournisseur, duree)
+        except ErreurVoix as e:
+            return _erreur(str(e), e.code)
+        return _json(r)
+
+    async def api_voix_parler(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        fournisseur = str(d.get("fournisseur", "openai"))
+        if fournisseur not in ("openai", "xai"):
+            return _erreur("Fournisseur inconnu.", 400)
+        try:
+            audio, type_mime, tronque = await run_in_threadpool(
+                voix.parler, str(d.get("conversation", "")), str(d.get("message_id", "")), fournisseur, str(d.get("voix", "")) or None)
+        except ErreurVoix as e:
+            return _erreur(str(e), e.code)
+        entetes = dict(ENTETES_SECURITE)
+        entetes["X-Tronque"] = "1" if tronque else "0"
+        return Response(audio, media_type=type_mime, headers=entetes)
+
+    async def ws_voix(ws: WebSocket):
+        await ws.accept()
+        try:
+            params = await asyncio.wait_for(ws.receive_json(), 10)
+        except Exception:
+            await ws.close(1008)
+            return
+        if not isinstance(params, dict) or params.get("t") != "demarrer":
+            await ws.close(1008)
+            return
+        session = voix.nouvelle_session(ws, params)
+        try:
+            await session.courir()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+
     routes = [
         Route("/", page), Route("/connexion", page), Route("/manifest.webmanifest", page),
         Route("/sw.js", page), Route("/s/{nom}", statique),
@@ -512,6 +595,8 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/tiroir/{ident}", api_tiroir_supprimer, methods=["DELETE"]),
         Route("/api/memoire/chercher", api_memoire_chercher, methods=["POST"]),
         Route("/api/couts/tarifs", api_tarifs, methods=["PUT"]),
+        Route("/api/voix/options", api_voix_options), Route("/api/voix/transcrire", api_voix_transcrire, methods=["POST"]),
+        Route("/api/voix/parler", api_voix_parler, methods=["POST"]), WebSocketRoute("/ws/voix", ws_voix),
     ]
 
     @asynccontextmanager

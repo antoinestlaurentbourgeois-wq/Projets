@@ -157,3 +157,9 @@ header.haut nav.onglets button { white-space: nowrap; }
   header.haut #deconnexion { order: 2; }
   header.haut nav.onglets { order: 3; flex: 1 0 100%; }
 }
+
+/* ---- Voix ---- */
+.boutons-ligne { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
+.boutons-ligne .bouton { flex: 1 1 160px; }
+.bouton.gros { width: 100%; padding: 26px 16px; font-size: 1.15rem; margin: 10px 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+.bouton.gros.enregistre { background: var(--rouge); border-color: var(--rouge); color: #fff; }

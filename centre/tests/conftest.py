@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import asyncio
 import json
 import os
 import sys
@@ -109,6 +110,55 @@ class FauxProcessus:
         return sc(args, stdin_texte) if callable(sc) else sc
 
 
+class FausseConnexion:
+    """Une WebSocket « amont » simulée (fournisseur vocal). Thread-safe : les tests l'alimentent depuis un autre fil."""
+
+    def __init__(self, url, entetes, loop):
+        self.url, self.entetes, self.loop = url, dict(entetes), loop
+        self.envoyes = []
+        self.ferme = False
+        self.sur_envoi = None
+        self._q = asyncio.Queue()
+
+    async def send(self, message):
+        m = json.loads(message)
+        self.envoyes.append(m)
+        if self.sur_envoi:
+            self.sur_envoi(m)
+
+    def emettre(self, evenement):
+        self.loop.call_soon_threadsafe(self._q.put_nowait, json.dumps(evenement))
+
+    async def close(self):
+        self.ferme = True
+        self._q.put_nowait(None)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        x = await self._q.get()
+        if x is None:
+            raise StopAsyncIteration
+        return x
+
+    def types(self):
+        return [m["type"] for m in self.envoyes]
+
+
+class FauxAmont:
+    def __init__(self):
+        self.connexions = []
+        self.echec = None
+
+    async def ouvrir(self, url, entetes):
+        if self.echec:
+            raise OSError(self.echec)
+        c = FausseConnexion(url, entetes, asyncio.get_running_loop())
+        self.connexions.append(c)
+        return c
+
+
 class Horloge:
     def __init__(self):
         self.t = 1_000_000.0
@@ -138,9 +188,14 @@ def processus():
 
 
 @pytest.fixture
-def centre(tmp_path, simulateur, reseau, processus):
+def amont():
+    return FauxAmont()
+
+
+@pytest.fixture
+def centre(tmp_path, simulateur, reseau, processus, amont):
     config = Config(dossier_donnees=str(tmp_path / "donnees"), rafraichir_en_fond=False)
-    return Centre(config, systeme=simulateur, reseau=reseau, processus=processus)
+    return Centre(config, systeme=simulateur, reseau=reseau, processus=processus, amont=amont)
 
 
 @pytest.fixture

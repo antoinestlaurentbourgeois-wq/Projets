@@ -3,7 +3,9 @@
 Une seule application, dans votre navigateur (et plus tard sur votre téléphone), pour piloter toute votre IA.
 **Phase 1 :** le socle, la page **Centre** (tout ce que fait le panneau « Mon IA locale ») et la page **Coûts**.
 **Phase 2 :** les **Salles** (une par IA : Crew, Claude, ChatGPT/Codex, Gemini, Grok, DeepSeek, gemma) et le **Tiroir** partagé.
-La voix (phase 3), l'accès téléphone (phase 4) et les extras (phase 5) viennent ensuite.
+**Phase 3 :** la **Voix** : conversation en direct (OpenAI Realtime ou Grok Voice, voix du nuage) avec outils pour consulter toutes les salles et la mémoire,
+et talkie-walkie (appuyer pour parler). Coût en direct, coupure automatique au plafond, désactivée en modes Confidentiel/Ultra.
+L'accès téléphone (phase 4) et les extras (phase 5) viennent ensuite.
 
 Le panneau tkinter reste en place et fonctionne toujours : c'est votre solution de secours.
 
@@ -21,6 +23,8 @@ Le panneau tkinter reste en place et fonctionne toujours : c'est votre solution 
   seules gemma et Crew répondent, et un contenu privé ne va jamais à une IA du nuage. Claude, Codex et Gemini (programmes officiels, votre abonnement)
   travaillent dans `I:\IA\ATELIER`, en lecture seule ; toute action sensible passe par un **bouton d'approbation**. Jamais de `--dangerously-skip-permissions`.
   Voir `VERIFICATIONS-phase2.md` et `INCONNUS-phase2.md`.
+- **Voix** : LIVE (le serveur du PC parle au fournisseur : votre clé ne quitte pas le PC, le coût est compté en direct, coupure au plafond, durée maximale,
+  fermeture après silence) et **talkie-walkie**. Voir `VERIFICATIONS-phase3.md` et `INCONNUS-phase3.md`. `scripts\demo.bat` permet d'essayer sans clé ni dépense.
 - **Journal** : les « reçus » (qui a fait quoi, quand) et le journal du serveur. Aucune clé n'y apparaît jamais.
 - **Application installable** (PWA) : dans Chrome ou Edge, menu ⋮ → « Installer l'application ».
 
