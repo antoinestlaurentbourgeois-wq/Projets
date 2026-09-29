@@ -167,6 +167,14 @@ class Horloge:
         return self.t
 
 
+@pytest.fixture(autouse=True)
+def sans_vraies_cles(monkeypatch):
+    """Les tests ne doivent jamais dépendre des vraies clés de la machine."""
+    from centre.cles import NOMS
+    for nom in NOMS.values():
+        monkeypatch.delenv(nom, raising=False)
+
+
 @pytest.fixture
 def horloge():
     return Horloge()

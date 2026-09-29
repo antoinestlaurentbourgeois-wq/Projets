@@ -25,7 +25,7 @@ import urllib.request
 HOTES_LOCAUX = ("127.0.0.1",)
 HOTES_NUAGE = ("api.deepseek.com", "api.openai.com", "api.x.ai", "generativelanguage.googleapis.com",
                "api.anthropic.com")
-_ARG_SUR = re.compile(r"^[A-Za-z0-9 _.,:=+@/\\()\-]*$")
+_ARG_SUR = re.compile(r"^[A-Za-z0-9 _.,:=+@*/\\()\-]*$")
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 

@@ -4,6 +4,7 @@
 import json
 import os
 import threading
+import time
 
 import pytest
 
@@ -300,6 +301,8 @@ def test_claude_arguments_sures_et_abonnement(centre, processus, monkeypatch):
     assert "--dangerously-skip-permissions" not in " ".join(args) and "bypassPermissions" not in " ".join(args)
     assert args[1] == "-p" and "stream-json" in args and args[args.index("--permission-mode") + 1] == "default"
     assert args[args.index("--allowedTools") + 1] == "Read,Glob,Grep,LS"
+    interdits = args[args.index("--disallowedTools") + 1].split(",")
+    assert {"Read(**/.env)", "Read(**/verrou.json)", "Read(**/.claude/.credentials.json)", "Read(**/secrets/**)"} <= set(interdits)
     assert lance["cwd"] == centre.config.atelier and os.path.isdir(centre.config.atelier)
     assert "ANTHROPIC_API_KEY" not in lance["env"]                       # l'abonnement passe avant toute clé
     assert "bonjour Claude" in lance["stdin"] and "bonjour Claude" not in " ".join(args)   # invite par l'entrée standard
@@ -553,3 +556,18 @@ def test_aucun_secret_dans_l_historique(centre, simulateur, reseau, processus):
         for n in noms:
             brut += open(os.path.join(racine, n), encoding="utf-8", errors="replace").read()
     assert "sk-secret-ne-pas-afficher" not in brut
+
+
+def test_les_salles_rafraichissent_les_etats_sans_la_page_centre(centre, simulateur, reseau):
+    """gemma/Crew doivent apparaître disponibles même si /api/etat n'a jamais été appelé."""
+    simulateur.tout_allumer()
+    assert centre.maj is None
+    d = {s["id"]: s for s in centre.salles.catalogue()}
+    assert d["gemma"]["disponible"] and d["crew"]["disponible"]
+    # et avant un envoi, si les voyants sont périmés
+    simulateur.fichiers[centre.L.R.FICHIER_MODE_CREW] = json.dumps({"mode": "econome"})
+    centre.maj = time.time() - 60
+    simulateur.crew_pids = []
+    reseau.repondre(URL_GEMMA, lambda c, e: sse("ok"))
+    evts, _ = envoyer(centre, "crew", "salut")
+    assert evts[0]["t"] == "erreur" and "éteint" in evts[0]["message"]

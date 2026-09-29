@@ -115,6 +115,12 @@ class Centre:
     def noter_demande(self):
         self._derniere_demande = time.monotonic()
 
+    def assurer_etats(self, age_max=10):
+        """Garantit des voyants récents pour les pages qui en dépendent (Salles, Voix…), même si la page Centre n'est pas ouverte."""
+        self.noter_demande()
+        if self.maj is None or time.time() - self.maj > age_max:
+            self.rafraichir()
+
     # ----- état complet pour l'interface ----------------------------------------------------
 
     def etat(self):

@@ -152,6 +152,10 @@ class OpenAICompat:
 # ------------------------------------------------------------------------------------------
 
 OUTILS_LECTURE_CLAUDE = ("Read", "Glob", "Grep", "LS")
+# Fichiers sensibles que Claude ne doit jamais lire, même en lecture seule (Read peut sortir de l'atelier).
+LECTURES_INTERDITES = ("Read(**/.env)", "Read(**/.env.*)", "Read(**/.claude/.credentials.json)", "Read(**/.codex/auth.json)",
+                       "Read(**/.gemini/**)", "Read(**/verrou.json)", "Read(**/secrets/**)", "Read(**/*.pem)", "Read(**/id_rsa*)",
+                       "Read(**/id_ed25519*)", "Read(**/.ssh/**)")
 _ID_SESSION = re.compile(r"^[A-Za-z0-9_-]{6,100}$")
 _MODELE = re.compile(r"^[A-Za-z0-9._:/-]{1,80}$")
 _BASH_SUR = re.compile(r"^[A-Za-z0-9 _.,:=/\\\-]{1,200}$")
@@ -227,7 +231,8 @@ class ClaudeCLI(ProgrammeBase):
             return
         outils = list(OUTILS_LECTURE_CLAUDE) + [o for o in req.outils_autorises if o not in OUTILS_LECTURE_CLAUDE]
         args = [exe, "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-                "--allowedTools", ",".join(outils), "--permission-mode", "default", "--max-turns", "12"]
+                "--allowedTools", ",".join(outils),
+                "--disallowedTools", ",".join(LECTURES_INTERDITES), "--permission-mode", "default", "--max-turns", "12"]
         if req.modele and modele_valide(req.modele):
             args += ["--model", req.modele]
         if req.session_cli and _ID_SESSION.match(req.session_cli):

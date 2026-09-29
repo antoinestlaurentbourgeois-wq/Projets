@@ -46,3 +46,6 @@
 
 17. Flux SSE : lu avec `fetch` + `ReadableStream`. Testé avec Chromium (démo). Sur un vieux navigateur mobile, un problème de flux se verrait par un message « Connexion interrompue » ; la réponse reste alors sauvegardée sur le PC.
 18. Le rendu Markdown est volontairement minimal (gras, code, blocs de code) : pas de tableaux ni de liens cliquables (sécurité).
+
+19. **Lectures interdites à Claude.** Je passe `--disallowedTools "Read(**/.env),Read(**/.env.*),Read(**/.claude/.credentials.json),Read(**/.codex/auth.json),Read(**/.gemini/**),Read(**/verrou.json),Read(**/secrets/**),Read(**/*.pem),Read(**/id_rsa*),Read(**/id_ed25519*),Read(**/.ssh/**)"`.
+    Syntaxe des motifs (`**` façon gitignore) **supposée** : à vérifier avec la documentation de Claude Code, et en demandant à Claude de lire un `.env` de test (il doit être refusé). Les règles `Read(...)` couvrent en principe aussi Grep/Glob, mais pas forcément une commande `Bash` approuvée : c'est une raison de plus de lire les cartes d'approbation.

@@ -319,6 +319,7 @@ class Salles:
         return True, ""
 
     def catalogue(self):
+        self.centre.assurer_etats()
         sortie = []
         for s in SALLES.values():
             ok, raison = self.disponibilite(s.ident)
@@ -494,6 +495,7 @@ class Salles:
     def envoyer(self, cid, texte, options=None, annulation=None, session=""):
         """Générateur d'événements pour un message de l'utilisateur."""
         options = options or {}
+        self.centre.assurer_etats()
         texte = str(texte or "").strip()
         if not texte:
             yield ia.evt_erreur("Message vide.")
