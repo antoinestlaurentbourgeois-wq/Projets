@@ -5,10 +5,16 @@ import sys
 import pytest
 
 RACINE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PANNEAU = os.path.join(os.path.dirname(RACINE), "panneau")
-for d in (RACINE, PANNEAU):
-    if d not in sys.path:
-        sys.path.insert(0, d)
+if RACINE not in sys.path:
+    sys.path.insert(0, RACINE)
+
+from centre.config import Config as _Config  # noqa: E402
+
+# Même logique que le serveur : variable CENTRE_PANNEAU, puis panneau voisin (dépôt),
+# puis I:\Python\crewai-routage\panneau (installation réelle).
+PANNEAU = _Config().dossier_panneau
+if PANNEAU not in sys.path:
+    sys.path.insert(0, PANNEAU)
 
 from simulateur import Simulateur  # noqa: E402  (fourni par le panneau)
 from starlette.testclient import TestClient  # noqa: E402

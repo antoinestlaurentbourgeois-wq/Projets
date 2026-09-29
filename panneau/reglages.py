@@ -51,12 +51,15 @@ PYTHONW_CREW = DOSSIER_CREW + r"\.venv\Scripts\pythonw.exe"
 SCRIPT_CREW = DOSSIER_CREW + r"\serveur_crew.py"
 
 # ---------------------------------------------------------------------------
-# Adresses (uniquement localhost / 127.0.0.1 : rien ne sort du PC)
+# Adresses (uniquement ce PC : rien ne sort du PC).
+# 127.0.0.1 et NON localhost pour tout appel fait par un programme : sous Windows,
+# « localhost » essaie IPv6 d'abord et perd environ 2 secondes par appel.
+# « localhost » reste seulement dans les liens ouverts dans le navigateur.
 # ---------------------------------------------------------------------------
 
-URL_WEBUI = "http://localhost:3000/api/version"
-URL_LMSTUDIO = "http://localhost:1234/v1/models"
-URL_LMSTUDIO_MODELES = "http://localhost:1234/api/v0/models"
+URL_WEBUI = "http://127.0.0.1:3000/api/version"
+URL_LMSTUDIO = "http://127.0.0.1:1234/v1/models"
+URL_LMSTUDIO_MODELES = "http://127.0.0.1:1234/api/v0/models"
 URL_CREW_SANTE = "http://127.0.0.1:8765/sante"
 
 # ---------------------------------------------------------------------------
@@ -104,11 +107,12 @@ FICHIER_MODE_CREW = DOSSIER_CREW + r"\mode_crew.json"
 FICHIER_CACHE_MODES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modes_crew_cache.json")
 
 # Open WebUI
-URL_WEBUI_BASE = "http://localhost:3000"
+URL_WEBUI_BASE = "http://127.0.0.1:3000"            # appels du programme
+URL_WEBUI_NAVIGATEUR = "http://localhost:3000"       # liens ouverts dans le navigateur
 URL_WEBUI_CONVERSATIONS = URL_WEBUI_BASE + "/api/v1/chats/?page=1"
 URL_WEBUI_CONVERSATION = URL_WEBUI_BASE + "/api/v1/chats/{id}"
-URL_WEBUI_CONVERSATION_OUVRIR = URL_WEBUI_BASE + "/c/{id}"
-URL_WEBUI_NOUVELLE_CREW = URL_WEBUI_BASE + "/?model=crew-normal"
+URL_WEBUI_CONVERSATION_OUVRIR = URL_WEBUI_NAVIGATEUR + "/c/{id}"
+URL_WEBUI_NOUVELLE_CREW = URL_WEBUI_NAVIGATEUR + "/?model=crew-normal"
 NOM_CLE_WEBUI = "OPENWEBUI_API_KEY"
 PREFIXE_MODELE_CREW = "crew-"
 CONVERSATIONS_EXAMINEES = 20      # on regarde au plus les 20 plus récentes

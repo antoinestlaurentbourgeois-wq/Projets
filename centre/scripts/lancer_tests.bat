@@ -1,6 +1,8 @@
 @echo off
 cd /d "%~dp0.."
-".venv\Scripts\python.exe" -m pip install --disable-pip-version-check pytest httpx
+".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements-tests.txt
 ".venv\Scripts\python.exe" -m pytest -q tests
-cd /d "%~dp0..\..\panneau" 2>nul && "%~dp0..\.venv\Scripts\python.exe" -m unittest discover -s tests
+echo.
+echo --- Tests du panneau ---
+".venv\Scripts\python.exe" -m centre tests-panneau
 pause

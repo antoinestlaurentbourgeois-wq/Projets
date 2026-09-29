@@ -5,14 +5,14 @@ Lancement du Centre de contrôle.
   python -m centre                 démarre le serveur (127.0.0.1:8740)
   python -m centre definir-verrou  choisit le NIP et le mot secret (demandés au clavier)
   python -m centre demo            démarre avec un PC SIMULÉ (rien n'est lancé pour de vrai)
+  python -m centre tests-panneau   lance les tests du panneau (là où il est installé)
 """
 
 import getpass
 import os
 import sys
-import tempfile
 
-from .config import Config, HOTE
+from .config import Config, HOTE, dossier_demo
 from .verrou import ErreurVerrou, Verrou
 
 
@@ -59,11 +59,18 @@ def demo():
     dossier_panneau = Config().dossier_panneau
     sys.path.insert(0, dossier_panneau)
     from simulateur import Simulateur
-    config = Config(dossier_donnees=os.path.join(tempfile.gettempdir(), "centre-demo"))
+    config = Config(dossier_donnees=dossier_demo())
     Verrou(config.chemin("verrou.json")).definir("123456", "motsecret-demo")
     print("MODE DEMO : tout est simulé.  Adresse : http://127.0.0.1:%d   NIP : 123456   Mot secret : motsecret-demo"
           % config.port)
     demarrer(config, Simulateur(temps_reel=True))
+
+
+def tests_panneau():
+    import subprocess
+    dossier = Config().dossier_panneau
+    return subprocess.call([sys.executable, "-m", "unittest", "discover", "-s", os.path.join(dossier, "tests")],
+                           cwd=dossier)
 
 
 def main(argv=None):
@@ -73,6 +80,8 @@ def main(argv=None):
         definir_verrou(Config())
     elif commande == "demo":
         demo()
+    elif commande == "tests-panneau":
+        return tests_panneau()
     elif commande in ("serveur", "demarrer"):
         demarrer(Config())
     else:

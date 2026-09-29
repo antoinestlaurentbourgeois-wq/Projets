@@ -35,6 +35,14 @@ def _dossier_donnees_par_defaut():
     return os.path.join(DOSSIER_CENTRE, "donnees")
 
 
+def dossier_demo():
+    """Données du mode démo : sur I: sous Windows (le disque C: manque de place)."""
+    if sys.platform == "win32":
+        return r"I:\IA\CENTRE\demo"
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), "centre-demo")
+
+
 @dataclass
 class Config:
     dossier_panneau: str = field(
