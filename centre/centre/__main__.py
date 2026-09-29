@@ -6,6 +6,10 @@ Lancement du Centre de contrôle.
   python -m centre definir-verrou  choisit le NIP et le mot secret (demandés au clavier)
   python -m centre demo            démarre avec un PC SIMULÉ (rien n'est lancé pour de vrai)
   python -m centre tests-panneau   lance les tests du panneau (là où il est installé)
+  python -m centre sauvegarde      crée une sauvegarde sans secrets (les 7 dernières sont gardées)
+  python -m centre restaurer NOM DOSSIER   extrait une sauvegarde dans un dossier neuf
+  python -m centre gardien         vérifications de santé (écrit gardien.json)
+  python -m centre rapport [JOURS] rapport d'usage en texte
 """
 
 import getpass
@@ -78,6 +82,47 @@ def tests_panneau():
                            cwd=dossier)
 
 
+def lancer_gardien():
+    """Vérifications de santé, appelées par le Planificateur de tâches (voir scripts\\gardien.ps1)."""
+    import shutil
+    import subprocess
+    from . import cles, gardien
+    from .cles import NOMS
+    config = Config()
+    funnel = None
+    ts = shutil.which("tailscale") or (r"C:\Program Files\Tailscale\tailscale.exe" if os.path.isfile(r"C:\Program Files\Tailscale\tailscale.exe") else None)
+    if ts:
+        try:
+            sortie = subprocess.run([ts, "funnel", "status"], capture_output=True, text=True, timeout=15, creationflags=0x08000000 if sys.platform == "win32" else 0)
+            funnel = "Funnel on" in (sortie.stdout + sortie.stderr)
+        except Exception:
+            funnel = None
+    presentes = {}
+    c = cles.Cles(_SystemeCles())
+    for f in ("deepseek", "gemini", "xai", "openai"):
+        presentes[NOMS[f]] = c.presente(f)
+    r = gardien.verifier(config, cles_presentes=presentes, tailscale_funnel=funnel)
+    gardien.ecrire(config, r)
+    for a in r["alertes"]:
+        print("ALERTE :", a)
+    print("OK" if r["ok"] else "PROBLEME")
+    return 0 if r["ok"] else 1
+
+
+class _SystemeCles:
+    """Lit les variables utilisateur de Windows (HKCU\\Environment) sans dépendre du panneau."""
+
+    def valeur_variable_utilisateur(self, nom):
+        if sys.platform != "win32":
+            return None
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+                return str(winreg.QueryValueEx(k, nom)[0]).strip() or None
+        except OSError:
+            return None
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     commande = argv[0] if argv else "serveur"
@@ -87,6 +132,26 @@ def main(argv=None):
         demo()
     elif commande == "tests-panneau":
         return tests_panneau()
+    elif commande == "sauvegarde":
+        from . import sauvegarde
+        r = sauvegarde.sauvegarder(Config())
+        print(r["message"])
+        for e in r.get("ecartes", []):
+            print("  écarté :", e["fichier"], "-", e["raison"])
+        return 0 if r["ok"] else 1
+    elif commande == "restaurer" and len(argv) == 3:
+        from . import sauvegarde
+        try:
+            print("Restauré dans :", sauvegarde.restaurer(Config(), argv[1], argv[2]))
+        except ValueError as e:
+            print("Impossible :", e)
+            return 1
+    elif commande == "gardien":
+        return lancer_gardien()
+    elif commande == "rapport":
+        from . import rapport
+        import json as _j
+        print(_j.dumps(rapport.construire(Config(), int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 30), ensure_ascii=False, indent=1))
     elif commande in ("serveur", "demarrer"):
         demarrer(Config())
     else:

@@ -33,6 +33,9 @@ from .journal import lire_fin_journal, masquer
 from .salles import ErreurSalle, SALLES
 from .tiroir import ErreurTiroir
 from .voix import ErreurVoix
+from .rappels import ErreurRappel
+from . import bulletin as bulletin_mod, departements as departements_mod, gardien as gardien_mod, rapport as rapport_mod
+from . import sauvegarde as sauvegarde_mod, verite as verite_mod
 
 journal = logging.getLogger("centre")
 
@@ -660,6 +663,109 @@ def creer_app(centre=None, verrou=None, config=None):
             except Exception:
                 pass
 
+    # ----- extras (phase 5) --------------------------------------------------------------------------------------------
+
+    async def api_rappels(request):
+        return _json({"rappels": await run_in_threadpool(centre.rappels.lister, request.query_params.get("tous") == "1")})
+
+    async def api_rappels_dus(request):
+        return _json({"dus": await run_in_threadpool(centre.rappels.dus)})
+
+    async def api_rappel_ajouter(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            r = await run_in_threadpool(centre.rappels.ajouter, d.get("texte"), d.get("echeance"), d.get("recurrence", "aucune"), d.get("zone", "prive"))
+        except ErreurRappel as e:
+            return _erreur(str(e), e.code)
+        return _json(r, 201)
+
+    async def api_rappel_modifier(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        ident = request.path_params["ident"]
+        try:
+            if d.get("action") == "terminer":
+                r = await run_in_threadpool(centre.rappels.terminer, ident)
+            elif d.get("action") == "reporter":
+                r = await run_in_threadpool(centre.rappels.reporter, ident, d.get("minutes"))
+            else:
+                return _erreur("Action inconnue.")
+        except ErreurRappel as e:
+            return _erreur(str(e), e.code)
+        return _json(r)
+
+    async def api_rappel_supprimer(request):
+        try:
+            await run_in_threadpool(centre.rappels.supprimer, request.path_params["ident"])
+        except ErreurRappel as e:
+            return _erreur(str(e), e.code)
+        return _json({"ok": True})
+
+    async def api_departements(request):
+        deps, problemes = await run_in_threadpool(departements_mod.charger, config)
+        return _json({"departements": deps, "problemes": problemes})
+
+    async def api_bulletin(request):
+        return _json(await run_in_threadpool(bulletin_mod.composer, centre))
+
+    async def api_bulletin_lire(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        fournisseur = str(d.get("fournisseur", "openai"))
+        if fournisseur not in ("openai", "xai"):
+            return _erreur("Fournisseur inconnu.", 400)
+        b = await run_in_threadpool(bulletin_mod.composer, centre)
+        try:
+            audio, type_mime, tronque = await run_in_threadpool(voix.parler_texte, b["texte_voix"], fournisseur, str(d.get("voix", "")) or None)
+        except ErreurVoix as e:
+            return _erreur(str(e), e.code)
+        entetes = dict(ENTETES_SECURITE)
+        entetes["X-Tronque"] = "1" if tronque else "0"
+        return Response(audio, media_type=type_mime, headers=entetes)
+
+    async def api_verifier(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            r = await run_in_threadpool(verite_mod.verifier, centre, request.path_params["cid"], str(d.get("message_id", "")), str(d.get("salle", "")))
+        except ErreurSalle as e:
+            return erreur_salle(e)
+        return _json(r)
+
+    async def api_sauvegardes(request):
+        return _json({"sauvegardes": await run_in_threadpool(sauvegarde_mod.lister, config)})
+
+    async def api_sauvegarder(request):
+        refus = sensible(request)
+        if refus:
+            return refus
+        r = await run_in_threadpool(sauvegarde_mod.sauvegarder, config)
+        centre.recus.ajouter("sauvegarde", "ok" if r["ok"] else "erreur", nom=r.get("nom"), fichiers=r.get("fichiers"), session=session_courte(request))
+        return _json(r, 200 if r["ok"] else 500)
+
+    async def api_gardien(request):
+        return _json(await run_in_threadpool(gardien_mod.lire, config))
+
+    def _jours(request):
+        try:
+            return max(1, min(int(request.query_params.get("jours", "30")), 366))
+        except ValueError:
+            return 30
+
+    async def api_rapport(request):
+        return _json(await run_in_threadpool(rapport_mod.construire, config, _jours(request)))
+
+    async def api_rapport_csv(request):
+        r = await run_in_threadpool(rapport_mod.construire, config, _jours(request))
+        entetes = dict(ENTETES_SECURITE)
+        entetes["Content-Disposition"] = 'attachment; filename="rapport-usage.csv"'
+        return Response(rapport_mod.en_csv(r).encode("utf-8"), media_type="text/csv; charset=utf-8", headers=entetes)
+
     routes = [
         Route("/", page), Route("/connexion", page), Route("/manifest.webmanifest", page),
         Route("/sw.js", page), Route("/s/{nom}", statique),
@@ -692,6 +798,14 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/couts/tarifs", api_tarifs, methods=["PUT"]),
         Route("/api/voix/options", api_voix_options), Route("/api/voix/transcrire", api_voix_transcrire, methods=["POST"]),
         Route("/api/voix/parler", api_voix_parler, methods=["POST"]), WebSocketRoute("/ws/voix", ws_voix),
+        Route("/api/rappels", api_rappels), Route("/api/rappels", api_rappel_ajouter, methods=["POST"]),
+        Route("/api/rappels/dus", api_rappels_dus), Route("/api/rappels/{ident}", api_rappel_modifier, methods=["PUT"]),
+        Route("/api/rappels/{ident}", api_rappel_supprimer, methods=["DELETE"]),
+        Route("/api/departements", api_departements), Route("/api/bulletin", api_bulletin),
+        Route("/api/bulletin/lire", api_bulletin_lire, methods=["POST"]),
+        Route("/api/conversations/{cid}/verifier", api_verifier, methods=["POST"]),
+        Route("/api/sauvegardes", api_sauvegardes), Route("/api/sauvegardes", api_sauvegarder, methods=["POST"]),
+        Route("/api/gardien", api_gardien), Route("/api/rapport", api_rapport), Route("/api/rapport.csv", api_rapport_csv),
     ]
 
     @asynccontextmanager

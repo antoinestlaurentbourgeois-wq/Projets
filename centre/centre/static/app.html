@@ -22,15 +22,19 @@
     <button data-page="salles">Salles</button>
     <button data-page="voix">Voix</button>
     <button data-page="tiroir">Tiroir</button>
+    <button data-page="rappels">Rappels</button>
+    <button data-page="departements">Départements</button>
     <button data-page="couts">Coûts</button>
     <button data-page="journal">Journal</button>
   </nav>
   <button class="bouton" id="deconnexion">Se déconnecter</button>
 </header>
+<div id="alertes" role="status" aria-live="polite"></div>
 <main id="page" aria-live="polite"></main>
 <dialog id="dialogue"><h3 id="dialogue-titre"></h3><p id="dialogue-texte"></p><div id="dialogue-champs"></div><div class="boutons" id="dialogue-boutons"></div></dialog>
 <script src="/s/app.js"></script>
 <script src="/s/salles.js"></script>
 <script src="/s/voix.js"></script>
+<script src="/s/extras.js"></script>
 </body>
 </html>

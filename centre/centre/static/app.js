@@ -112,7 +112,7 @@
 
   // ---------------------------------------------------------------- pages
   var page = document.getElementById("page");
-  var Centre = window.Centre = { pages: {}, h: h, vider: vider, api: api, demanderNip: demanderNip, demander: demander, informer: informer,
+  var Centre = window.Centre = { pages: {}, apresCouts: [], apresJournal: [], h: h, vider: vider, api: api, demanderNip: demanderNip, demander: demander, informer: informer,
     confirmer: confirmer, formulaire: formulaire, dollars: dollars, page: page, aller: function (n) { aller(n); },
     courante: function () { return pageCourante; }, arreterMinuterie: function () { clearTimeout(minuterie); } };
   var pageCourante = null;
@@ -396,6 +396,7 @@
     carteDS.appendChild(h("button", { class: "bouton", type: "button", texte: "Actualiser", onclick: function () { solde(contenuDS, true); } }));
     zone.appendChild(carteDS);
     solde(contenuDS, false);
+    Centre.apresCouts.forEach(function (f) { f(zone); });
 
     // Plafonds
     var jour = h("input", { type: "number", min: "0", step: "0.01", inputmode: "decimal", id: "plafond-jour", value: d.plafonds.jour.plafond == null ? "" : String(d.plafonds.jour.plafond) });
@@ -424,11 +425,13 @@
         api("PUT", "/api/couts/tarifs", { salle: k, entree: e.value, sortie: so.value }).then(function () { etat.textContent = "réglé par vous"; })
           .catch(function (x) { etat.textContent = x.message; });
       } });
-      return h("tr", null, h("td", { texte: d.ia[k] || k }), h("td", null, e), h("td", null, so), h("td", null, b, " ", etat));
+      return h("div", { class: "tarif" }, h("strong", { texte: d.ia[k] || k }),
+        h("div", { class: "grille2" }, h("label", { class: "champ" }, h("span", { texte: "Entrée ($ / million)" }), e), h("label", { class: "champ" }, h("span", { texte: "Sortie ($ / million)" }), so)),
+        h("div", null, b, " ", etat));
     });
     zone.appendChild(h("div", { class: "carte" }, h("h2", { texte: "Tarifs au jeton (texte)" }),
       h("p", { class: "doux", texte: "Dollars US par million de jetons. Les valeurs « indicatives » ne sont PAS vérifiées : réglez les vrais tarifs de chaque fournisseur pour que les estimations et les plafonds soient justes. Les IA locales et les abonnements ne coûtent rien de plus." }),
-      h("table", { class: "tab" }, h("thead", null, h("tr", null, h("th", { texte: "IA" }), h("th", { texte: "Entrée" }), h("th", { texte: "Sortie" }), h("th", { texte: "" }))), h("tbody", null, lignesT))));
+      lignesT));
 
     var t = d.tarifs;
     zone.appendChild(h("div", { class: "carte" }, h("h2", { texte: "Tarifs de référence (vérifiés le " + t.verifie_le + ", à revérifier)" }),
@@ -481,6 +484,7 @@
     Promise.all([api("GET", "/api/recus"), api("GET", "/api/journal"), api("GET", "/api/securite")]).then(function (r) {
       var recus = r[0].recus, lignes = r[1].lignes, sec = r[2];
       zone.appendChild(carteSecurite(sec, zone));
+      Centre.apresJournal.forEach(function (f) { f(zone); });
       zone.appendChild(h("div", { class: "carte" }, h("h2", { texte: "Reçus (actions récentes)" }),
         recus.length ? h("table", { class: "tab" }, h("tbody", null, recus.map(function (x) {
           return h("tr", null, h("td", { texte: x.ts.replace("T", " ").slice(0, 19) }), h("td", { texte: x.action }),

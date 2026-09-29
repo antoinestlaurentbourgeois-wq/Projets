@@ -1,0 +1,25 @@
+{
+ "id": "bureau-etudes",
+ "nom": "Bureau d'études",
+ "description": "Mécanique, dessins, calculs, planification.",
+ "salle": "crew",
+ "demarrages": [
+  {
+   "titre": "Revoir une note de calcul",
+   "prompt": "Relis cette note de calcul de mécanique. Vérifie les hypothèses, les unités, les formules et les coefficients de sécurité, puis liste les erreurs ou oublis possibles :\n\n"
+  },
+  {
+   "titre": "Préparer une revue de conception",
+   "prompt": "Aide-moi à préparer une revue de conception. Voici le sujet et l'état d'avancement. Propose une liste de points à vérifier (fonction, tenue mécanique, fabricabilité, coût, délais, risques) et les questions à poser :\n\n"
+  },
+  {
+   "titre": "Compte rendu de réunion technique",
+   "prompt": "Rédige un compte rendu clair de cette réunion technique : décisions, actions (qui, quoi, quand), points ouverts. Voici mes notes :\n\n"
+  },
+  {
+   "titre": "Chercher dans ma bibliothèque",
+   "prompt": "Cherche dans ma bibliothèque de documents tout ce qui concerne le sujet suivant et résume ce que tu trouves, en citant les fichiers :\n\n",
+   "memoire": true
+  }
+ ]
+}

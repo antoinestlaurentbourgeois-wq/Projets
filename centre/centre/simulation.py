@@ -33,6 +33,10 @@ class ReseauDemo:
     def flux_post(self, url, entetes, corps, delai=600, annulation=None):
         question = corps["messages"][-1]["content"] if corps.get("messages") else ""
         qui = corps.get("model") or url.split("/")[2]
+        if "<<<QUESTION>>>" in question:            # vérification (Truth Gate) : réponse au format JSON attendu
+            return 200, _sse([json.dumps({"verdict": "a_verifier", "resume": "Vérification SIMULÉE : rien n'a été réellement contrôlé.",
+                                          "affirmations": [{"texte": "Première affirmation de la réponse", "statut": "confirmee", "raison": "simulation"},
+                                                           {"texte": "Deuxième affirmation", "statut": "douteuse", "raison": "simulation"}]}, ensure_ascii=False)])
         mots = _reponse(question.split("Demande de l'utilisateur :")[-1].strip(), qui).split(" ")
         return 200, _sse([m + " " for m in mots])
 
@@ -76,6 +80,9 @@ class ProcessusDemo:
         nom = args[0].split("/")[-1]
         question = (stdin_texte or "").strip().split("\n")[-1]
         texte = _reponse(question, nom)
+        if "<<<QUESTION>>>" in (stdin_texte or ""):
+            texte = json.dumps({"verdict": "fiable", "resume": "Vérification SIMULÉE.", "affirmations": [
+                {"texte": "Affirmation simulée", "statut": "confirmee", "raison": "simulation"}]}, ensure_ascii=False)
         if nom == "claude":
             refus = []
             if "approbation" in question.lower():

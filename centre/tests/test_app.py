@@ -130,8 +130,10 @@ def test_interface_sans_script_ni_style_en_ligne():
         html = open(os.path.join(dossier, nom), encoding="utf-8").read()
         assert not re.search(r"<script(?![^>]*\bsrc=)", html) and "style=" not in html and "<style" not in html
         assert not re.search(r"\son[a-z]+=", html)
-    js = open(os.path.join(dossier, "app.js"), encoding="utf-8").read()
-    assert "innerHTML" not in js and "eval(" not in js and "document.write" not in js
+    for nom in sorted(f for f in os.listdir(dossier) if f.endswith(".js")):
+        js = open(os.path.join(dossier, nom), encoding="utf-8").read()
+        assert "innerHTML" not in js and "outerHTML" not in js and "insertAdjacentHTML" not in js, nom
+        assert "eval(" not in js and "new Function" not in js and "document.write" not in js and 'setAttribute("style"' not in js, nom
 
 
 def test_pas_de_traversee_de_dossier(client):

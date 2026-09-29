@@ -180,3 +180,11 @@ table.tab { display: block; overflow-x: auto; }
 .msg, .doux { overflow-wrap: anywhere; }
 .grille2 > * { min-width: 0; }
 label.champ select { width: 100%; }
+
+/* ---- Extras ---- */
+#alertes { max-width: 860px; margin: 8px auto 0; padding: 0 16px; }
+.histo { display: flex; align-items: flex-end; gap: 2px; height: 66px; margin: 8px 0; }
+.histo .barre { flex: 1 1 0; background: var(--accent); border-radius: 2px 2px 0 0; min-width: 3px; }
+a.petit { display: inline-block; text-decoration: none; color: inherit; }
+.tarif { border-top: 1px solid var(--bord); padding: 8px 0; }
+.histo .barre { max-width: 18px; }

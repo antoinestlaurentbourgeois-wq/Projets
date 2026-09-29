@@ -6,7 +6,8 @@ Une seule application, dans votre navigateur (et plus tard sur votre téléphone
 **Phase 3 :** la **Voix** : conversation en direct (OpenAI Realtime ou Grok Voice, voix du nuage) avec outils pour consulter toutes les salles et la mémoire,
 et talkie-walkie (appuyer pour parler). Coût en direct, coupure automatique au plafond, désactivée en modes Confidentiel/Ultra.
 **Phase 4 :** l'**accès téléphone** par Tailscale Serve (HTTPS, réseau privé seulement) : voir `TELEPHONE.md` et la revue `SECURITE-TELEPHONE.md`.
-Les extras (phase 5) viennent ensuite.
+**Phase 5 :** les extras : **Rappels** et **bulletin du matin**, **Départements** (démarrages rapides), **Vérifier** une réponse par une autre IA (Truth Gate),
+**gardien** (santé toutes les 10 minutes), **sauvegarde de nuit** sans secrets, **rapport d'usage**.
 
 Le panneau tkinter reste en place et fonctionne toujours : c'est votre solution de secours.
 
@@ -51,8 +52,10 @@ Rien n'est installé sur C: (à part le raccourci du bureau).
 6. **Double-cliquez sur `scripts\creer_raccourci.bat`** : un raccourci « Centre de contrôle » apparaît sur le bureau.
    Il démarre le serveur sans fenêtre (s'il ne tourne pas) puis ouvre le navigateur.
 7. **Vérification automatique :** `scripts\tester_centre.bat` (après avoir démarré le Centre).
+8. **Gardien et sauvegarde de nuit :** `scripts\installer_taches.bat` (deux tâches du Planificateur de tâches Windows).
+9. **Téléphone (facultatif) :** suivez `TELEPHONE.md`.
 
-Puis suivez `VERIFICATIONS.md` (la liste à cocher pour vérifier que tout marche pour de vrai).
+Puis suivez `VERIFICATIONS.md`, `VERIFICATIONS-phase2.md` … `VERIFICATIONS-phase5.md` (les listes à cocher), et lisez les `INCONNUS-phase*.md` (ce que je n'ai pas pu vérifier).
 
 ## Au quotidien
 
@@ -66,8 +69,9 @@ Puis suivez `VERIFICATIONS.md` (la liste à cocher pour vérifier que tout march
 
 ## Où sont les données
 
-`I:\IA\CENTRE\donnees\` : `verrou.json` (empreintes), `centre.log`, `recus.jsonl`, `depenses.jsonl`, `plafonds.json`.
-Rien de secret n'y est en clair.
+`I:\IA\CENTRE\donnees\` : `verrou.json` (empreintes), `centre.log`, `recus.jsonl`, `depenses.jsonl`, `plafonds.json`, `tarifs.json`, `salles.json`,
+`conversations\`, `tiroir.json`, `rappels.json`, `gardien.json`, `taches.log`, `reglages.json` (à éditer à la main : hôtes Tailscale, chemins des programmes…),
+`departements\` (vos départements). Sauvegardes : `I:\IA\CENTRE\sauvegardes\`. Aucune clé n'y est en clair.
 
 ## Pour les curieux
 

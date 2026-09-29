@@ -78,7 +78,10 @@
     racine = h("div", { id: "salles" });
     C.page.appendChild(racine);
     S.salle = S.salle || relire("salle") || "crew";
-    charger().then(function () { if (S.conv == null) dessiner(); });
+    charger().then(function () {
+      if (S.pendingConv) { var id = S.pendingConv; S.pendingConv = null; return ouvrir(id).then(function () { if (S.memoireInitiale) { var m = document.getElementById("opt-memoire"); if (m && !m.disabled) m.checked = true; S.memoireInitiale = false; } }); }
+      if (S.conv == null) dessiner();
+    });
   }
 
   function charger() {
@@ -171,7 +174,8 @@
       b.appendChild(h("div", { class: "actions" },
         h("button", { class: "petit", type: "button", texte: "Copier", onclick: function () { copier(m.texte); } }),
         h("button", { class: "petit", type: "button", texte: "Demander aussi à…", onclick: function () { demanderAussi(m); } }),
-        h("button", { class: "petit", type: "button", texte: "Mettre dans le tiroir", onclick: function () { versTiroir(m); } })));
+        h("button", { class: "petit", type: "button", texte: "Mettre dans le tiroir", onclick: function () { versTiroir(m); } }),
+        h("button", { class: "petit", type: "button", title: "Faire examiner cette réponse par une autre IA (second avis automatique)", texte: "Vérifier", onclick: function () { verifier(m); } })));
     }
     return b;
   }
@@ -317,6 +321,24 @@
       });
     }).catch(function (e) { C.informer("Transmission impossible", e.message); });
   }
+  var LIBELLE_STATUT = { confirmee: "✔ confirmée", douteuse: "? douteuse", fausse: "✘ fausse", inverifiable: "… invérifiable" };
+  var LIBELLE_VERDICT = { fiable: "Plutôt fiable", a_verifier: "À vérifier", douteux: "Douteux" };
+  function verifier(m) {
+    var autres = S.salles.filter(function (x) { return x.id !== S.salle && x.disponible; });
+    if (!autres.length) { C.informer("Aucune autre IA disponible", "Une vérification doit être faite par une IA différente de celle qui a répondu."); return; }
+    C.formulaire("Vérifier cette réponse", "Une autre IA examine la réponse et note chaque affirmation. C'est un second avis automatique, pas une preuve : elle peut se tromper aussi. Cela coûte une demande.", [
+      { nom: "salle", label: "IA vérificatrice", type: "select", valeur: autres[0].id, options: autres.map(function (x) { return { valeur: x.id, texte: x.libelle + " — " + x.estimation }; }) }], "Vérifier").then(function (v) {
+      if (!v) return;
+      C.informer("Vérification en cours…", "Patientez (jusqu'à quelques dizaines de secondes).");
+      return api("POST", "/api/conversations/" + S.conv.id + "/verifier", { message_id: m.id, salle: v.salle }).then(function (r) {
+        var res = r.resultat, texte;
+        if (!res) texte = "Le vérificateur n'a pas répondu dans le format attendu. Sa réponse brute :\n\n" + r.brut;
+        else texte = "Verdict : " + LIBELLE_VERDICT[res.verdict] + "\n" + res.resume + "\n\n" + res.affirmations.map(function (a) { return LIBELLE_STATUT[a.statut] + " — " + a.texte + (a.raison ? "\n     " + a.raison : ""); }).join("\n");
+        C.informer("Vérification par " + ((S.salles.filter(function (x) { return x.id === r.salle; })[0] || {}).libelle || r.salle), texte + "\n\n(Second avis automatique : à recouper avec une source.)");
+      });
+    }).catch(function (e) { C.informer("Vérification impossible", e.message); });
+  }
+
   function versTiroir(m) {
     C.formulaire("Mettre dans le tiroir", "Le tiroir est partagé entre toutes les salles.", [
       { nom: "titre", label: "Titre", type: "text", valeur: m.texte.slice(0, 60) },
@@ -401,6 +423,14 @@
     }).catch(function (x) { C.informer("Impossible", x.message); });
   }
 
+  // Départements : ouvre une nouvelle conversation dans la salle voulue, avec le texte prêt à compléter.
+  C.demarrerDans = function (salle, titre, brouillon, memoire) {
+    return api("POST", "/api/conversations", { salle: salle, titre: titre }).then(function (c) {
+      S.salle = salle; stocker("salle", salle); S.conv = null; S.selection = []; S.brouillon = brouillon || "";
+      S.pendingConv = c.id; S.memoireInitiale = !!memoire;
+      C.aller("salles");
+    });
+  };
   C.lireFlux = lireFlux;
   C.rendre = rendre;
   C.pages.salles = pageSalles;

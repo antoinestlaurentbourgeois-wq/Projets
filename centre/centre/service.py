@@ -69,6 +69,8 @@ class Centre:
         self._fil = None
         from .salles import Salles          # après tout le reste : Salles s'appuie sur ce Centre
         self.salles = Salles(self, reseau=reseau, processus=processus)
+        from .rappels import Rappels
+        self.rappels = Rappels(self.config.chemin("rappels.json"))
         from .voix import Voix
         self.voix = Voix(self, self.salles.reseau, amont=amont)
 

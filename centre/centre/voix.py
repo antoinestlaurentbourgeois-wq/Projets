@@ -309,7 +309,17 @@ class Voix:
             raise ErreurVoix("Message introuvable.", 404)
         if conv.get("prive") or msg.get("sensible"):
             raise ErreurVoix("Ce message est privé : il ne peut pas être lu par une voix du nuage.", 403)
-        texte = msg["texte"].strip()
+        return self._synthese(msg["texte"], fournisseur, voix)
+
+    def parler_texte(self, texte, fournisseur, voix=None):
+        """Lit un texte fabriqué par le serveur (ex. bulletin). L'appelant garantit qu'il ne contient rien de privé."""
+        ok, raison = self.autorisee(fournisseur)
+        if not ok:
+            raise ErreurVoix(raison, 403)
+        return self._synthese(texte, fournisseur, voix)
+
+    def _synthese(self, texte, fournisseur, voix):
+        texte = texte.strip()
         if not texte:
             raise ErreurVoix("Message vide.")
         tronque = len(texte) > MAX_LECTURE_CARACTERES
