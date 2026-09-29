@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Centre">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0c10">
+<title>Centre de contrôle : connexion</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/s/icone.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/s/icone-192.png">
+<link rel="stylesheet" href="/s/style.css">
+</head>
+<body>
+<main class="verrou-page">
+  <div class="verrou-boite">
+    <div class="noyau" aria-hidden="true"><span class="anneau"></span><span class="point"></span></div>
+    <div class="verrou-titre">CENTRE</div>
+    <div id="non-defini" class="bandeau erreur cache">
+      <strong>Le verrou n'est pas encore défini.</strong>
+      Sur le PC, double-cliquez sur <code>definir_verrou.bat</code> (dossier <code>scripts</code>), puis rechargez cette page.
+    </div>
+    <form id="formulaire" autocomplete="off">
+      <label class="champ"><span>NIP (chiffres)</span>
+        <input id="nip" type="password" inputmode="numeric" autocomplete="off" required></label>
+      <label class="champ"><span>Mot secret</span>
+        <input id="secret" type="password" autocomplete="off" required></label>
+      <div id="erreur" class="bandeau erreur cache" role="alert"></div>
+      <button id="envoyer" class="bouton principal" type="submit">Déverrouiller</button>
+    </form>
+    <p class="doux">🔒 Accessible uniquement depuis ce PC ou par votre réseau privé Tailscale. Session de 12 h.</p>
+  </div>
+</main>
+<script src="/s/connexion.js"></script>
+</body>
+</html>
