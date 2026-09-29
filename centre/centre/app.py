@@ -99,8 +99,8 @@ class Garde:
         if scope["type"] in ("http", "websocket"):
             hote = _entete(scope, "host")
             scope["centre_distant"] = hote.lower() not in self.locaux
-            if scope["centre_distant"] and scope["type"] == "http":
-                send = self._avec_hsts(send)
+            if scope["type"] == "http" and self._hote_ok(hote):
+                send = self._avec_entetes(send, hote, scope["centre_distant"])
         if scope["type"] == "websocket":
             return await self._websocket(scope, receive, send)
         if scope["type"] != "http":
@@ -125,11 +125,21 @@ class Garde:
         await self.app(scope, receive, send)
 
     @staticmethod
-    def _avec_hsts(send):
+    def _avec_entetes(send, hote, distant):
+        """HSTS pour les accès distants ; et la CSP nomme explicitement l'hôte (validé) pour les WebSockets : d'anciens Safari
+        n'appliquent pas « connect-src 'self' » aux ws:/wss:."""
+        ws = f"wss://{hote}" if distant else f"ws://{hote}"
+
         async def envoyer(message):
             if message["type"] == "http.response.start":
-                message.setdefault("headers", [])
-                message["headers"] = list(message["headers"]) + [(b"strict-transport-security", b"max-age=31536000")]
+                entetes = []
+                for k, v in message.get("headers", []):
+                    if k == b"content-security-policy":
+                        v = v.replace(b"connect-src 'self'", ("connect-src 'self' " + ws).encode("latin-1"))
+                    entetes.append((k, v))
+                if distant:
+                    entetes.append((b"strict-transport-security", b"max-age=31536000"))
+                message = dict(message, headers=entetes)
             await send(message)
         return envoyer
 

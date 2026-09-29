@@ -199,3 +199,9 @@ def test_reglages_json_alimente_hotes_et_identite(tmp_path):
     assert "pc.tail1234.ts.net" in c.hotes_autorises and c.utilisateurs_tailscale == ("moi@example.com",)
     (d / "reglages.json").write_text("{pas du json", encoding="utf-8")
     assert Config(dossier_donnees=str(d)).utilisateurs_tailscale == ()
+
+
+def test_csp_nomme_l_hote_pour_les_websockets(app, client):
+    csp = telephone(app).get("/connexion").headers["content-security-policy"]
+    assert f"connect-src 'self' wss://{HOTE};" in csp and "unsafe" not in csp
+    assert "connect-src 'self' ws://127.0.0.1:8740;" in client.get("/api/etat").headers["content-security-policy"]
