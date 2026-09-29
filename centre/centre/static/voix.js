@@ -115,10 +115,10 @@
 
   function recevoir(m) {
     if (!live) return;
-    if (m.t === "pret") { dire("À l'écoute — parlez. (" + m.modele + ", voix " + m.voix + ")"); }
-    else if (m.t === "audio") { jouer(m.pcm); }
-    else if (m.t === "parole_debut") { couper(); dire("Je vous écoute…"); }
-    else if (m.t === "parole_fin") { dire("Réflexion…"); }
+    if (m.t === "pret") { dire("À l'écoute — parlez. (" + m.modele + ", voix " + m.voix + ")"); C.etat("ecoute"); }
+    else if (m.t === "audio") { jouer(m.pcm); C.etat("parole"); }
+    else if (m.t === "parole_debut") { couper(); dire("Je vous écoute…"); C.etat("ecoute"); }
+    else if (m.t === "parole_fin") { dire("Réflexion…"); C.etat("reflexion"); }
     else if (m.t === "transcription") {
       if (m.role === "user") { ligneLive("user", m.texte); live.ligneIA = null; }
       else {
@@ -170,6 +170,7 @@
     if (l.ctx) l.ctx.close().catch(function () {});
     if (l.verrou) l.verrou.release().catch(function () {});
     live = null;
+    C.etat("repos");
     var d = document.getElementById("live-demarrer"); if (d) d.disabled = false;
     var a = document.getElementById("live-arreter"); if (a) a.classList.add("cache");
     api("GET", "/api/voix/options").then(function (o) { opts = o; }).catch(function () {});
@@ -285,6 +286,66 @@
       });
     }).catch(function (e) { etatT("⚠ " + e.message); });
   }
+
+  // ------------------------------------------------ outils partagés avec le bas d'écran des salles (bouton « maintenir pour parler »)
+  var optsCache = null;
+  C.voixOptions = function (forcer) {
+    if (optsCache && !forcer) return Promise.resolve(optsCache);
+    return api("GET", "/api/voix/options").then(function (o) { optsCache = o; return o; });
+  };
+  function fournisseurTalkie(o) {
+    var dispo = o.talkie.filter(function (t) { return t.disponible; });
+    return (dispo.filter(function (t) { return t.id === "openai"; })[0] || dispo[0] || {}).id || null;
+  }
+  C.micro = {
+    // Démarre l'enregistrement. Renvoie une promesse d'un objet { arreter() -> promesse de { blob, duree, type } }.
+    demarrer: function () {
+      return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }).then(function (flux) {
+        var type = typeAudio();
+        var rec = type ? new MediaRecorder(flux, { mimeType: type }) : new MediaRecorder(flux);
+        var morceaux = [], t0 = Date.now(), mime = rec.mimeType || type || "audio/webm";
+        rec.ondataavailable = function (e) { if (e.data && e.data.size) morceaux.push(e.data); };
+        rec.start(250);
+        return { arreter: function () {
+          return new Promise(function (resolve) {
+            rec.onstop = function () {
+              flux.getTracks().forEach(function (t) { t.stop(); });
+              resolve({ blob: new Blob(morceaux, { type: mime }), duree: (Date.now() - t0) / 1000, type: mime });
+            };
+            if (rec.state === "inactive") rec.onstop(); else rec.stop();
+          });
+        } };
+      });
+    },
+    // Envoie l'enregistrement à la transcription (nuage) ; renvoie le texte.
+    transcrire: function (enr) {
+      return C.voixOptions().then(function (o) {
+        var f = fournisseurTalkie(o);
+        if (!f) throw new Error(o.raison || "Aucune voix du nuage n'est disponible (clé absente ?).");
+        return fetch("/api/voix/transcrire?fournisseur=" + encodeURIComponent(f) + "&duree=" + enr.duree.toFixed(1), {
+          method: "POST", credentials: "same-origin", headers: { "X-Centre": "1", "Content-Type": enr.type.split(";")[0] }, body: enr.blob });
+      }).then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.erreur || ("Erreur " + r.status)); return d.texte || ""; }); });
+    },
+    // Lit à voix haute une réponse déjà enregistrée (jamais un contenu privé : le serveur refuse).
+    lire: function (cid, msgId) {
+      return C.voixOptions().then(function (o) {
+        var f = fournisseurTalkie(o);
+        if (!f) throw new Error(o.raison || "Aucune voix du nuage n'est disponible.");
+        return fetch("/api/voix/parler", { method: "POST", credentials: "same-origin", headers: { "X-Centre": "1", "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation: cid, message_id: msgId, fournisseur: f }) });
+      }).then(function (r) {
+        if (!r.ok) return r.json().then(function (d) { throw new Error(d.erreur || ("Erreur " + r.status)); });
+        return r.blob().then(function (audio) {
+          if (talkie.lecture) talkie.lecture.pause();
+          var a = new Audio(URL.createObjectURL(audio)); talkie.lecture = a;
+          C.etat("parole");
+          a.onended = function () { C.etat("repos"); URL.revokeObjectURL(a.src); };
+          return a.play().catch(function () { C.etat("repos"); throw new Error("Lecture bloquée par le navigateur : touchez la page puis réessayez."); });
+        });
+      });
+    },
+    arreterLecture: function () { if (talkie.lecture) { talkie.lecture.pause(); talkie.lecture = null; C.etat("repos"); } }
+  };
 
   document.addEventListener("visibilitychange", function () { /* le LIVE continue en arrière-plan tant que le micro reste autorisé */ });
   window.addEventListener("pagehide", function () { if (live) finLive(true); });

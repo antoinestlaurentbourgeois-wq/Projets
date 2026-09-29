@@ -6,31 +6,34 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Centre">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#2456d6">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0c10">
 <title>Centre de contrôle</title>
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/s/icone.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/s/icone-192.png">
 <link rel="stylesheet" href="/s/style.css">
 </head>
-<body>
+<body data-etat="repos">
 <header class="haut">
-  <h1>Centre de contrôle</h1>
-  <nav class="onglets" id="onglets" aria-label="Pages">
-    <button data-page="centre">Centre</button>
-    <button data-page="salles">Salles</button>
-    <button data-page="voix">Voix</button>
-    <button data-page="tiroir">Tiroir</button>
-    <button data-page="rappels">Rappels</button>
-    <button data-page="departements">Départements</button>
-    <button data-page="couts">Coûts</button>
-    <button data-page="journal">Journal</button>
-  </nav>
-  <button class="bouton" id="deconnexion">Se déconnecter</button>
+  <div class="noyau" id="noyau" aria-hidden="true"><span class="anneau"></span><span class="point"></span></div>
+  <div class="marque"><b>CENTRE</b><span id="etat-texte" class="etat" role="status">connexion…</span></div>
+  <button class="bouton" id="deconnexion" type="button" title="Se déconnecter" aria-label="Se déconnecter">⏻</button>
 </header>
+<nav class="onglets" id="onglets" aria-label="Pages">
+  <button data-page="salles">💬 Salles</button>
+  <button data-page="centre">🛰 Centre</button>
+  <button data-page="voix">🎙 Voix</button>
+  <button data-page="tiroir">🗄 Tiroir</button>
+  <button data-page="rappels">⏰ Rappels</button>
+  <button data-page="departements">🏗 Départements</button>
+  <button data-page="couts">💲 Coûts</button>
+  <button data-page="journal">📜 Journal</button>
+</nav>
+<div class="sysbar" id="sysbar" aria-label="État du PC"></div>
 <div id="alertes" role="status" aria-live="polite"></div>
-<main id="page" aria-live="polite"></main>
+<main id="page"></main>
+<footer id="dock" class="dock" hidden></footer>
 <dialog id="dialogue"><h3 id="dialogue-titre"></h3><p id="dialogue-texte"></p><div id="dialogue-champs"></div><div class="boutons" id="dialogue-boutons"></div></dialog>
 <script src="/s/app.js"></script>
 <script src="/s/salles.js"></script>

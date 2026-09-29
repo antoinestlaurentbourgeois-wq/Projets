@@ -83,3 +83,11 @@ Puis suivez `VERIFICATIONS.md`, `VERIFICATIONS-phase2.md` … `VERIFICATIONS-pha
 - **Licence GLAMMBOX :** aucun code de GLAMMBOX n'est utilisé en phase 1 (voir `INCONNUS.md`).
 
 **Crew :** le coût de la salle Crew est le coût **réel** renvoyé par Crew (`usage.cout_usd`). Crew consulte lui-même la mémoire avant chaque tâche : la case « Utiliser la mémoire » n'ajoute donc rien dans la salle Crew. La première recherche en mémoire peut prendre ~10 s (chargement des modèles).
+
+## L'interface (refonte inspirée du cockpit GLAMMBOX)
+
+Un seul écran : **Salles** est l'accueil. En haut, le **noyau** animé indique l'état (prêt, à l'écoute, réflexion, je parle), puis les pages en pastilles
+(Salles, Centre, Voix, Tiroir, Rappels, Départements, Coûts, Journal) et une barre d'état (voyants Docker / LM Studio / gemma / Crew, mode de Crew, dépense du jour).
+En bas de la page Salles : le grand bouton **MAINTENIR POUR PARLER** (transcription → envoi → lecture de la réponse si « 🔊 Voix » est activé), la saisie
+(une conversation se crée toute seule au premier message) et les bascules **Live**, **Mémoire**, **Voix**, **Tiroir**, **Écriture** (Codex) et **Stop**.
+Thème sombre par défaut (clair si votre système le demande). Les autres pages s'ouvrent comme des fiches, avec « ‹ Retour aux salles ».

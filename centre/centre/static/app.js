@@ -127,16 +127,52 @@
   }
 
   function aller(nom) {
+    if (!Centre.pages[nom]) nom = "salles";
     pageCourante = nom;
+    document.body.dataset.page = nom;
     clearTimeout(minuterie);
     Array.prototype.forEach.call(document.querySelectorAll("#onglets button"), function (b) {
-      if (b.dataset.page === nom) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+      if (b.dataset.page === nom) { b.setAttribute("aria-current", "page"); b.scrollIntoView({ inline: "nearest", block: "nearest" }); } else b.removeAttribute("aria-current");
     });
     if (location.hash !== "#" + nom) history.replaceState(null, "", "#" + nom);
     vider(page);
+    page.scrollTop = 0;
+    var dock = document.getElementById("dock");
+    if (dock && nom !== "salles") dock.hidden = true;
+    if (nom !== "salles") page.appendChild(h("button", { class: "retour", type: "button", texte: "‹ Retour aux salles", onclick: function () { aller("salles"); } }));
     etat.derniereSignature = "";
-    (Centre.pages[nom] || pageCentre)();
+    Centre.pages[nom]();
   }
+
+  // ------------------------------------------------ noyau animé et barre d'état (toutes pages)
+  var TEXTE_ETAT = { repos: "prêt", ecoute: "à l'écoute…", reflexion: "réflexion…", parole: "je parle…" };
+  Centre.etat = function (e) {
+    document.body.dataset.etat = e;
+    var t = document.getElementById("etat-texte");
+    if (t) t.textContent = TEXTE_ETAT[e] || e;
+  };
+  function barreEtat() {
+    if (document.hidden) return;
+    Promise.all([api("GET", "/api/etat"), api("GET", "/api/couts")]).then(function (r) {
+      var d = r[0], c = r[1], zone = document.getElementById("sysbar");
+      if (!zone) return;
+      vider(zone);
+      var noms = { docker: "Docker", lmstudio: "LM Studio", gemma: "gemma", crew: "Crew" };
+      d.composants.forEach(function (x) {
+        if (!noms[x.ident]) return;
+        zone.appendChild(h("button", { type: "button", title: x.etat.message || TEXTE_VOYANT[x.etat.code], onclick: function () { aller("centre"); } },
+          voyant(x.etat.code), noms[x.ident]));
+      });
+      if (d.mode && d.mode.libelle) zone.appendChild(h("button", { type: "button", title: "Changer le mode de Crew (page Centre)", onclick: function () { aller("centre"); } }, "Mode : " + d.mode.libelle));
+      var j = c.plafonds.jour;
+      zone.appendChild(h("button", { type: "button", class: c.bloque ? "alerte" : "", title: c.bloque ? c.message : "Dépenses estimées aujourd'hui", onclick: function () { aller("couts"); } },
+        "💲 " + dollars(c.totaux.aujourdhui.total) + (j.plafond != null ? " / " + dollars(j.plafond) : "")));
+      if (d.action && d.action.statut === "en_cours") Centre.etat("reflexion");
+      else if (document.body.dataset.etat === "reflexion" && !Centre.enCours) Centre.etat("repos");
+    }).catch(function () { /* session expirée : gérée ailleurs */ });
+  }
+  Centre.barreEtat = barreEtat;
+  window.addEventListener("load", function () { setTimeout(barreEtat, 300); setInterval(barreEtat, 10000); });
 
   // ------------------------------------------------ page Centre
   function pageCentre() {
@@ -507,8 +543,8 @@
     api("POST", "/api/deconnexion", {}).catch(function () {}).then(function () { location.replace("/connexion"); });
   });
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden && pageCourante === "centre") { clearTimeout(minuterie); aller("centre"); }
+    if (!document.hidden) { barreEtat(); if (pageCourante === "centre") { clearTimeout(minuterie); aller("centre"); } }
   });
   if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/sw.js").catch(function () {}); }
-  window.addEventListener("load", function () { aller((location.hash || "#centre").slice(1)); });
+  window.addEventListener("load", function () { Centre.etat("repos"); aller((location.hash || "#salles").slice(1)); });
 })();

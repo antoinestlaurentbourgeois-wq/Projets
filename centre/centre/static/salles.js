@@ -5,6 +5,8 @@
   var S = { salles: [], politique: null, memoire: null, salle: null, convs: [], conv: null, actives: [], selection: [],
             brouillon: "", enCours: false, live: null };
   var racine = null;
+  S.opt = { memoire: false, lire: relire("opt.lire") === "oui", ecriture: false };
+  S.voixOpts = null;
 
   function stocker(k, v) { try { localStorage.setItem("centre." + k, v); } catch (e) { /* facultatif */ } }
   function relire(k) { try { return localStorage.getItem("centre." + k); } catch (e) { return null; } }
@@ -78,8 +80,9 @@
     racine = h("div", { id: "salles" });
     C.page.appendChild(racine);
     S.salle = S.salle || relire("salle") || "crew";
+    C.voixOptions().then(function (o) { S.voixOpts = o; if (C.courante() === "salles") dessinerDock(salleCourante()); }).catch(function () {});
     charger().then(function () {
-      if (S.pendingConv) { var id = S.pendingConv; S.pendingConv = null; return ouvrir(id).then(function () { if (S.memoireInitiale) { var m = document.getElementById("opt-memoire"); if (m && !m.disabled) m.checked = true; S.memoireInitiale = false; } }); }
+      if (S.pendingConv) { var id = S.pendingConv; S.pendingConv = null; if (S.memoireInitiale) { S.opt.memoire = true; S.memoireInitiale = false; } return ouvrir(id); }
       if (S.conv == null) dessiner();
     });
   }
@@ -96,7 +99,7 @@
   function dessiner(sansCapture) {
     if (!racine || C.courante() !== "salles") return;
     var garde = document.getElementById("saisie");
-    if (!sansCapture && garde && S.conv && garde.dataset.conv === S.conv.id) S.brouillon = garde.value;
+    if (!sansCapture && garde && garde.dataset.conv === (S.conv ? S.conv.id : "")) S.brouillon = garde.value;
     vider(racine);
     var s = salleCourante();
     // bandeau de politique
@@ -108,7 +111,7 @@
         title: x.disponible ? x.description : x.raison, onclick: function () { choisirSalle(x.id); } },
         h("span", { class: "voyant v-" + code, "aria-hidden": "true" }), x.libelle);
     })));
-    if (!s) return;
+    if (!s) { dessinerDock(null); return; }
     if (!s.disponible) racine.appendChild(h("div", { class: "bandeau erreur", role: "status", texte: s.libelle + " : " + s.raison }));
     // en-tête de salle
     racine.appendChild(h("div", { class: "rangee-titre" },
@@ -121,10 +124,101 @@
         return h("button", { type: "button", "aria-current": S.conv && S.conv.id === c.id ? "true" : "false", onclick: function () { ouvrir(c.id); } },
           c.titre || "(sans titre)", h("span", { class: "doux", texte: new Date(c.maj * 1000).toLocaleString("fr-CA") + (c.prive ? " · privé" : "") + (S.actives.indexOf(c.id) >= 0 ? " · en cours…" : "") }));
       }) : h("div", { class: "doux", texte: "Aucune conversation dans cette salle." })));
-    if (window.innerWidth > 900 || !S.conv) details.setAttribute("open", "");
+    if (!S.conv) details.setAttribute("open", "");
     racine.appendChild(details);
     if (S.conv) racine.appendChild(zoneChat(s));
-    else racine.appendChild(h("p", { class: "doux", texte: "Choisissez une conversation, ou démarrez-en une nouvelle." }));
+    else racine.appendChild(h("div", { class: "accueil" }, "🏠 ", h("b", { texte: "Centre" }), " — votre poste de commande. Écrivez ci-dessous, ou maintenez le grand bouton pour parler. Une conversation se crée toute seule à votre premier message."));
+    dessinerDock(s);
+  }
+
+  // ------------------------------------------------ bas d'écran : parole, saisie, bascules
+  var ptt = { actif: false, enregistrement: null, finDemandee: false };
+  function court(t) { return String(t || "").replace(/ \(.*$/, "").replace(" par demande", ""); }
+  function indice(t) { var e = document.getElementById("dock-indice"); if (e) e.textContent = t || ""; }
+  function bascule(texte, actif, titre, action, desactive) {
+    return h("button", { class: "bascule" + (actif ? " on" : ""), type: "button", title: titre || "", disabled: !!desactive, "aria-pressed": actif ? "true" : "false", texte: texte, onclick: action });
+  }
+  function dessinerDock(s) {
+    var dock = document.getElementById("dock");
+    if (!dock || C.courante() !== "salles") return;
+    vider(dock); dock.hidden = false;
+    var pret = !!(s && s.disponible);
+    var saisie = h("textarea", { id: "saisie", rows: "1", placeholder: pret ? "Écrire à " + s.libelle + "…" : "Cette salle est indisponible", disabled: !pret || S.enCours, "aria-label": "Votre message" });
+    saisie.value = S.brouillon || ""; saisie.dataset.conv = S.conv ? S.conv.id : "";
+    function ajuster() { saisie.style.height = "auto"; saisie.style.height = Math.min(saisie.scrollHeight, 140) + "px"; }
+    saisie.addEventListener("input", function () { ajuster(); estimer(saisie, s); });
+    saisie.addEventListener("keydown", function (e) {
+      var tactile = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+      if (e.key === "Enter" && !e.shiftKey && !tactile) { e.preventDefault(); envoyer(); }
+    });
+    setTimeout(ajuster, 0);
+    var voixOk = !!(S.voixOpts && S.voixOpts.disponible);
+    var bouton = h("button", { class: "cbbar", id: "ptt", type: "button", "aria-label": "Maintenir pour parler", disabled: !pret || S.enCours },
+      "🎙 ", h("span", { id: "ptt-label", texte: voixOk ? "MAINTENIR POUR PARLER" : "MAINTENIR POUR PARLER (voix indisponible)" }));
+    bouton.addEventListener("pointerdown", pttDebut); bouton.addEventListener("pointerup", pttFin); bouton.addEventListener("pointercancel", pttFin);
+    bouton.addEventListener("pointerleave", pttFin); bouton.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+    bouton.addEventListener("keydown", function (e) { if (e.key === " " && !e.repeat) pttDebut(e); });
+    bouton.addEventListener("keyup", function (e) { if (e.key === " ") pttFin(e); });
+    var memoireOk = !!(S.memoire && S.memoire.disponible);
+    var bascules = h("div", { class: "bascules" },
+      bascule("◉ Live", false, "Conversation vocale en direct (page Voix)", function () { C.aller("voix"); }),
+      bascule("🧠 Mémoire", S.opt.memoire && memoireOk, memoireOk ? (s && s.id === "crew" ? "Crew consulte déjà la mémoire tout seul" : "Ajouter des extraits de votre bibliothèque (partageables seulement pour le nuage)") : "Mémoire indisponible (Crew éteint ou pas exposée)",
+        function () { S.opt.memoire = !S.opt.memoire; dessinerDock(s); }, !memoireOk),
+      bascule("🔊 Voix", S.opt.lire && voixOk, voixOk ? "Lire les réponses à voix haute (voix du nuage ; jamais du contenu privé)" : ((S.voixOpts && S.voixOpts.raison) || "Voix indisponible"),
+        function () { S.opt.lire = !S.opt.lire; stocker("opt.lire", S.opt.lire ? "oui" : "non"); if (!S.opt.lire) C.micro.arreterLecture(); dessinerDock(s); }, !voixOk),
+      bascule(S.selection.length ? "📎 Tiroir (" + S.selection.length + ")" : "📎 Tiroir", S.selection.length > 0, "Joindre des éléments du tiroir", choisirTiroir),
+      s && s.ecriture ? bascule("✍ Écriture", S.opt.ecriture, "Autoriser l'écriture dans l'atelier pour le prochain message seulement", function () { S.opt.ecriture = !S.opt.ecriture; dessinerDock(s); }) : null,
+      h("button", { class: "bascule stop", id: "bouton-stop", type: "button", texte: "⏹ Stop", hidden: !S.enCours, onclick: arreter }),
+      h("span", { class: "indice", id: "dock-indice", texte: court((s && s.estimation) || ""), title: (s && s.estimation) || "" }));
+    dock.appendChild(h("div", { class: "dock-inner" }, bouton,
+      h("div", { class: "saisie-rangee" }, saisie,
+        h("button", { class: "rond envoyer", id: "bouton-envoyer", type: "button", title: "Envoyer", "aria-label": "Envoyer", texte: "➤", disabled: !pret || S.enCours, onclick: function () { envoyer(); } })),
+      bascules));
+  }
+  var minuteurEstimation = null;
+  function estimer(saisie, s) {
+    clearTimeout(minuteurEstimation);
+    if (!s) return;
+    minuteurEstimation = setTimeout(function () {
+      api("GET", "/api/salles/" + s.id + "/estimation?longueur=" + saisie.value.length + (S.conv ? "&conversation=" + S.conv.id : "")).then(function (e) { indice("≈ " + court(e.texte).replace(/^≈ /, "")); }).catch(function () {});
+    }, 400);
+  }
+  function pttDebut(e) {
+    e.preventDefault();
+    var s = salleCourante();
+    if (ptt.actif || S.enCours || !s || !s.disponible) return;
+    if (!(S.voixOpts && S.voixOpts.disponible)) { C.informer("Voix indisponible", (S.voixOpts && S.voixOpts.raison) || "Aucune voix du nuage n'est disponible (clé OpenAI/xAI absente, mode confidentiel ou plafond atteint)."); return; }
+    ptt.actif = true; ptt.finDemandee = false; C.micro.arreterLecture();
+    var b = document.getElementById("ptt"); if (b) b.classList.add("rec");
+    C.etat("ecoute"); indice("Autorisation du micro…");
+    C.micro.demarrer().then(function (r) {
+      ptt.enregistrement = r;
+      indice("Je vous écoute… relâchez pour envoyer.");
+      if (ptt.finDemandee) pttTerminer();
+    }).catch(function (err) {
+      ptt.actif = false; if (b) b.classList.remove("rec"); C.etat("repos");
+      indice(err && err.name === "NotAllowedError" ? "Micro refusé : autorisez-le dans le navigateur." : "Micro indisponible.");
+    });
+  }
+  function pttFin(e) {
+    if (e) e.preventDefault();
+    if (!ptt.actif) return;
+    ptt.actif = false;
+    var b = document.getElementById("ptt"); if (b) b.classList.remove("rec");
+    if (!ptt.enregistrement) { ptt.finDemandee = true; return; }
+    pttTerminer();
+  }
+  function pttTerminer() {
+    var r = ptt.enregistrement; ptt.enregistrement = null; ptt.finDemandee = false;
+    if (!r) return;
+    r.arreter().then(function (enr) {
+      if (enr.duree < 0.6) { indice("Trop court : maintenez le bouton pendant que vous parlez."); C.etat("repos"); return; }
+      indice("Transcription…"); C.etat("reflexion");
+      return C.micro.transcrire(enr).then(function (texte) {
+        if (!texte.trim()) { indice("Je n'ai rien entendu de clair. Réessayez."); C.etat("repos"); return; }
+        indice(""); envoyer(texte);
+      });
+    }).catch(function (err) { indice("⚠ " + err.message); C.etat("repos"); });
   }
 
   function choisirSalle(id) {
@@ -191,27 +285,6 @@
         h("button", { class: "petit", type: "button", texte: "Supprimer", onclick: supprimer })),
       fil);
     if ((c.en_attente || []).length) zone.appendChild(panneauApprobation(c.en_attente));
-    var saisie = h("textarea", { id: "saisie", rows: "3", placeholder: "Votre message (Ctrl+Entrée pour envoyer)", disabled: !s.disponible || S.enCours });
-    saisie.value = S.brouillon || ""; saisie.dataset.conv = c.id;
-    saisie.addEventListener("keydown", function (e) { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); envoyer(); } });
-    var estimation = h("span", { class: "doux", id: "estimation", texte: s.estimation || "" });
-    var memoire = h("input", { type: "checkbox", id: "opt-memoire", disabled: !(S.memoire && S.memoire.disponible) });
-    var ecriture = s.ecriture ? h("input", { type: "checkbox", id: "opt-ecriture" }) : null;
-    var options = h("div", { class: "options" },
-      h("label", null, memoire, " Utiliser la mémoire", (S.memoire && S.memoire.disponible) ? "" : " (indisponible)"),
-      h("button", { class: "petit", type: "button", texte: S.selection.length ? "📎 Tiroir (" + S.selection.length + ")" : "📎 Tiroir", onclick: choisirTiroir }),
-      ecriture ? h("label", null, ecriture, " Autoriser l'écriture dans l'atelier (ce message)") : null,
-      estimation);
-    var envoi = h("button", { class: "bouton principal", id: "bouton-envoyer", type: "button", texte: "Envoyer", disabled: !s.disponible || S.enCours, onclick: envoyer });
-    var stop = h("button", { class: "bouton danger" + (S.enCours ? "" : " cache"), id: "bouton-stop", type: "button", texte: "Arrêter", onclick: arreter });
-    zone.appendChild(h("div", { class: "barre-envoi" }, saisie, options, h("div", { class: "boutons" }, envoi, stop)));
-    var minuteur = null;
-    saisie.addEventListener("input", function () {
-      clearTimeout(minuteur);
-      minuteur = setTimeout(function () {
-        api("GET", "/api/salles/" + s.id + "/estimation?longueur=" + saisie.value.length + "&conversation=" + c.id).then(function (e) { estimation.textContent = "Coût estimé : " + e.texte; }).catch(function () {});
-      }, 400);
-    });
     return zone;
   }
   function defiler() { var f = document.getElementById("fil"); if (f && f.lastChild) f.lastChild.scrollIntoView({ block: "nearest" }); }
@@ -230,30 +303,36 @@
   }
 
   // ------------------------------------------------ envoi et flux
-  function envoyer() {
+  function envoyer(texteForce) {
     var s = salleCourante(), saisie = document.getElementById("saisie");
-    var texte = saisie.value.trim();
-    if (!texte || S.enCours || !s.disponible) return;
-    var ecr = document.getElementById("opt-ecriture");
-    var suite = (ecr && ecr.checked)
+    var texte = String(texteForce != null ? texteForce : (saisie ? saisie.value : "")).trim();
+    if (!texte || S.enCours || !s || !s.disponible) return;
+    var ecr = S.opt.ecriture && s.ecriture;
+    var suite = ecr
       ? C.confirmer("Autoriser l'écriture ?", "Codex pourra créer et modifier des fichiers dans l'atelier pour CE message seulement. Continuer ?", "Autoriser")
       : Promise.resolve(true);
     suite.then(function (ok) {
       if (!ok) return;
-      var corps = { texte: texte, memoire: document.getElementById("opt-memoire").checked, tiroir: S.selection.slice(), autoriser_ecriture: !!(ecr && ecr.checked) };
-      S.brouillon = ""; saisie.value = "";
-      S.conv.messages.push({ id: "tmp", role: "user", texte: texte, ts: Date.now() / 1000, contexte: [] });
-      demarrerLive();
-      lancerFlux("/api/conversations/" + S.conv.id + "/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
-      S.selection = [];
-    });
+      var pret = S.conv ? Promise.resolve(S.conv) : api("POST", "/api/conversations", { salle: S.salle }).then(function (c) {
+        S.conv = c; S.convs.unshift({ id: c.id, titre: c.titre, maj: c.maj, prive: false }); return c;
+      });
+      return pret.then(function () {
+        var corps = { texte: texte, memoire: S.opt.memoire && !!(S.memoire && S.memoire.disponible), tiroir: S.selection.slice(), autoriser_ecriture: ecr };
+        S.brouillon = ""; if (saisie) saisie.value = "";
+        S.opt.ecriture = false;
+        S.conv.messages.push({ id: "tmp", role: "user", texte: texte, ts: Date.now() / 1000, contexte: [] });
+        demarrerLive();
+        lancerFlux("/api/conversations/" + S.conv.id + "/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
+        S.selection = [];
+      });
+    }).catch(function (e) { C.informer("Envoi impossible", e.message); });
   }
   function reprendreFlux(cid) { demarrerLive(); lancerFlux("/api/conversations/" + cid + "/flux?depuis=0", { method: "GET" }); }
 
   function demarrerLive() {
     var corps = h("div"); var meta = h("div", { class: "meta" }, h("strong", { texte: (salleCourante() || {}).libelle || "IA" }), h("span", { texte: "réponse en cours…" }));
     S.live = { texte: "", corps: corps, meta: meta, bulle: h("div", { class: "bulle assistant" }, meta, corps), demandes: null, cout: "", erreur: "" };
-    S.enCours = true; dessiner(); defiler();
+    S.enCours = true; C.enCours = true; C.etat("reflexion"); dessiner(); defiler();
   }
   var rafraichi = false;
   function afficherLive() {
@@ -267,6 +346,7 @@
       if (e.t === "delta") { S.live.texte += e.texte; afficherLive(); }
       else if (e.t === "erreur") { S.live.erreur = e.message; }
       else if (e.t === "cout") { S.live.cout = e.texte; }
+      else if (e.t === "fin") { S.dernierMsg = e.message_id; }
     }).catch(function (e) {
       if (e.message !== "session" && S.live) S.live.erreur = S.live.erreur || ("Connexion interrompue : " + e.message + ". La réponse continue peut-être sur le PC : rouvrez la conversation.");
     }).then(function () {
@@ -275,7 +355,13 @@
         if (S.conv && S.conv.id === cid) { S.conv = c; }
         if (c.en_cours) { S.enCours = false; }
       }).catch(function () {});
-    }).then(function () { return charger(); }).then(function () { defiler(); });
+    }).then(function () { C.enCours = false; C.etat("repos"); return charger(); }).then(function () {
+      defiler();
+      if (S.opt.lire && S.dernierMsg && S.conv && S.conv.id === cid) {
+        var id = S.dernierMsg; S.dernierMsg = null;
+        C.micro.lire(cid, id).catch(function (err) { indice("🔊 " + err.message); });
+      }
+    });
     // les erreurs de flux sont aussi enregistrées dans la conversation par le serveur : on les relit ci-dessus
   }
   function arreter() { if (S.conv) api("POST", "/api/conversations/" + S.conv.id + "/arreter", {}).catch(function () {}); }
