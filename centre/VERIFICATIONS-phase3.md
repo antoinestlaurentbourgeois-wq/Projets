@@ -15,7 +15,7 @@ Vous pouvez donc faire une première passe sans rien payer, puis une passe réel
 
 ## A. Sécurité et confidentialité (à faire en premier)
 
-- [ ] Mode Crew **Confidentiel** ou **Ultra** : page **Voix** → bandeau rouge « désactivée », tous les boutons grisés. Le talkie-walkie aussi.
+- [ ] Mode Crew **Confidentiel** ou **Ultra-confidentiel** : page **Voix** → bandeau rouge « désactivée », tous les boutons grisés. Le talkie-walkie aussi.
 - [ ] En mode Confidentiel, dans la console du navigateur (F12), tenter `new WebSocket("ws://127.0.0.1:8740/ws/voix")` puis envoyer `{"t":"demarrer"}` : le serveur répond « désactivée » (contrôle serveur).
 - [ ] Ouvrir une session vocale, puis passer Crew en Confidentiel dans la page Centre : la session se coupe toute seule en quelques secondes (« mode confidentiel »).
 - [ ] Plafond : régler un plafond du jour très bas (ex. 0,05 $). Démarrer le LIVE : il se coupe **tout seul** quand le compteur atteint le plafond, avec un message.

@@ -103,7 +103,7 @@ def test_options(client, centre, simulateur):
     centre.couts.definir_plafonds(1, 5)
     centre.couts.enregistrer("deepseek", 0.25)
     assert client.get("/api/voix/options").json()["restant_usd"] == 0.75
-    mode(simulateur, centre, "ultra")
+    mode(simulateur, centre, "ultra-confidentiel")
     d = client.get("/api/voix/options").json()
     assert not d["disponible"] and "désactivée" in d["raison"] and not any(m["disponible"] for m in d["live"])
 
@@ -250,7 +250,7 @@ def test_live_bascule_en_mode_confidentiel_coupe(client, centre, simulateur, amo
     centre.voix.intervalle_tick = 0.05
     with ouvrir(client) as ws:
         demarrer(ws)
-        mode(simulateur, centre, "ultra")
+        mode(simulateur, centre, "ultra-confidentiel")
         m, _ = recevoir(ws, "fin")
         assert m["raison"] == "mode-confidentiel"
 
@@ -345,7 +345,7 @@ def test_outils_arguments_invalides(centre):
 
 
 def test_outil_consulter_refuse_en_mode_local(centre, simulateur):
-    mode(simulateur, centre, "ultra")
+    mode(simulateur, centre, "ultra-confidentiel")
     r = centre.voix.executer_outil("consulter_salle", json.dumps({"salle": "gemma", "question": "salut"}))
     assert "impossible" in r.lower() and not centre.salles.conversations.lister()
 
@@ -433,7 +433,7 @@ def test_parler_erreurs(client, centre, simulateur, reseau):
     conv, mid = message_ia(centre, "ok")
     assert client.post("/api/voix/parler", json={"conversation": conv["id"], "message_id": "inconnu"}).status_code == 404
     assert client.post("/api/voix/parler", json={"conversation": conv["id"], "message_id": mid, "fournisseur": "x"}).status_code == 400
-    mode(simulateur, centre, "ultra")
+    mode(simulateur, centre, "ultra-confidentiel")
     assert client.post("/api/voix/parler", json={"conversation": conv["id"], "message_id": mid}).status_code == 403
 
 

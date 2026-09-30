@@ -16,7 +16,7 @@ Rien de ce qui suit n'a pu être testé sans votre PC. À vérifier, et à me re
 4. **Dépenses de Crew.** Le Centre ne connaît que ses propres compteurs. Je ne sais pas si le serveur Crew expose ses coûts ; en attendant,
    les dépenses de Crew ne seront pas comptées tant que la phase 2 ne les estime pas côté Centre. Idem pour les usages faits en dehors du Centre
    (Open WebUI direct, etc.) : le solde DeepSeek de la page Coûts, lui, est réel.
-5. **Plafonds et Crew.** Crew est considéré « payant » sauf en modes Confidentiel et Ultra. C'est prudent, mais en mode Économe Crew peut n'utiliser que gemma (gratuit) : il sera quand même bloqué au plafond.
+5. **Plafonds et Crew.** Crew est considéré « payant » sauf en modes Confidentiel et Ultra-confidentiel. C'est prudent, mais en mode Économe Crew peut n'utiliser que gemma (gratuit) : il sera quand même bloqué au plafond.
 6. **Installabilité PWA.** Chrome/Edge exigent un manifeste, un service worker et des icônes PNG : c'est fourni, mais je n'ai pu tester qu'avec Chromium sans installation réelle.
    Sur un téléphone, l'installation exige HTTPS (phase 4, Tailscale Serve).
 7. **`pythonw` et uvicorn.** Sans console, `sys.stdout` vaut `None` ; je redirige vers `console.log`. Testé par simulation seulement.

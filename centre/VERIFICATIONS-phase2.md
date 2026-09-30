@@ -34,7 +34,7 @@ Si un programme (`claude`, `codex`, `gemini`) n'est pas trouvé alors qu'il est 
 
 ## B. Confidentialité (le plus important)
 
-- [ ] Mode Crew **Confidentiel** ou **Ultra** (page Centre) : toutes les salles du nuage sont grisées avec « rien ne doit quitter le PC » ; gemma et Crew restent utilisables.
+- [ ] Mode Crew **Confidentiel** ou **Ultra-confidentiel** (page Centre) : toutes les salles du nuage sont grisées avec « rien ne doit quitter le PC » ; gemma et Crew restent utilisables.
 - [ ] Dans ce mode, ouvrir une ancienne conversation DeepSeek et essayer d'envoyer : refusé avec le même message (contrôle du **serveur**, pas seulement de l'écran).
 - [ ] Ajouter au tiroir un texte **privé** (défaut). Le joindre à un message DeepSeek : refusé. Le joindre à gemma : accepté, et la conversation affiche « contenu privé : IA locales seulement ».
 - [ ] Dans cette conversation privée, « Demander aussi à… » : les IA du nuage sont refusées ; Crew accepté (le serveur demande alors le modèle `crew-confidentiel`).

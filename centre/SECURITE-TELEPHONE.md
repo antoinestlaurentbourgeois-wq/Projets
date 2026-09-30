@@ -28,7 +28,7 @@ Les programmes `claude`/`codex`/`gemini` ne travaillent que dans `I:\IA\ATELIER`
 7. **Anti-CSRF** : en-tête `X-Centre` obligatoire pour toute écriture + contrôle de l'origine (`Origin` = hôte) ; pour les WebSockets, l'origine et la session sont contrôlées **avant** l'acceptation (contre le détournement de WebSocket entre sites).
 8. **NIP reconfirmé pour les actions sensibles à distance** (valable 5 minutes, par session). Un téléphone volé et déverrouillé avec une session ouverte ne peut donc ni approuver une commande de Claude, ni éteindre/ouvrir des choses, ni changer un plafond, sans le NIP.
 9. **Politique de contenu (CSP)** stricte (aucun script ni style en ligne, `frame-ancestors 'none'`, `connect-src 'self'`), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy` (micro autorisé pour ce site seulement), `Cross-Origin-*: same-origin`.
-10. **Confidentialité appliquée par le serveur** (phases 2-3) : en modes Confidentiel/Ultra, aucune IA du nuage et pas de voix, même depuis le téléphone ; le contenu privé ne va jamais au nuage.
+10. **Confidentialité appliquée par le serveur** (phases 2-3) : en modes Confidentiel/Ultra-confidentiel, aucune IA du nuage et pas de voix, même depuis le téléphone ; le contenu privé ne va jamais au nuage.
 11. **Traçabilité** : reçus (`recus.jsonl`) pour connexions (réussies ou non), confirmations de NIP, actions, approbations, déconnexions ; page **Journal → Sécurité** avec les appareils connectés et « Déconnecter tous les autres appareils ».
 
 ## 3. Risques résiduels et recommandations

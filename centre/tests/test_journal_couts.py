@@ -79,7 +79,7 @@ def test_plafond_bloque_les_ia_payantes_pas_les_locales(couts):
     assert couts.peut_utiliser("gemma") == (True, "")
     assert couts.peut_utiliser("crew", "econome")[0] is False
     assert couts.peut_utiliser("crew", "confidentiel")[0] is True     # Crew local : jamais bloqué
-    assert couts.peut_utiliser("crew", "ultra")[0] is True
+    assert couts.peut_utiliser("crew", "ultra-confidentiel")[0] is True
     couts.definir_plafonds(None, None)                                # plafond relevé : débloqué
     assert couts.peut_utiliser("deepseek")[0] is True
 

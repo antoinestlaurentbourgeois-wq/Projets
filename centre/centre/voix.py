@@ -9,7 +9,7 @@ La voix, dans les deux sens, avec des voix du NUAGE (aucune voix locale).
            - il impose une durée maximale et un délai de silence.
   Talkie-walkie : transcription (nuage) -> n'importe quelle salle -> lecture de la réponse (voix du nuage).
 
-Confidentialité : la voix passe forcément par le nuage. Elle est donc REFUSÉE en modes Confidentiel/Ultra, et les
+Confidentialité : la voix passe forcément par le nuage. Elle est donc REFUSÉE en modes Confidentiel/Ultra-confidentiel, et les
 outils vocaux n'ont jamais accès à la zone « prive » de la mémoire ni aux conversations privées.
 """
 

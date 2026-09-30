@@ -30,7 +30,7 @@
     vider(racine);
     if (!opts.disponible) racine.appendChild(h("div", { class: "bandeau erreur", role: "status" }, h("strong", { texte: "Voix indisponible : " }), opts.raison));
     racine.appendChild(h("div", { class: "bandeau" }, "La voix passe par le nuage (OpenAI ou xAI) : votre voix et les réponses lues quittent le PC. ",
-      "Elle est désactivée en modes Confidentiel et Ultra. Jamais de contenu privé (zone « prive », conversations privées)."));
+      "Elle est désactivée en modes Confidentiel et Ultra-confidentiel. Jamais de contenu privé (zone « prive », conversations privées)."));
     racine.appendChild(carteLive());
     racine.appendChild(carteTalkie());
   }

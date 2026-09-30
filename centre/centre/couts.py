@@ -28,7 +28,7 @@ IA = {
     "voix":     {"libelle": "Voix (nuage)",  "payante": True},
     "gemma":    {"libelle": "gemma (local)", "payante": False},
 }
-MODES_CREW_LOCAUX = ("confidentiel", "ultra")
+MODES_CREW_LOCAUX = ("confidentiel", "ultra-confidentiel", "ultra")     # « ultra » : ancien nom, encore reconnu
 
 # Tarifs de référence vérifiés le 29 septembre 2026 (à revérifier), en dollars US.
 TARIFS_REFERENCE = {

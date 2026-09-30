@@ -239,8 +239,8 @@ def test_mode_crew(client, centre, simulateur):
 
 def test_mode_crew_serveur_eteint_passe_par_le_fichier(client, centre):
     client.get("/api/crew/mode")
-    r = client.put("/api/crew/mode", json={"mode": "ultra"})
-    assert r.status_code == 200 and r.json()["serveur_actif"] is False and r.json()["actuel"] == "ultra"
+    r = client.put("/api/crew/mode", json={"mode": "ultra-confidentiel"})
+    assert r.status_code == 200 and r.json()["serveur_actif"] is False and r.json()["actuel"] == "ultra-confidentiel"
 
 
 def test_moteurs(client, centre, simulateur):
