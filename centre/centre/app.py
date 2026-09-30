@@ -30,7 +30,7 @@ from .verrou import ErreurVerrou, Verrou
 from .couts import ErreurCouts, IA, TARIFS_REFERENCE, libelle_ia
 from .conversations import ErreurConversation
 from .journal import lire_fin_journal, masquer
-from .salles import ErreurSalle, SALLES
+from .salles import ErreurSalle, MODELES_CREW, SALLES
 from .tiroir import ErreurTiroir
 from .voix import ErreurVoix
 from .rappels import ErreurRappel
@@ -433,7 +433,12 @@ def creer_app(centre=None, verrou=None, config=None):
 
     async def api_salle_modeles(request):
         try:
-            return _json({"modeles": await run_in_threadpool(salles.modeles_disponibles, request.path_params["salle"])})
+            salle = request.path_params["salle"]
+            r = {"modeles": await run_in_threadpool(salles.modeles_disponibles, salle)}
+            if salle == "crew":
+                r["explications"] = dict(MODELES_CREW)
+                r["defaut"] = MODELES_CREW[0][0]
+            return _json(r)
         except ErreurSalle as e:
             return erreur_salle(e)
 

@@ -337,9 +337,28 @@
     }).catch(function (e) { C.informer("Impossible d'ouvrir", e.message); });
   }
 
+  // Réglages de la salle Crew : menu déroulant (liste fixe côté Centre, sans rien demander à Crew).
+  function reglagesCrew(s, m) {
+    var actuel = s.modele || m.defaut, connu = m.modeles.indexOf(actuel) >= 0;
+    var options = m.modeles.map(function (id) {
+      return { valeur: id, texte: id + (id === m.defaut ? " (par défaut)" : "") + (!connu && id === m.defaut ? " — recommandé pour remplacer" : "") };
+    });
+    var expl = {}; m.modeles.forEach(function (id) { expl[id] = m.explications[id]; });
+    if (!connu) {                                                      // valeur enregistrée hors liste : affichée, jamais supprimée en silence
+      options.unshift({ valeur: actuel, texte: actuel + " — inconnue" });
+      expl[actuel] = "⚠ « " + actuel + " » n'est pas un modèle connu de Crew (ancienne valeur ou faute de frappe) : Crew répondrait « Modèle inconnu ». Choisissez " + m.defaut + " pour la remplacer.";
+    }
+    var champs = [{ nom: "modele", label: "Modèle", type: "select", valeur: actuel, options: options, explications: expl }];
+    return C.formulaire("Réglages : " + s.libelle, "La table ronde ne se choisit pas ici : elle a son bouton dans la salle Crew.", champs, "Enregistrer").then(function (v) {
+      if (!v) return;
+      return api("PUT", "/api/salles/" + s.id + "/reglage", { modele: v.modele }).then(charger);
+    });
+  }
+
   function reglagesSalle() {
     var s = salleCourante();
     api("GET", "/api/salles/" + s.id + "/modeles").then(function (m) {
+      if (m.explications) return reglagesCrew(s, m);            // Crew : menu de 4 choix fixes, avec explication
       var aide = m.modeles.length ? "Modèles proposés : " + m.modeles.slice(0, 25).join(", ") : "Laissez vide pour le modèle par défaut.";
       var champs = [];
       if (s.auths.length > 1) champs.push({ nom: "auth", label: "Connexion", type: "select", valeur: s.auth, options: s.auths.map(function (a) { return { valeur: a.id, texte: a.texte }; }) });
