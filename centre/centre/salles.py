@@ -134,6 +134,15 @@ class Execution:
         return list(self.evenements)
 
 
+# Modèles de la salle Crew : liste fixe (jamais « crew-tableronde » : la table ronde a son bouton et ses cases à cocher).
+MODELES_CREW = [
+    ("crew-normal", "Suit le mode choisi dans le panneau (Économe par défaut)"),
+    ("crew-maxperf", "Équipe complète avec les modèles les plus puissants (plus cher)"),
+    ("crew-confidentiel", "Tout reste en local (gemma)"),
+    ("crew-ultra", "Tout est local, orchestration comprise"),
+]
+
+
 class ErreurSalle(Exception):
     def __init__(self, message, code=400, **extra):
         super().__init__(message)
@@ -268,6 +277,8 @@ class Salles:
             modele = str(modele).strip()
             if modele and not ia.modele_valide(modele):
                 raise ErreurSalle("Nom de modèle invalide (lettres, chiffres, . _ : / - seulement).")
+            if salle == "crew" and modele and modele not in dict(MODELES_CREW) and modele != actuel["modele"]:
+                raise ErreurSalle("Modèle Crew inconnu. Choisissez dans la liste : " + ", ".join(m for m, _ in MODELES_CREW) + ".")
             actuel["modele"] = modele or self._defaut_modele(salle, actuel["auth"])
         with self._verrou:
             tout = self._reglages()
@@ -417,7 +428,9 @@ class Salles:
         if salle == "gemma":
             adaptateur = ia.OpenAICompat(self.reseau, "LM Studio", "", None, False)
             return adaptateur.lister_modeles(self.centre.L.R.URL_LMSTUDIO)
-        if salle == "crew" or r["auth"] != "cle" or salle == "claude" or not d.fournisseur:
+        if salle == "crew":
+            return [m for m, _ in MODELES_CREW]          # liste FIXE : on ne demande rien à Crew (le menu marche même Crew arrêté)
+        if r["auth"] != "cle" or salle == "claude" or not d.fournisseur:
             return []
         if not self.politique.nuage_autorise()[0]:
             return []

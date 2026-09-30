@@ -94,6 +94,12 @@
         if (c.type === "checkbox") el.checked = !!c.valeur; else if (c.valeur != null) el.value = c.valeur;
         controles[c.nom] = el;
         zoneChamps.appendChild(h("label", { class: "champ", for: "f-" + c.nom }, h("span", { texte: c.label }), el));
+        if (c.explications) {                                    // explication du choix courant, sous le menu
+          var expl = h("small", { class: "doux explication" });
+          var majExpl = function () { expl.textContent = c.explications[el.value] || ""; };
+          el.addEventListener("change", majExpl); majExpl();
+          zoneChamps.appendChild(expl);
+        }
       });
       var zone = document.getElementById("dialogue-boutons");
       vider(zone);
