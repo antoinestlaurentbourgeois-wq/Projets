@@ -69,6 +69,26 @@ def sse(*morceaux, usage=None, erreur=None):
     return 200, iter(lignes)
 
 
+def morceau(participant, texte, tour=1):
+    """Un morceau de flux Crew (table ronde) : contenu + `participant` + `tour` (contrat provisoire)."""
+    return {"object": "chat.completion.chunk", "choices": [{"delta": {"content": texte}}], "participant": participant, "tour": tour}
+
+
+def usage_p(participant, cout, tour=1, duree=None):
+    u = {"prompt_tokens": 10, "completion_tokens": 20, "cout_usd": cout}
+    if duree is not None:
+        u["duree_s"] = duree
+    return {"object": "chat.completion.chunk", "choices": [], "participant": participant, "tour": tour, "usage": u}
+
+
+def sse_table(*morceaux):
+    lignes = []
+    for m in morceaux:
+        lignes += ["data: " + json.dumps(m), ""]
+    lignes += ["data: [DONE]", ""]
+    return 200, iter(lignes)
+
+
 class FauxProc:
     def __init__(self, lignes, stderr="", code=0, attente=None):
         self._lignes, self._stderr, self.code, self.attente = lignes, stderr, code, attente

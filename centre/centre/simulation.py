@@ -31,6 +31,8 @@ def _reponse(question, qui):
 
 class ReseauDemo:
     def flux_post(self, url, entetes, corps, delai=600, annulation=None):
+        if isinstance(corps.get("table_ronde"), dict):
+            return 200, self._table_ronde(corps)
         question = corps["messages"][-1]["content"] if corps.get("messages") else ""
         qui = corps.get("model") or url.split("/")[2]
         if "<<<QUESTION>>>" in question:            # vérification (Truth Gate) : réponse au format JSON attendu
@@ -39,6 +41,44 @@ class ReseauDemo:
                                                            {"texte": "Deuxième affirmation", "statut": "douteuse", "raison": "simulation"}]}, ensure_ascii=False)])
         mots = _reponse(question.split("Demande de l'utilisateur :")[-1].strip(), qui).split(" ")
         return 200, _sse([m + " " for m in mots])
+
+    @staticmethod
+    def _table_ronde(corps):
+        """Faux Crew : plusieurs IA répondent à la suite (un participant échoue, un autre est exclu si demandé)."""
+        tr = corps["table_ronde"]
+        question = corps["messages"][-1]["content"][:60] if corps.get("messages") else ""
+        noms = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "grok": "Grok", "deepseek": "DeepSeek", "gemma": "gemma"}
+        couts = {"claude": 0.05, "codex": 0.04, "gemini": 0.0, "grok": 0.06, "deepseek": 0.003, "gemma": 0.0}
+
+        def morceau(p, texte, tour=1):
+            return {"object": "chat.completion.chunk", "choices": [{"delta": {"content": texte}}], "participant": p, "tour": tour}
+
+        def usage(p, tour=1, duree=1.5):
+            return {"object": "chat.completion.chunk", "choices": [], "participant": p, "tour": tour,
+                    "usage": {"prompt_tokens": 40, "completion_tokens": 60, "cout_usd": couts.get(p, 0.0), "duree_s": duree}}
+
+        def lignes():
+            tours = (1, 2) if tr.get("critique") else (1,)
+            for tour in tours:
+                for p in tr["participants"]:
+                    if p == "grok" and "exclu" in question.lower():
+                        yield "data: " + json.dumps({"participant": p, "tour": tour, "statut": "exclu", "raison": "contenu confidentiel, traité en local seulement"}); yield ""
+                        continue
+                    if p == "claude" and "echec" in question.lower():
+                        yield "data: " + json.dumps({"participant": p, "tour": tour, "statut": "erreur", "erreur": "503 surcharge simulée"}); yield ""
+                        continue
+                    debut = f"[réponse SIMULÉE de {noms.get(p, p)}" + (", tour de critique" if tour == 2 else "") + f"] Sur « {question} » : "
+                    for mot in (debut + "voici mon avis, avec une réserve importante sur les hypothèses. ").split(" "):
+                        time.sleep(0.02)
+                        yield "data: " + json.dumps(morceau(p, mot + " ", tour)); yield ""
+                    yield "data: " + json.dumps(usage(p, tour, round(1 + 0.4 * len(p), 1))); yield ""
+            if tr.get("synthese", True):
+                for mot in "[SYNTHÈSE SIMULÉE] Les IA convergent sur l'essentiel ; Crew retient les points communs et signale les désaccords.".split(" "):
+                    time.sleep(0.02)
+                    yield "data: " + json.dumps(morceau("synthese", mot + " ")); yield ""
+                yield "data: " + json.dumps(usage("synthese", 1, 0.8)); yield ""
+            yield "data: [DONE]"; yield ""
+        return lignes()
 
     def requete(self, methode, url, entetes=None, corps=None, delai=30, octets=False, max_octets=0):
         if url.endswith("/models"):

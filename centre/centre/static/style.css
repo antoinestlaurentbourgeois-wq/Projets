@@ -274,3 +274,23 @@ button.retour { display: inline-block; background: none; border: 0; color: var(-
   .bascule { padding: 5px 10px; }
   .indice { flex-basis: 100%; margin-left: 0; text-align: right; }
 }
+
+/* ---- Table ronde ---- */
+.tr-panneau { background: var(--carte2); border: 1px solid var(--bord); border-radius: 12px; padding: 8px 12px; margin-bottom: 8px; }
+.tr-panneau summary { cursor: pointer; font-weight: 700; font-size: 13px; }
+.tr-cases { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0; }
+.tr-case { font-size: 13px; }
+.tr-case.grise { opacity: .55; }
+.tr-raison { color: var(--orange); font-size: 12px; }
+.tr-options { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+.tr-cout { margin-top: 6px; font-size: 12px; color: var(--doux); }
+.tr-cout.alerte { color: var(--rouge); font-weight: 700; }
+.bulle.tableronde { margin-right: 0; }
+.tr-grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-top: 6px; }
+.tr-col { border: 1px solid var(--bord); border-radius: 10px; padding: 8px 10px; background: var(--fond); min-width: 0; }
+.tr-col.synthese { grid-column: 1 / -1; border-color: var(--accent); }
+.tr-col summary { cursor: pointer; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tr-meta { font-size: 12px; }
+.tr-corps { overflow-wrap: anywhere; }
+.tr-tour2 { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--bord); }
+@media (max-width: 720px) { .tr-grille { grid-template-columns: 1fr; } .tr-panneau { max-height: 40vh; overflow-y: auto; } }

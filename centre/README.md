@@ -91,3 +91,7 @@ Un seul écran : **Salles** est l'accueil. En haut, le **noyau** animé indique 
 En bas de la page Salles : le grand bouton **MAINTENIR POUR PARLER** (transcription → envoi → lecture de la réponse si « 🔊 Voix » est activé), la saisie
 (une conversation se crée toute seule au premier message) et les bascules **Live**, **Mémoire**, **Voix**, **Tiroir**, **Écriture** (Codex) et **Stop**.
 Thème sombre par défaut (clair si votre système le demande). Les autres pages s'ouvrent comme des fiches, avec « ‹ Retour aux salles ».
+
+## Table ronde (salle Crew)
+
+Dans la salle Crew, l'interrupteur « 🎯 Table ronde » ouvre une liste d'IA à cocher (par défaut : gemma, Gemini, DeepSeek ; les indisponibles sont grisées avec la raison). Le coût estimé total s'affiche **avant** l'envoi ; au-dessus du seuil (`seuil_table_ronde_usd` dans `reglages.json`, 0,10 $ par défaut) une confirmation est demandée. Le message part en un seul appel vers Crew, les réponses arrivent en colonnes (l'une sous l'autre sur téléphone), la synthèse de Crew en dernier. Option « tour de critique » : 2e tour, surcoût affiché avant activation. Les IA exclues par Crew (contenu confidentiel) sont marquées comme telles, jamais contournées. Contrat avec Crew provisoire : voir `RETOUR-table-ronde-inconnus.md`.

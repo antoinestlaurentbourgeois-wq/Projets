@@ -7,6 +7,12 @@
   var racine = null;
   S.opt = { memoire: false, lire: relire("opt.lire") === "oui", ecriture: false };
   S.voixOpts = null;
+  // Table ronde : une question à plusieurs IA, TOUJOURS par Crew (le Centre envoie la liste cochée, Crew applique la confidentialité).
+  var DEFAUT_TR = ["gemini", "deepseek", "gemma"];
+  S.tr = { ouvert: window.innerWidth > 720, actif: relire("tr.actif") === "oui", participants: DEFAUT_TR.slice(), critique: false, synthese: true, options: null, est: null };
+  try { var sauve = JSON.parse(relire("tr.participants") || "null"); if (Array.isArray(sauve) && sauve.length) S.tr.participants = sauve.filter(function (x) { return typeof x === "string"; }); } catch (e) { /* défaut */ }
+  var LIBELLE_TR = { claude: "Claude", codex: "ChatGPT / Codex", gemini: "Gemini", grok: "Grok", deepseek: "DeepSeek", gemma: "gemma (local)", synthese: "Synthèse de Crew" };
+  function trActive() { return S.tr.actif && S.salle === "crew"; }
 
   function stocker(k, v) { try { localStorage.setItem("centre." + k, v); } catch (e) { /* facultatif */ } }
   function relire(k) { try { return localStorage.getItem("centre." + k); } catch (e) { return null; } }
@@ -80,6 +86,7 @@
     racine = h("div", { id: "salles" });
     C.page.appendChild(racine);
     S.salle = S.salle || relire("salle") || "crew";
+    api("GET", "/api/table-ronde/options").then(function (o) { S.tr.options = o; if (C.courante() === "salles") dessinerDock(salleCourante()); }).catch(function () {});
     C.voixOptions().then(function (o) { S.voixOpts = o; if (C.courante() === "salles") dessinerDock(salleCourante()); }).catch(function () {});
     charger().then(function () {
       if (S.pendingConv) { var id = S.pendingConv; S.pendingConv = null; if (S.memoireInitiale) { S.opt.memoire = true; S.memoireInitiale = false; } return ouvrir(id); }
@@ -88,7 +95,9 @@
   }
 
   function charger() {
-    return Promise.all([api("GET", "/api/salles"), api("GET", "/api/conversations?salle=" + encodeURIComponent(S.salle || "crew"))]).then(function (r) {
+    return Promise.all([api("GET", "/api/salles"), api("GET", "/api/conversations?salle=" + encodeURIComponent(S.salle || "crew")),
+                        api("GET", "/api/table-ronde/options").catch(function () { return null; })]).then(function (r) {
+      if (r[2]) S.tr.options = r[2];
       S.salles = r[0].salles; S.politique = r[0].politique; S.memoire = r[0].memoire; S.actives = r[1].actives; S.convs = r[1].conversations;
       dessiner();
     }).catch(function (e) { if (e.message !== "session") { vider(racine); racine.appendChild(h("div", { class: "bandeau erreur", texte: e.message })); } });
@@ -162,6 +171,8 @@
     var memoireOk = !!(S.memoire && S.memoire.disponible);
     var bascules = h("div", { class: "bascules" },
       bascule("◉ Live", false, "Conversation vocale en direct (page Voix)", function () { C.aller("voix"); }),
+      s && s.id === "crew" ? bascule("🎯 Table ronde", S.tr.actif, trOk() ? "Poser la même question à plusieurs IA, par Crew" : trRaison(),
+        function () { S.tr.actif = !S.tr.actif; stocker("tr.actif", S.tr.actif ? "oui" : "non"); S.tr.est = null; dessinerDock(s); if (S.tr.actif) trEstimer(); }, !trOk()) : null,
       bascule("🧠 Mémoire", S.opt.memoire && memoireOk, memoireOk ? (s && s.id === "crew" ? "Crew consulte déjà la mémoire tout seul" : "Ajouter des extraits de votre bibliothèque (partageables seulement pour le nuage)") : "Mémoire indisponible (Crew éteint ou pas exposée)",
         function () { S.opt.memoire = !S.opt.memoire; dessinerDock(s); }, !memoireOk),
       bascule("🔊 Voix", S.opt.lire && voixOk, voixOk ? "Lire les réponses à voix haute (voix du nuage ; jamais du contenu privé)" : ((S.voixOpts && S.voixOpts.raison) || "Voix indisponible"),
@@ -170,15 +181,103 @@
       s && s.ecriture ? bascule("✍ Écriture", S.opt.ecriture, "Autoriser l'écriture dans l'atelier pour le prochain message seulement", function () { S.opt.ecriture = !S.opt.ecriture; dessinerDock(s); }) : null,
       h("button", { class: "bascule stop", id: "bouton-stop", type: "button", texte: "⏹ Stop", hidden: !S.enCours, onclick: arreter }),
       h("span", { class: "indice", id: "dock-indice", texte: court((s && s.estimation) || ""), title: (s && s.estimation) || "" }));
-    dock.appendChild(h("div", { class: "dock-inner" }, bouton,
+    dock.appendChild(h("div", { class: "dock-inner" }, trActive() ? panneauTr() : null, bouton,
       h("div", { class: "saisie-rangee" }, saisie,
         h("button", { class: "rond envoyer", id: "bouton-envoyer", type: "button", title: "Envoyer", "aria-label": "Envoyer", texte: "➤", disabled: !pret || S.enCours, onclick: function () { envoyer(); } })),
       bascules));
+    if (trActive() && !S.tr.est && !S.tr.enCours) { S.tr.enCours = true; trEstimer().then(function () { S.tr.enCours = false; }); }
   }
   var minuteurEstimation = null;
+  function trOk() { return !S.tr.options || S.tr.options.crew_actif; }
+  function trRaison() { return (S.tr.options && S.tr.options.raison) || "Table ronde indisponible."; }
+  function dollars3(n) { return (Number(n) || 0).toLocaleString("fr-CA", { style: "currency", currency: "USD", minimumFractionDigits: 3, maximumFractionDigits: 3 }); }
+
+  // Panneau de la table ronde : cases à cocher (grisées avec la raison), options, coût estimé AVANT l'envoi.
+  function panneauTr() {
+    var est = S.tr.est, dispo = {};
+    if (est && est.ok) est.participants.forEach(function (p) { dispo[p.id] = p; });
+    var cases = (S.tr.options ? S.tr.options.participants : Object.keys(LIBELLE_TR).filter(function (k) { return k !== "synthese"; }).map(function (id) { return { id: id, libelle: LIBELLE_TR[id] }; })).map(function (p) {
+      var d = dispo[p.id], grise = !!(d && !d.disponible), coche = S.tr.participants.indexOf(p.id) >= 0 && !grise;
+      var c = h("input", { type: "checkbox", id: "tr-" + p.id, checked: coche, disabled: grise });
+      c.addEventListener("change", function () {
+        var i = S.tr.participants.indexOf(p.id);
+        if (c.checked && i < 0) S.tr.participants.push(p.id); else if (!c.checked && i >= 0) S.tr.participants.splice(i, 1);
+        stocker("tr.participants", JSON.stringify(S.tr.participants)); trEstimer();
+      });
+      return h("label", { class: "tr-case" + (grise ? " grise" : ""), title: grise ? (d.raison || "indisponible") : "" }, c, " " + p.libelle,
+        d && d.disponible && d.cout_estime_usd ? h("span", { class: "doux", texte: " ≈ " + dollars3(d.cout_estime_usd) }) : null,
+        grise ? h("span", { class: "tr-raison", texte: " — " + (d.raison || "indisponible") }) : null);
+    });
+    var sans = h("input", { type: "checkbox", id: "tr-sans", checked: !S.tr.synthese });
+    sans.addEventListener("change", function () { S.tr.synthese = !sans.checked; trEstimer(); });
+    var crit = h("input", { type: "checkbox", id: "tr-critique", checked: S.tr.critique });
+    crit.addEventListener("change", function () {
+      if (!crit.checked) { S.tr.critique = false; trEstimer(); return; }
+      crit.checked = false;                               // on n'active qu'après avoir affiché le surcoût
+      trEstimer({ critique: true }).then(function (e2) {
+        if (!e2 || !e2.ok) { C.informer("Tour de critique indisponible", (e2 && e2.message) || "Estimation impossible."); return; }
+        var base = S.tr.est && S.tr.est.ok ? S.tr.est.total_usd : 0;
+        C.confirmer("Activer le tour de critique ?", "Chaque IA relit les réponses des autres et réagit (2e tour).\nCoût estimé avec le tour de critique : " + dollars3(e2.total_usd) +
+          " (au lieu de " + dollars3(base) + ", soit +" + dollars3(e2.total_usd - base) + ").\nSeuil d'avertissement : " + dollars3(e2.seuil_usd) + ".", "Activer").then(function (ok) {
+          if (ok) { S.tr.critique = true; }
+          trEstimer();
+        });
+      });
+    });
+    var ligne = h("div", { class: "tr-cout", id: "tr-cout", role: "status" });
+    trAfficherCout(ligne);
+    var resume = "🎯 Table ronde — " + S.tr.participants.length + " IA, via Crew" + (est && est.ok ? " · ≈ " + dollars3(est.total_usd) + (est.depasse ? " ⚠" : "") : "") + (S.tr.critique ? " · critique" : "");
+    var panneau = h("details", { class: "tr-panneau" }, h("summary", { texte: resume }),
+      h("div", { class: "tr-cases" }, cases),
+      h("div", { class: "tr-options" }, h("label", null, sans, " Sans synthèse"), h("label", null, crit, " Tour de critique (2e tour)")),
+      ligne);
+    if (S.tr.ouvert) panneau.setAttribute("open", "");
+    panneau.addEventListener("toggle", function () { S.tr.ouvert = panneau.open; });      // replié ou non : on s'en souvient
+    return panneau;
+  }
+  function trAfficherCout(el) {
+    var e = S.tr.est;
+    el = el || document.getElementById("tr-cout"); if (!el) return;
+    el.classList.toggle("alerte", !!(e && e.ok && e.depasse));
+    if (!e) el.textContent = "Estimation du coût en cours…";
+    else if (!e.ok) el.textContent = "⚠ " + e.message + " (aucune IA ne sera appelée)";
+    else el.textContent = "Coût estimé : " + dollars3(e.total_usd) + " au total" + (e.depasse ? " — ⚠ au-dessus du seuil de " + dollars3(e.seuil_usd) + " : une confirmation sera demandée." : " (seuil " + dollars3(e.seuil_usd) + ").");
+  }
+  var minuteurTr = null;
+  function trEstimer(opts) {
+    opts = opts || {};
+    var corps = { participants: S.tr.participants, tous: true, critique: opts.critique === true ? true : S.tr.critique, synthese: S.tr.synthese,
+                  texte: (document.getElementById("saisie") || {}).value || "", conversation: S.conv ? S.conv.id : null };
+    var appel = function () {
+      return api("POST", "/api/table-ronde/estimation", corps).catch(function (e) { return { ok: false, message: e.message, participants: [], total_usd: 0, depasse: false, seuil_usd: 0 }; });
+    };
+    if (opts.critique === true) return appel();                       // demande ponctuelle : ne touche pas à l'affichage
+    clearTimeout(minuteurTr);
+    return new Promise(function (resolve) {
+      minuteurTr = setTimeout(function () {
+        appel().then(function (e) {
+          S.tr.est = e;
+          var grises = e.ok ? e.participants.filter(function (p) { return !p.disponible; }).map(function (p) { return p.id; }) : [];
+          if (grises.length) S.tr.participants = S.tr.participants.filter(function (x) { return grises.indexOf(x) < 0; });
+          if (C.courante() === "salles" && trActive()) redessinerDockEnGardantSaisie();
+          resolve(e);
+        });
+      }, 250);
+    });
+  }
+
+  function redessinerDockEnGardantSaisie() {
+    var t = document.getElementById("saisie");
+    var actif = !!t && document.activeElement === t, pos = t ? t.selectionStart : 0;
+    if (t && t.dataset.conv === (S.conv ? S.conv.id : "")) S.brouillon = t.value;
+    dessinerDock(salleCourante());
+    if (actif) { var n = document.getElementById("saisie"); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* ok */ } } }
+  }
+
   function estimer(saisie, s) {
     clearTimeout(minuteurEstimation);
     if (!s) return;
+    if (trActive()) { trEstimer(); return; }
     minuteurEstimation = setTimeout(function () {
       api("GET", "/api/salles/" + s.id + "/estimation?longueur=" + saisie.value.length + (S.conv ? "&conversation=" + S.conv.id : "")).then(function (e) { indice("≈ " + court(e.texte).replace(/^≈ /, "")); }).catch(function () {});
     }, 400);
@@ -259,8 +358,9 @@
       m.sensible ? h("span", { class: "badge prive", texte: "privé" }) : null,
       m.interrompu ? h("span", { class: "badge", texte: "interrompu" }) : null,
       estIA && m.cout_usd ? h("span", { texte: "≈ " + m.cout_usd.toFixed(4) + " $" }) : null);
-    var corps = h("div"); rendre(corps, m.texte);
-    var b = h("div", { class: "bulle " + (estIA ? "assistant" : "user") + (m.erreur ? " erreur" : "") }, meta, corps);
+    var corps = h("div");
+    if (m.table_ronde && m.table_ronde.reponses) corps.appendChild(grilleDepuisMessage(m.table_ronde)); else rendre(corps, m.texte);
+    var b = h("div", { class: "bulle " + (estIA ? "assistant" : "user") + (m.table_ronde ? " tableronde" : "") + (m.erreur ? " erreur" : "") }, meta, corps);
     (m.contexte || []).forEach(function (c) {
       b.appendChild(h("div", { class: "doux", texte: c.type === "tiroir" ? "📎 Tiroir : " + c.titre : (c.chemin ? "📚 Mémoire : " + c.chemin : "📚 Mémoire : " + (c.message || "rien trouvé")) }));
     });
@@ -311,6 +411,22 @@
     var suite = ecr
       ? C.confirmer("Autoriser l'écriture ?", "Codex pourra créer et modifier des fichiers dans l'atelier pour CE message seulement. Continuer ?", "Autoriser")
       : Promise.resolve(true);
+    var confirmeTr = false;
+    if (trActive()) {
+      // Aucune IA payante n'est appelée sans avoir vu le coût : estimation fraîche, puis confirmation si le seuil est dépassé.
+      suite = suite.then(function (ok) {
+        if (!ok) return false;
+        clearTimeout(minuteurTr);
+        return api("POST", "/api/table-ronde/estimation", { participants: S.tr.participants, critique: S.tr.critique, synthese: S.tr.synthese, texte: texte, conversation: S.conv ? S.conv.id : null })
+          .then(function (e) {
+            S.tr.est = e;
+            if (!e.ok) { C.informer("Table ronde impossible", e.message + "\nAucune IA n'a été appelée. Les salles individuelles fonctionnent toujours."); return false; }
+            if (!e.depasse) return true;
+            return C.confirmer("Coût au-dessus du seuil", "Coût estimé : " + dollars3(e.total_usd) + " pour ce message, au-dessus du seuil de " + dollars3(e.seuil_usd) + ".\n" +
+              e.participants.filter(function (p) { return p.disponible; }).map(function (p) { return "• " + p.libelle + " : ≈ " + dollars3(p.cout_estime_usd); }).join("\n") + "\n\nEnvoyer quand même ?", "Envoyer", "danger").then(function (ok2) { confirmeTr = ok2; return ok2; });
+          });
+      });
+    }
     suite.then(function (ok) {
       if (!ok) return;
       var pret = S.conv ? Promise.resolve(S.conv) : api("POST", "/api/conversations", { salle: S.salle }).then(function (c) {
@@ -318,6 +434,8 @@
       });
       return pret.then(function () {
         var corps = { texte: texte, memoire: S.opt.memoire && !!(S.memoire && S.memoire.disponible), tiroir: S.selection.slice(), autoriser_ecriture: ecr };
+        if (trActive()) { if (window.innerWidth <= 720) S.tr.ouvert = false; }      // téléphone : on libère la place pour les réponses
+        if (trActive()) corps.table_ronde = { participants: S.tr.participants.slice(), critique: S.tr.critique, synthese: S.tr.synthese, confirme_depassement: !!confirmeTr };
         S.brouillon = ""; if (saisie) saisie.value = "";
         S.opt.ecriture = false;
         S.conv.messages.push({ id: "tmp", role: "user", texte: texte, ts: Date.now() / 1000, contexte: [] });
@@ -328,6 +446,66 @@
     }).catch(function (e) { C.informer("Envoi impossible", e.message); });
   }
   function reprendreFlux(cid) { demarrerLive(); lancerFlux("/api/conversations/" + cid + "/flux?depuis=0", { method: "GET" }); }
+
+  // ------------------------------------------------ table ronde : colonnes par IA
+  function grilleTr() { return h("div", { class: "tr-grille" }); }
+  function colonneTr(grille, id, libelle) {
+    var existante = grille.querySelector('[data-p="' + id + '"]');
+    if (existante) return existante._refs;
+    var badge = h("span", { class: "badge tr-statut" }), meta = h("span", { class: "doux tr-meta" });
+    var corps = h("div", { class: "tr-corps" }), corps2 = h("div", { class: "tr-corps" });
+    var tour2 = h("div", { class: "tr-tour2", hidden: true }, h("strong", { texte: "Tour 2 : critique des autres réponses" }), corps2);
+    var d = h("details", { class: "tr-col" + (id === "synthese" ? " synthese" : ""), open: "", "data-p": id },
+      h("summary", null, h("strong", { texte: libelle }), " ", badge, " ", meta), corps, tour2);
+    d._refs = { el: d, badge: badge, meta: meta, corps: corps, corps2: corps2, tour2: tour2, texte1: "", texte2: "" };
+    if (id === "synthese") grille.appendChild(d);
+    else { var syn = grille.querySelector('[data-p="synthese"]'); if (syn) grille.insertBefore(d, syn); else grille.appendChild(d); }   // la synthèse reste en dernier
+    return d._refs;
+  }
+  function majMetaTr(r, cout, duree) {
+    var t = [];
+    if (cout !== null && cout !== undefined) t.push(cout === 0 ? "gratuit" : dollars3(cout)); else t.push("coût inconnu");
+    if (duree !== null && duree !== undefined) t.push(Number(duree).toLocaleString("fr-CA", { maximumFractionDigits: 1 }) + " s");
+    r.meta.textContent = t.join(" · ");
+  }
+  function appliquerTr(grille, e) {
+    var r = colonneTr(grille, e.participant, LIBELLE_TR[e.participant] || e.participant);
+    if (e.t === "tr_delta") {
+      if (e.tour === 2) { r.tour2.hidden = false; r.texte2 += e.texte; rendre(r.corps2, r.texte2); }
+      else { r.texte1 += e.texte; rendre(r.corps, r.texte1); }
+      if (!r.badge.textContent) { r.badge.textContent = "en cours…"; }
+    } else if (e.t === "tr_fin") {
+      if (e.tour === 1 || !r.badge.dataset.fini) { r.badge.textContent = "terminé"; r.badge.dataset.fini = "1"; }
+      majMetaTr(r, e.cout_usd, e.duree_s);
+    } else if (e.t === "tr_exclu") {
+      var raison = String(e.raison || "");
+      r.badge.textContent = "exclue"; r.badge.classList.add("prive");
+      rendre(r.corps, /^exclue/i.test(raison) ? raison : "exclue : " + raison);
+    } else if (e.t === "tr_erreur") {
+      r.badge.textContent = "échec"; r.badge.classList.add("prive");
+      rendre(r.corps, "⚠ Cette IA a échoué : " + (e.message || "erreur") + " (les autres continuent).");
+    }
+    return r;
+  }
+  function trEvenement(e) {
+    if (!S.live) return;
+    if (!S.live.grille) { S.live.grille = grilleTr(); vider(S.live.corps); S.live.corps.appendChild(S.live.grille); S.live.meta.lastChild.textContent = "table ronde en cours…"; }
+    appliquerTr(S.live.grille, e);
+    var f = document.getElementById("fil"); if (f && f.lastChild) f.lastChild.scrollIntoView({ block: "nearest" });
+  }
+  // Un message enregistré : mêmes colonnes, reconstruites depuis les réponses stockées.
+  function grilleDepuisMessage(tr) {
+    var g = grilleTr();
+    tr.reponses.forEach(function (x) {
+      var texteX = x.texte || "";
+      var r = colonneTr(g, x.participant, x.libelle || LIBELLE_TR[x.participant] || x.participant);
+      if (x.statut === "exclu") { appliquerTr(g, { t: "tr_exclu", participant: x.participant, tour: x.tour, raison: x.raison }); return; }
+      if (x.statut === "erreur") { appliquerTr(g, { t: "tr_erreur", participant: x.participant, tour: x.tour, message: x.raison }); return; }
+      appliquerTr(g, { t: "tr_delta", participant: x.participant, tour: x.tour, texte: texteX });
+      appliquerTr(g, { t: "tr_fin", participant: x.participant, tour: x.tour, cout_usd: x.cout_usd, duree_s: x.duree_s });
+    });
+    return g;
+  }
 
   function demarrerLive() {
     var corps = h("div"); var meta = h("div", { class: "meta" }, h("strong", { texte: (salleCourante() || {}).libelle || "IA" }), h("span", { texte: "réponse en cours…" }));
@@ -347,6 +525,7 @@
       else if (e.t === "erreur") { S.live.erreur = e.message; }
       else if (e.t === "cout") { S.live.cout = e.texte; }
       else if (e.t === "fin") { S.dernierMsg = e.message_id; }
+      else if (e.t.indexOf("tr_") === 0) { trEvenement(e); }
     }).catch(function (e) {
       if (e.message !== "session" && S.live) S.live.erreur = S.live.erreur || ("Connexion interrompue : " + e.message + ". La réponse continue peut-être sur le PC : rouvrez la conversation.");
     }).then(function () {
