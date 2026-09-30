@@ -1,0 +1,16 @@
+{
+ "id": "maison",
+ "nom": "Maison et vie perso",
+ "description": "Organisation du quotidien.",
+ "salle": "gemma",
+ "demarrages": [
+  {
+   "titre": "Plan de repas de la semaine",
+   "prompt": "Propose un plan de repas simple pour la semaine (dîners), avec la liste de courses. Contraintes :\n\n"
+  },
+  {
+   "titre": "M'aider à décider",
+   "prompt": "Aide-moi à prendre une décision. Pose-moi d'abord les questions utiles, une par une, puis donne ton avis. Sujet :\n\n"
+  }
+ ]
+}

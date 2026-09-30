@@ -1,0 +1,16 @@
+{
+ "id": "veille",
+ "nom": "Recherche et réflexion",
+ "description": "Comparer, décider, comprendre.",
+ "salle": "gemini",
+ "demarrages": [
+  {
+   "titre": "Comparer deux options",
+   "prompt": "Compare ces deux options : avantages, inconvénients, coûts, risques. Termine par une recommandation argumentée et dis ce qui te ferait changer d'avis :\n\n"
+  },
+  {
+   "titre": "Expliquer simplement",
+   "prompt": "Explique-moi ce sujet simplement, comme à quelqu'un d'intelligent qui n'est pas spécialiste, avec un exemple concret :\n\n"
+  }
+ ]
+}
