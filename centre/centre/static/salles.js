@@ -374,7 +374,7 @@
   }
 
   // Réglages de la salle Crew : menu de modèles (liste fixe) + « IA sur abonnement dans Crew » (Claude, Codex).
-  var AIDE_ABONNEMENT = "Ces IA passent par votre abonnement (limites d'usage) et leurs questions partent dans le nuage. Elles répondent en texte seulement, sans accès à vos fichiers. Jamais utilisées en mode Confidentiel ou Ultra.";
+  var AIDE_ABONNEMENT = "Ces IA passent par votre abonnement (limites d'usage) et leurs questions partent dans le nuage. Elles répondent en texte seulement, sans accès à vos fichiers. Jamais utilisées en mode Confidentiel ou Ultra-confidentiel.";
   var NOM_ABONNEMENT = { claude: "Claude", codex: "ChatGPT / Codex" };
   function reglagesCrew(s, m) {
     return api("GET", "/api/crew/autorisations").catch(function (e) { return { disponible: false, message: e.message, autorisations: [] }; }).then(function (aut) {
@@ -414,7 +414,7 @@
         var aConfirmer = changements.filter(function (c) { return c.active; });
         var suite = aConfirmer.length
           ? C.confirmer("Autoriser " + aConfirmer.map(function (c) { return NOM_ABONNEMENT[c.nom]; }).join(" et ") + " dans Crew ?",
-              "• Passe par votre abonnement (limites d'usage).\n• Les questions partent dans le nuage ; réponses en texte seulement, sans accès à vos fichiers.\n• Jamais utilisée en mode Confidentiel ou Ultra.", "Autoriser")
+              "• Passe par votre abonnement (limites d'usage).\n• Les questions partent dans le nuage ; réponses en texte seulement, sans accès à vos fichiers.\n• Jamais utilisée en mode Confidentiel ou Ultra-confidentiel.", "Autoriser")
           : Promise.resolve(true);
         return suite.then(function (ok) {
           if (!ok) return;

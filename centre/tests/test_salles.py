@@ -70,7 +70,7 @@ def test_programme_introuvable(centre, processus):
 
 # ----- confidentialité appliquée par le serveur -----------------------------------------------------------------
 
-@pytest.mark.parametrize("m", ["confidentiel", "ultra"])
+@pytest.mark.parametrize("m", ["confidentiel", "ultra-confidentiel", "ultra"])
 def test_modes_confidentiels_seules_les_salles_locales(centre, simulateur, reseau, m):
     allumer(centre, simulateur)
     simulateur.cles.update({"XAI_API_KEY": "xai-aaaaaaaaaaaa", "GEMINI_API_KEY": "AIza" + "a" * 30})
@@ -137,7 +137,7 @@ def test_crew_utilise_le_modele_normal_et_la_cle_du_env(centre, simulateur, rese
 
 def test_crew_mode_local_gratuit(centre, simulateur, reseau):
     allumer(centre, simulateur)
-    mode(simulateur, centre, "ultra")
+    mode(simulateur, centre, "ultra-confidentiel")
     reseau.repondre(URL_CREW, lambda c, e: sse("x"))
     _, conv = envoyer(centre, "crew", "q")
     assert conv["messages"][-1]["cout_usd"] == 0
@@ -200,7 +200,7 @@ def test_modeles_disponibles(centre, simulateur, reseau):
     reseau.modeles["https://api.deepseek.com/models"] = ["deepseek-chat", "deepseek-reasoner"]
     assert centre.salles.modeles_disponibles("deepseek") == ["deepseek-chat", "deepseek-reasoner"]
     assert centre.salles.modeles_disponibles("claude") == []
-    mode(simulateur, centre, "ultra")
+    mode(simulateur, centre, "ultra-confidentiel")
     assert centre.salles.modeles_disponibles("deepseek") == []                        # rien ne sort en mode local
 
 
@@ -509,7 +509,7 @@ def test_estimation_avant_envoi(centre, simulateur):
     centre.salles.tarifs.definir("deepseek", 0.5, 2)
     e2 = centre.salles.estimer("deepseek", 3500, 0)
     assert e2["fiable"] and "grossière" not in e2["texte"] and e2["usd"] > e["usd"]
-    mode(simulateur, centre, "ultra")
+    mode(simulateur, centre, "ultra-confidentiel")
     assert "Gratuit" in centre.salles.estimer("crew", 10, 0)["texte"]
 
 

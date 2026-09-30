@@ -4,14 +4,14 @@
 from centre.salles import MODELES_CREW, ErreurSalle
 import pytest
 
-QUATRE = ["crew-normal", "crew-maxperf", "crew-confidentiel", "crew-ultra"]
+QUATRE = ["crew-normal", "crew-maxperf", "crew-confidentiel", "crew-ultra-confidentiel"]
 
 
 def test_liste_fixe_de_quatre_choix_sans_table_ronde(centre):
     assert centre.salles.modeles_disponibles("crew") == QUATRE           # Crew arrêté (rien allumé) : la liste est quand même là
     assert "crew-tableronde" not in dict(MODELES_CREW)                    # la table ronde n'est pas un modèle
     assert MODELES_CREW[0] == ("crew-normal", "Suit le mode choisi dans le panneau (Économe par défaut)")
-    assert dict(MODELES_CREW)["crew-ultra"] == "Tout est local, orchestration comprise"
+    assert dict(MODELES_CREW)["crew-ultra-confidentiel"] == "Tout est local, orchestration comprise"
     assert centre.salles.reglage("crew")["modele"] == "crew-normal"        # valeur par défaut
 
 
@@ -57,3 +57,16 @@ def test_autres_salles_inchangees(centre):
 def test_chatgpt_abonnement_sans_modele_inchange(centre):
     centre.salles.definir_reglage("chatgpt", auth="abonnement")
     assert centre.salles.reglage("chatgpt")["modele"] == ""
+
+
+def test_ancien_nom_ultra_encore_reconnu(centre, simulateur):
+    """« ultra » devient « ultra-confidentiel » : l'ancien nom de mode reste traité comme LOCAL, l'ancien modèle est repris sans signalement."""
+    import json
+    from centre.couts import MODES_CREW_LOCAUX
+    from centre.politique import MODES_LOCAUX
+    assert "ultra" in MODES_LOCAUX and "ultra-confidentiel" in MODES_LOCAUX and "ultra" in MODES_CREW_LOCAUX and "ultra-confidentiel" in MODES_CREW_LOCAUX
+    with open(centre.salles._chemin_reglages, "w", encoding="utf-8") as f:
+        json.dump({"crew": {"modele": "crew-ultra"}}, f)
+    assert centre.salles.reglage("crew")["modele"] == "crew-ultra-confidentiel"
+    centre.salles.definir_reglage("crew", modele="crew-ultra")            # l'ancien nom est aussi accepté à l'enregistrement
+    assert centre.salles.reglage("crew")["modele"] == "crew-ultra-confidentiel"

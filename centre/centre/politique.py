@@ -3,7 +3,7 @@
 Politique de confidentialité, appliquée PAR LE SERVEUR (l'interface ne fait que l'afficher).
 
 - Modes de Crew « econome » et « maxperf » : le nuage est permis.
-- Modes « confidentiel » et « ultra » : rien ne quitte le PC. Seules les salles locales restent actives,
+- Modes « confidentiel » et « ultra-confidentiel » (ancien nom « ultra » aussi reconnu) : rien ne quitte le PC. Seules les salles locales restent actives,
   et la voix est désactivée.
 - Mode inconnu ou illisible : on se comporte comme en confidentiel (dans le doute, rien ne sort).
 - Une conversation qui a touché du contenu PRIVÉ (mémoire zone « prive », tiroir privé) ne peut plus
@@ -14,7 +14,7 @@ import threading
 import time
 
 MODES_NUAGE = ("econome", "maxperf")
-MODES_LOCAUX = ("confidentiel", "ultra")
+MODES_LOCAUX = ("confidentiel", "ultra-confidentiel", "ultra")        # « ultra » : ancien nom, encore reconnu (jamais moins prudent)
 DUREE_CACHE = 2.0
 
 

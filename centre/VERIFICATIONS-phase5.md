@@ -25,7 +25,7 @@
 - [ ] Rappel récurrent (quotidien, hebdomadaire, mensuel) : « Fait » le reporte à la prochaine échéance au lieu de le supprimer.
 - [ ] **Bulletin du matin** : à la première ouverture de la journée, une boîte affiche le bulletin (date, services, mode de Crew, rappels du jour, coûts, actions à valider, alertes du gardien). Décocher « Afficher automatiquement » l'arrête.
 - [ ] « Lire à voix haute » (clé OpenAI requise) lit le bulletin. **Un rappel privé n'est PAS lu** (seulement « Et 1 rappel privé, à voir à l'écran »).
-- [ ] Mode Confidentiel/Ultra : le bulletin s'affiche encore, mais la lecture est refusée.
+- [ ] Mode Confidentiel/Ultra-confidentiel : le bulletin s'affiche encore, mais la lecture est refusée.
 
 ## D. Départements
 

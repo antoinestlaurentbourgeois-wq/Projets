@@ -26,7 +26,7 @@ REPONSE_MODE = json.dumps({"mode": "econome", "modes": [
      "explication": "Par défaut. gemma (local, gratuit) analyse chaque demande…"},
     {"id": "maxperf", "libelle": "MaxPerf", "explication": "…"},
     {"id": "confidentiel", "libelle": "Confidentiel", "explication": "…"},
-    {"id": "ultra", "libelle": "Ultra-confidentiel", "explication": "…"}]}, ensure_ascii=False)
+    {"id": "ultra-confidentiel", "libelle": "Ultra-confidentiel", "explication": "…"}]}, ensure_ascii=False)
 
 REPONSE_MOTEURS = json.dumps({"moteurs": [
     {"nom": "local", "libelle": "gemma (local, gratuit)", "local": True, "capacite": 1, "cout": 0,
@@ -52,7 +52,7 @@ class TestAnalyseCrew(unittest.TestCase):
     def test_mode(self):
         actuel, modes = C.analyser_mode(REPONSE_MODE)
         self.assertEqual(actuel, "econome")
-        self.assertEqual([m.id for m in modes], ["econome", "maxperf", "confidentiel", "ultra"])
+        self.assertEqual([m.id for m in modes], ["econome", "maxperf", "confidentiel", "ultra-confidentiel"])
         self.assertEqual(modes[0].libelle, "Économe")          # accents (UTF-8) conservés
         self.assertTrue(modes[0].explication.startswith("Par défaut."))
 
@@ -144,9 +144,9 @@ class TestModeCrew(unittest.TestCase):
 
     def test_serveur_eteint_change_le_fichier_en_gardant_le_reste(self):
         self.sim.fichiers[R.FICHIER_MODE_CREW] = '{"mode": "econome", "autre": 42}'
-        info = self.crew.changer_mode("ultra")
-        self.assertEqual(info.actuel, "ultra")
-        self.assertEqual(json.loads(self.sim.fichiers[R.FICHIER_MODE_CREW]), {"mode": "ultra", "autre": 42})
+        info = self.crew.changer_mode("ultra-confidentiel")
+        self.assertEqual(info.actuel, "ultra-confidentiel")
+        self.assertEqual(json.loads(self.sim.fichiers[R.FICHIER_MODE_CREW]), {"mode": "ultra-confidentiel", "autre": 42})
 
     def test_fichier_absent_ou_abime(self):
         del self.sim.fichiers[R.FICHIER_MODE_CREW]

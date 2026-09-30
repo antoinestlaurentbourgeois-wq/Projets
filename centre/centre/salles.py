@@ -139,8 +139,12 @@ MODELES_CREW = [
     ("crew-normal", "Suit le mode choisi dans le panneau (Économe par défaut)"),
     ("crew-maxperf", "Équipe complète avec les modèles les plus puissants (plus cher)"),
     ("crew-confidentiel", "Tout reste en local (gemma)"),
-    ("crew-ultra", "Tout est local, orchestration comprise"),
+    ("crew-ultra-confidentiel", "Tout est local, orchestration comprise"),
 ]
+
+
+# Ancien nom → nouveau nom (« ultra » devient « ultra-confidentiel ») : une valeur enregistrée avec l'ancien nom est reprise sans signalement.
+ALIAS_MODELES_CREW = {"crew-ultra": "crew-ultra-confidentiel"}
 
 
 class ErreurSalle(Exception):
@@ -258,6 +262,8 @@ class Salles:
         auth = r.get("auth") if r.get("auth") in auths else auths[0]
         defaut = self._defaut_modele(salle, auth)
         modele = r.get("modele") if ia.modele_valide(r.get("modele") or "") else defaut
+        if salle == "crew":
+            modele = ALIAS_MODELES_CREW.get(modele, modele)
         if salle == "chatgpt" and auth == "abonnement" and modele in ("", "gpt-4.1-mini"):
             modele = ""
         return {"auth": auth, "modele": modele}
@@ -277,6 +283,8 @@ class Salles:
             modele = str(modele).strip()
             if modele and not ia.modele_valide(modele):
                 raise ErreurSalle("Nom de modèle invalide (lettres, chiffres, . _ : / - seulement).")
+            if salle == "crew":
+                modele = ALIAS_MODELES_CREW.get(modele, modele)
             if salle == "crew" and modele and modele not in dict(MODELES_CREW) and modele != actuel["modele"]:
                 raise ErreurSalle("Modèle Crew inconnu. Choisissez dans la liste : " + ", ".join(m for m, _ in MODELES_CREW) + ".")
             actuel["modele"] = modele or self._defaut_modele(salle, actuel["auth"])

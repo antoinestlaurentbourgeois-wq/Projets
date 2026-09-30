@@ -6,7 +6,7 @@
   - `crew-normal` (par défaut) : Suit le mode choisi dans le panneau (Économe par défaut)
   - `crew-maxperf` : Équipe complète avec les modèles les plus puissants (plus cher)
   - `crew-confidentiel` : Tout reste en local (gemma)
-  - `crew-ultra` : Tout est local, orchestration comprise
+  - `crew-ultra-confidentiel` (ancien nom `crew-ultra`) : Tout est local, orchestration comprise
   - Pas de `crew-tableronde` : la table ronde garde son bouton et ses cases à cocher.
 - **Explication du choix courant** affichée sous le menu, mise à jour quand on change de choix (le formulaire commun accepte maintenant `explications` sur un menu).
 - **Valeur enregistrée hors liste** (ancienne valeur, faute de frappe) : affichée quand même, marquée « — inconnue », avec un avertissement, et `crew-normal` est proposé « pour remplacer ». Rien n'est supprimé en silence. Pour la ré-enregistrer telle quelle, c'est permis.

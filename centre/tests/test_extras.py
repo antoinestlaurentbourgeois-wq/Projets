@@ -290,7 +290,7 @@ def test_bulletin_api_et_lecture(client, centre, simulateur, reseau):
     r = client.post("/api/bulletin/lire", json={"fournisseur": "openai"})
     assert r.status_code == 200 and r.content == b"MP3"
     assert "Secret médical" not in vu["corps"]["input"] and "1 rappel privé" in vu["corps"]["input"]      # le nuage ne le reçoit pas
-    simulateur.fichiers[centre.L.R.FICHIER_MODE_CREW] = json.dumps({"mode": "ultra"}); centre.salles.politique.oublier()
+    simulateur.fichiers[centre.L.R.FICHIER_MODE_CREW] = json.dumps({"mode": "ultra-confidentiel"}); centre.salles.politique.oublier()
     assert client.post("/api/bulletin/lire", json={"fournisseur": "openai"}).status_code == 403
     assert client.get("/api/bulletin").status_code == 200                              # le texte, lui, reste disponible hors ligne
 

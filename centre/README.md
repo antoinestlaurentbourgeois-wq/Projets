@@ -4,7 +4,7 @@ Une seule application, dans votre navigateur (et plus tard sur votre téléphone
 **Phase 1 :** le socle, la page **Centre** (tout ce que fait le panneau « Mon IA locale ») et la page **Coûts**.
 **Phase 2 :** les **Salles** (une par IA : Crew, Claude, ChatGPT/Codex, Gemini, Grok, DeepSeek, gemma) et le **Tiroir** partagé.
 **Phase 3 :** la **Voix** : conversation en direct (OpenAI Realtime ou Grok Voice, voix du nuage) avec outils pour consulter toutes les salles et la mémoire,
-et talkie-walkie (appuyer pour parler). Coût en direct, coupure automatique au plafond, désactivée en modes Confidentiel/Ultra.
+et talkie-walkie (appuyer pour parler). Coût en direct, coupure automatique au plafond, désactivée en modes Confidentiel/Ultra-confidentiel.
 **Phase 4 :** l'**accès téléphone** par Tailscale Serve (HTTPS, réseau privé seulement) : voir `TELEPHONE.md` et la revue `SECURITE-TELEPHONE.md`.
 **Phase 5 :** les extras : **Rappels** et **bulletin du matin**, **Départements** (démarrages rapides), **Vérifier** une réponse par une autre IA (Truth Gate),
 **gardien** (santé toutes les 10 minutes), **sauvegarde de nuit** sans secrets, **rapport d'usage**.
@@ -21,7 +21,7 @@ Le panneau tkinter reste en place et fonctionne toujours : c'est votre solution 
 - **Coûts** : dépenses estimées par IA (aujourd'hui, ce mois-ci), solde DeepSeek, **plafonds par jour et par mois** que vous réglez.
   Au plafond, les IA payantes seront refusées avec un message clair (les salles de la phase 2 s'y brancheront ; les IA locales ne sont jamais bloquées).
 - **Salles** : discussion écrite avec chaque IA, réponses en continu, historique sur le PC, bouton **« Demander aussi à… »** (deuxième avis),
-  mémoire de Crew, tiroir partagé, coût estimé avant chaque envoi. **La confidentialité est appliquée par le serveur** : en mode Confidentiel/Ultra
+  mémoire de Crew, tiroir partagé, coût estimé avant chaque envoi. **La confidentialité est appliquée par le serveur** : en mode Confidentiel/Ultra-confidentiel
   seules gemma et Crew répondent, et un contenu privé ne va jamais à une IA du nuage. Claude, Codex et Gemini (programmes officiels, votre abonnement)
   travaillent dans `I:\IA\ATELIER`, en lecture seule ; toute action sensible passe par un **bouton d'approbation**. Jamais de `--dangerously-skip-permissions`.
   Voir `VERIFICATIONS-phase2.md` et `INCONNUS-phase2.md`.

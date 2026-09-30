@@ -67,7 +67,7 @@ class Simulateur:
              "explication": "Confie chaque demande à l'IA la plus capable, sans regarder le coût."},
             {"id": "confidentiel", "libelle": "Confidentiel", "niveau": "confidentiel",
              "performance": "econome", "explication": "Les données sensibles restent sur le PC."},
-            {"id": "ultra", "libelle": "Ultra-confidentiel", "niveau": "ultra", "performance": "econome",
+            {"id": "ultra-confidentiel", "libelle": "Ultra-confidentiel", "niveau": "ultra", "performance": "econome",
              "explication": "Rien ne sort du PC : seul gemma (local) est utilisé."},
         ]
         self.moteurs_crew_supplementaires = []   # pour tester l'ajout d'une IA

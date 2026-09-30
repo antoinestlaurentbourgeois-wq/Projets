@@ -44,7 +44,7 @@ def test_salles_et_politique(client, centre, simulateur):
     d = client.get("/api/salles").json()
     assert len(d["salles"]) == 7 and d["politique"]["nuage"] is True and d["politique"]["mode"] == "econome"
     assert d["memoire"]["disponible"] is False                         # Crew éteint
-    simulateur.fichiers[centre.L.R.FICHIER_MODE_CREW] = json.dumps({"mode": "ultra"})
+    simulateur.fichiers[centre.L.R.FICHIER_MODE_CREW] = json.dumps({"mode": "ultra-confidentiel"})
     centre.salles.politique.oublier()
     d = client.get("/api/salles").json()
     assert d["politique"]["nuage"] is False and "rien ne doit quitter" in d["politique"]["message"]
