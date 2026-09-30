@@ -78,8 +78,7 @@ class Simulateur:
         # Clés attendues par les serveurs simulés (le panneau, lui, lit ses clés ailleurs).
         self.cle_crew_serveur = "cle-crew-secrete"
         self.cle_webui_serveur = "cle-webui-secrete"
-        self.table_ronde_disponible = True       # /table-ronde/* exposé par Crew ?
-        self.table_ronde_couts = {"claude": 0.05, "codex": 0.04, "gemini": 0.0, "grok": 0.06, "deepseek": 0.003, "gemma": 0.0}
+        self.table_ronde_couts = {"claude": 0.05, "codex": 0.04, "gemini": 0.0, "grok": 0.06, "deepseek": 0.003, "gemma": 0.0}       # None = tarif inconnu
         self.table_ronde_indispos = {}           # id -> raison (IA grisée)
         self.memoire_disponible = True           # /memoire/* exposé par Crew ?
         self.memoire_docs = [                    # bibliothèque simulée
@@ -187,7 +186,7 @@ class Simulateur:
             auth = (entetes or {}).get("Authorization", "")
             self.requetes.append((methode, url, bool(auth)))
             if url.startswith(R.URL_CREW_MODE) or url.startswith(R.URL_CREW_MOTEURS) \
-                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]) or url == R.URL_CREW_TABLE_ESTIMATION:
+                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]) or url in (R.URL_CREW_TABLE_ESTIMATION, R.URL_CREW_TABLE_PARTICIPANTS):
                 return self._crew_api(methode, url, auth, corps_json)
             if url.startswith(R.URL_WEBUI_BASE + "/api/v1/chats"):
                 return self._webui_api(url, auth)
@@ -364,6 +363,8 @@ class Simulateur:
                  "detail": "Clé DEEPSEEK_API_KEY présente"},
             ] + self.moteurs_crew_supplementaires
             return 200, json.dumps({"moteurs": moteurs}, ensure_ascii=False)
+        if url == R.URL_CREW_TABLE_PARTICIPANTS:
+            return self._crew_table_participants()
         if url == R.URL_CREW_TABLE_ESTIMATION:
             return self._crew_table_estimation(corps_json)
         if url in (R.URL_CREW_MEMOIRE_ETAT, R.URL_CREW_MEMOIRE_CHERCHER):
@@ -377,26 +378,38 @@ class Simulateur:
         actuel = json.loads(self.fichiers.get(R.FICHIER_MODE_CREW) or "{}").get("mode", "econome")
         return 200, json.dumps({"mode": actuel, "modes": self.modes_crew}, ensure_ascii=False)
 
-    # ----- serveur Crew : /table-ronde/estimation (contrat provisoire) -----------------------
+    # ----- serveur Crew : /table-ronde/participants et /table-ronde/estimation (comme le vrai Crew) ----
+
+    def _crew_table_participants(self):
+        libelles = {"claude": "Claude", "codex": "ChatGPT / Codex", "gemini": "Gemini", "grok": "Grok", "deepseek": "DeepSeek", "gemma": "gemma (local)"}
+        return 200, json.dumps({"participants": [
+            {"id": i, "libelle": l, "disponible": i not in self.table_ronde_indispos, "raison": self.table_ronde_indispos.get(i, "")}
+            for i, l in libelles.items()]}, ensure_ascii=False)
 
     def _crew_table_estimation(self, corps):
-        if not self.table_ronde_disponible:
-            return 404, '{"detail": "Not Found"}'
+        """Comme le vrai Crew : `tous` est ignoré, un id inconnu donne 400, un tarif inconnu (None) n'est jamais compté comme 0,
+        `total_usd` inclut déjà le 2e tour et `total_incomplet` vaut vrai si un tarif manque."""
         tr = (corps or {}).get("table_ronde") if isinstance(corps, dict) else None
         if not isinstance(tr, dict) or not isinstance(tr.get("participants"), list):
             return 422, '{"error": {"message": "table_ronde.participants manquant", "type": "invalid_request"}}'
-        participants, total = [], 0.0
+        if not tr["participants"]:
+            return 400, '{"error": {"message": "aucun participant", "type": "invalid_request"}}'
+        inconnus = [i for i in tr["participants"] if i not in self.table_ronde_couts]
+        if inconnus:
+            return 400, json.dumps({"error": {"message": "participant inconnu : " + ", ".join(map(str, inconnus)), "type": "invalid_request"}})
+        participants, total, incomplet = [], 0.0, False
         tours = 2 if tr.get("critique") else 1
         for ident in tr["participants"]:
-            cout = self.table_ronde_couts.get(ident)
-            if cout is None:
-                continue
+            cout = self.table_ronde_couts[ident]
             raison = self.table_ronde_indispos.get(ident, "")
-            c = round(cout * tours, 6)
+            c = None if cout is None else round(cout * tours, 6)
             participants.append({"id": ident, "cout_estime_usd": c, "disponible": not raison, "raison": raison})
             if not raison:
-                total += c
-        return 200, json.dumps({"participants": participants, "total_usd": round(total, 6)})
+                if c is None:
+                    incomplet = True
+                else:
+                    total += c
+        return 200, json.dumps({"participants": participants, "total_usd": round(total, 6), "total_incomplet": incomplet})
 
     # ----- serveur Crew : /memoire/* (adresses prévues) ---------------------------------
 

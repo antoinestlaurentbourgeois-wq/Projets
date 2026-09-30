@@ -574,12 +574,7 @@ def creer_app(centre=None, verrou=None, config=None):
             except ErreurSalle as e:
                 return erreur_salle(e)
         messages.append({"role": "user", "content": str(d.get("texte") or "")[:30000] or "?"})
-        # `tous` : l'écran demande l'état de TOUTES les IA (pour griser les indisponibles) ; le total ne compte que les cochées.
-        selection = None
-        if d.get("tous") is True:
-            selection = participants
-            participants = list(tr_mod.IDS)
-        est = await run_in_threadpool(salles.table_ronde.estimer, messages, participants, bool(d.get("critique")), d.get("synthese") is not False, selection)
+        est = await run_in_threadpool(salles.table_ronde.estimer, messages, participants, bool(d.get("critique")), d.get("synthese") is not False)
         return _json(est)
 
     async def api_tiroir_lister(request):

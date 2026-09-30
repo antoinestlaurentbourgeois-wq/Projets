@@ -4,11 +4,11 @@ Table ronde : UNE question posée à plusieurs IA dans la même conversation, TO
 
 Le Centre ne crée aucun mécanisme parallèle : il envoie la liste cochée à Crew (`model: crew-tableronde`, champ `table_ronde`), et Crew
 applique ses paliers de confidentialité, compte les coûts réels et gère le plan B. Le Centre :
-  - affiche l'estimation de coût AVANT l'envoi (elle vient de Crew : POST /table-ronde/estimation) ;
+  - affiche l'estimation de coût AVANT l'envoi (elle vient de Crew : POST /table-ronde/estimation ; GET /table-ronde/participants dit qui est disponible) ;
   - refuse d'appeler quoi que ce soit si l'estimation dépasse le seuil (`seuil_table_ronde_usd`, réglages.json) sans confirmation ;
   - affiche les réponses de chaque IA, leur coût réel et leur durée, ou la raison d'une exclusion décidée par Crew.
 
-Contrat avec Crew : PROVISOIRE (voir RETOUR-table-ronde-inconnus.md).
+Contrat avec Crew : celui du vrai Crew (voir RETOUR-table-ronde-suite.md).
 """
 
 import json
@@ -63,65 +63,124 @@ class TableRonde:
 
     def corps(self, messages, participants, critique, synthese, stream=False):
         return {"model": MODELE, "messages": messages, "stream": stream,
-                "table_ronde": {"participants": list(participants), "critique": bool(critique), "synthese": bool(synthese)}}
+                "table_ronde": {"participants": list(participants), "critique": bool(critique), "synthese": bool(synthese), "format": "brut"}}
 
-    # ----- estimation (Crew) --------------------------------------------------------------------------------------
+    # ----- disponibilité des IA (Crew : GET /table-ronde/participants) ---------------------------------------------
 
-    def estimer(self, messages, participants, critique=False, synthese=True, selection=None):
-        """Renvoie {ok, participants:[{id,libelle,cout_estime_usd,disponible,raison}], total_usd, seuil_usd, depasse, message}.
-        `total_usd` ne compte que les IA disponibles (et, si `selection` est donnée, seulement celles-là : l'écran interroge Crew sur TOUTES les IA
-        pour griser celles qui sont indisponibles, mais n'additionne que les cochées). Si Crew ne répond pas ou n'expose pas la table ronde : ok=False + message."""
+    def _cle_crew(self):
         c = self.centre
-        seuil = c.config.seuil_table_ronde_usd
-        base = {"ok": False, "participants": [], "total_usd": 0.0, "seuil_usd": seuil, "depasse": False, "message": ""}
-        if c.etats["crew"].code != c.L.ACTIF:
-            base["message"] = self.options()["raison"]
-            return base
         R = c.L.R
-        cle = c.C.analyser_env(c.sys.lire_fichier(R.FICHIER_ENV_CREW), R.NOM_CLE_CREW)
-        if not cle:
-            base["message"] = f"Clé {R.NOM_CLE_CREW} introuvable."
-            return base
+        return c.C.analyser_env(c.sys.lire_fichier(R.FICHIER_ENV_CREW), R.NOM_CLE_CREW)
+
+    @staticmethod
+    def _message_crew(statut, texte, defaut):
         try:
-            statut, texte = c.sys.http("POST", R.URL_CREW_TABLE_ESTIMATION, 30, {"Authorization": "Bearer " + cle},
-                                       self.corps(messages, participants, critique, synthese))
+            m = json.loads(texte)
+            m = (m.get("error") or {}).get("message") if isinstance(m.get("error"), dict) else m.get("detail")
+            if isinstance(m, str) and m:
+                return f"{defaut} ({m[:200]})"
+        except (ValueError, AttributeError, TypeError):
+            pass
+        return defaut
+
+    def disponibilites(self):
+        """(dict id -> {disponible, raison}, message d'erreur). Ne compte jamais une IA qu'on ne connaît pas."""
+        c = self.centre
+        R = c.L.R
+        cle = self._cle_crew()
+        if not cle:
+            return None, f"Clé {R.NOM_CLE_CREW} introuvable."
+        try:
+            statut, texte = c.sys.http("GET", R.URL_CREW_TABLE_PARTICIPANTS, 15, {"Authorization": "Bearer " + cle})
         finally:
             del cle
         if statut is None:
-            base["message"] = "Crew ne répond pas."
-            return base
+            return None, "Crew ne répond pas."
         if statut in (401, 403):
-            base["message"] = "Clé Crew refusée."
-            return base
-        if statut == 404:
-            base["message"] = "Crew n'expose pas encore la table ronde (adresse /table-ronde/estimation introuvable)."
-            return base
+            return None, "Clé Crew refusée."
         if statut != 200:
-            base["message"] = f"L'estimation de Crew a répondu {statut}."
-            return base
+            return None, f"La liste des IA de Crew a répondu {statut}."
         try:
             d = json.loads(texte)
-            lignes = d["participants"]
+            lignes = d["participants"] if isinstance(d, dict) else d
             if not isinstance(lignes, list):
                 raise ValueError
         except (ValueError, KeyError, TypeError):
-            base["message"] = "Réponse d'estimation de Crew illisible."
-            return base
-        sortie = []
+            return None, "Liste des IA de Crew illisible."
+        sortie = {}
         for x in lignes:
-            if not isinstance(x, dict) or x.get("id") not in IDS:
-                continue
-            cout = x.get("cout_estime_usd")
-            cout = float(cout) if isinstance(cout, (int, float)) and not isinstance(cout, bool) and cout >= 0 else 0.0
-            sortie.append({"id": x["id"], "libelle": LIBELLE[x["id"]], "cout_estime_usd": round(cout, 6),
-                           "disponible": x.get("disponible") is not False, "raison": str(x.get("raison") or "")[:300]})
-        # le total est recalculé ici (les IA grisées ne comptent pas) ; celui de Crew sert de repère s'il est plus grand
-        retenus = [p for p in sortie if p["disponible"] and (selection is None or p["id"] in selection)]
-        total = round(sum(p["cout_estime_usd"] for p in retenus), 6)
-        annonce = d.get("total_usd")
-        if selection is None and isinstance(annonce, (int, float)) and not isinstance(annonce, bool) and annonce > total:
-            total = round(float(annonce), 6)
-        base.update(ok=True, participants=sortie, total_usd=total, depasse=total > seuil)
+            if isinstance(x, dict) and x.get("id") in IDS:
+                sortie[x["id"]] = {"disponible": x.get("disponible") is not False, "raison": str(x.get("raison") or "")[:300]}
+        return sortie, ""
+
+    # ----- estimation (Crew) --------------------------------------------------------------------------------------
+
+    def estimer(self, messages, participants, critique=False, synthese=True):
+        """Renvoie {ok, participants:[{id,libelle,disponible,raison,cout_estime_usd}], total_usd, total_incomplet, seuil_usd, depasse, message}.
+        `participants` contient les six IA (grisage) ; le coût n'est demandé à Crew que pour les IA cochées ET disponibles, et
+        `total_usd` est celui de Crew tel quel (2e tour inclus). Un coût inconnu reste None (jamais 0) et met `total_incomplet` à vrai."""
+        c = self.centre
+        seuil = c.config.seuil_table_ronde_usd
+        base = {"ok": False, "participants": [], "total_usd": 0.0, "total_incomplet": False, "seuil_usd": seuil, "depasse": False, "message": ""}
+        if c.etats["crew"].code != c.L.ACTIF:
+            base["message"] = self.options()["raison"]
+            return base
+        dispo, erreur = self.disponibilites()
+        if dispo is None:
+            base["message"] = erreur
+            return base
+        sortie = {i: {"id": i, "libelle": LIBELLE[i], "cout_estime_usd": None,
+                      "disponible": dispo.get(i, {}).get("disponible", False),
+                      "raison": dispo.get(i, {}).get("raison") or ("" if i in dispo else "Crew ne connaît pas cette IA")}
+                  for i in IDS}
+        a_estimer = [i for i in participants if sortie[i]["disponible"]]
+        total, incomplet = 0.0, False
+        if a_estimer:
+            R = c.L.R
+            cle = self._cle_crew()
+            if not cle:
+                base["message"] = f"Clé {R.NOM_CLE_CREW} introuvable."
+                return base
+            try:
+                statut, texte = c.sys.http("POST", R.URL_CREW_TABLE_ESTIMATION, 30, {"Authorization": "Bearer " + cle},
+                                           self.corps(messages, a_estimer, critique, synthese))
+            finally:
+                del cle
+            if statut is None:
+                base["message"] = "Crew ne répond pas."
+                return base
+            if statut in (401, 403):
+                base["message"] = "Clé Crew refusée."
+                return base
+            if statut != 200:
+                base["message"] = self._message_crew(statut, texte, f"L'estimation de Crew a répondu {statut}.")
+                return base
+            try:
+                d = json.loads(texte)
+                lignes = d["participants"]
+                if not isinstance(lignes, list):
+                    raise ValueError
+            except (ValueError, KeyError, TypeError):
+                base["message"] = "Réponse d'estimation de Crew illisible."
+                return base
+            for x in lignes:
+                if not isinstance(x, dict) or x.get("id") not in sortie:
+                    continue
+                cout = x.get("cout_estime_usd")
+                if isinstance(cout, (int, float)) and not isinstance(cout, bool) and cout >= 0:
+                    sortie[x["id"]]["cout_estime_usd"] = round(float(cout), 6)
+                if x.get("disponible") is False:
+                    sortie[x["id"]].update(disponible=False, raison=str(x.get("raison") or "")[:300])
+            annonce = d.get("total_usd")
+            if isinstance(annonce, (int, float)) and not isinstance(annonce, bool) and annonce >= 0:
+                total = round(float(annonce), 6)
+                incomplet = d.get("total_incomplet") is True
+            else:                                                  # total absent : somme des coûts connus, marquée incomplète
+                total = round(sum(sortie[i]["cout_estime_usd"] or 0.0 for i in a_estimer), 6)
+                incomplet = True
+            if any(sortie[i]["cout_estime_usd"] is None and sortie[i]["disponible"] for i in a_estimer):
+                incomplet = True
+        base.update(ok=True, participants=[sortie[i] for i in IDS], total_usd=total, total_incomplet=incomplet, depasse=total > seuil)
         if base["depasse"]:
-            base["message"] = f"Coût estimé {total:.3f} $ : au-dessus du seuil de {seuil:.2f} $ par message."
+            base["message"] = f"Coût estimé {'au moins ' if incomplet else ''}{total:.3f} $ : au-dessus du seuil de {seuil:.2f} $ par message."
         return base

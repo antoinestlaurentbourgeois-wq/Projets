@@ -294,3 +294,4 @@ button.retour { display: inline-block; background: none; border: 0; color: var(-
 .tr-corps { overflow-wrap: anywhere; }
 .tr-tour2 { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--bord); }
 @media (max-width: 720px) { .tr-grille { grid-template-columns: 1fr; } .tr-panneau { max-height: 40vh; overflow-y: auto; } }
+.tr-notes { grid-column: 1 / -1; margin: 0; font-size: .85rem; }

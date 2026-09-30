@@ -69,16 +69,56 @@ def sse(*morceaux, usage=None, erreur=None):
     return 200, iter(lignes)
 
 
-def morceau(participant, texte, tour=1):
-    """Un morceau de flux Crew (table ronde) : contenu + `participant` + `tour` (contrat provisoire)."""
-    return {"object": "chat.completion.chunk", "choices": [{"delta": {"content": texte}}], "participant": participant, "tour": tour}
+LIBELLES_TR = {"claude": "Claude", "codex": "ChatGPT / Codex", "gemini": "Gemini", "grok": "Grok", "deepseek": "DeepSeek",
+               "gemma": "gemma (local)", "synthese": "Synthèse de Crew"}
 
 
-def usage_p(participant, cout, tour=1, duree=None):
-    u = {"prompt_tokens": 10, "completion_tokens": 20, "cout_usd": cout}
+def debut(participant, tour=1):
+    """Morceau « debut » du vrai Crew (jamais pour la synthèse)."""
+    return {"evenement": "debut", "participant": participant, "tour": tour, "libelle": LIBELLES_TR[participant]}
+
+
+def reponse(participant, texte, cout=0.0, tour=1, duree=None):
+    """Morceau « reponse » du vrai Crew : réponse COMPLÈTE dans choices[0].delta.content, duree_s au niveau du morceau, usage {entree, sortie, cout_usd}."""
+    d = {"evenement": "reponse", "participant": participant, "tour": 0 if participant == "synthese" else tour, "libelle": LIBELLES_TR[participant],
+         "choices": [{"index": 0, "delta": {"content": texte}, "finish_reason": None}],
+         "usage": {"entree": 10, "sortie": 20, "cout_usd": cout}}
     if duree is not None:
-        u["duree_s"] = duree
-    return {"object": "chat.completion.chunk", "choices": [], "participant": participant, "tour": tour, "usage": u}
+        d["duree_s"] = duree
+    return d
+
+
+def exclu(participant, message="contenu confidentiel, traité en local seulement", tour=1):
+    return {"evenement": "exclu", "participant": participant, "tour": tour, "libelle": LIBELLES_TR[participant], "message": message}
+
+
+def erreur_p(participant, message, tour=1):
+    return {"evenement": "erreur", "participant": participant, "tour": tour, "libelle": LIBELLES_TR[participant], "message": message}
+
+
+def fin_tr(cout=0.0, exclus=(), notes=()):
+    return {"evenement": "fin", "usage": {"prompt_tokens": 30, "completion_tokens": 40, "total_tokens": 70, "cout_usd": cout},
+            "exclus": list(exclus), "notes": list(notes)}
+
+
+ROLE = {"object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}
+PULSATION = {"object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": None}]}
+STOP = {"object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+
+
+def flux_crew(*evenements, bruit=True):
+    """Flux Crew complet : {"role"}, pulsations entre les événements, morceau « stop », ligne « fin » si absente, puis [DONE].
+    (Les morceaux sans « evenement » — role, pulsation, stop — font partie du VRAI flux et doivent être ignorés.)"""
+    tout = [ROLE] if bruit else []
+    for e in evenements:
+        tout.append(e)
+        if bruit:
+            tout.append(PULSATION)
+    if bruit:
+        tout.append(STOP)
+    if not any(e.get("evenement") == "fin" for e in evenements):
+        tout.append(fin_tr(sum((e.get("usage") or {}).get("cout_usd") or 0 for e in evenements if e.get("evenement") == "reponse")))
+    return sse_table(*tout)
 
 
 def sse_table(*morceaux):

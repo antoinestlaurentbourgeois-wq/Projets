@@ -44,39 +44,47 @@ class ReseauDemo:
 
     @staticmethod
     def _table_ronde(corps):
-        """Faux Crew : plusieurs IA répondent à la suite (un participant échoue, un autre est exclu si demandé)."""
+        """Faux Crew, calqué sur le VRAI flux : premier morceau {"role"}, pulsation de contenu vide, « debut » puis UNE « reponse » complète par IA
+        (texte dans choices[0].delta.content, duree_s au niveau du morceau, usage {entree, sortie, cout_usd}), « exclu » / « erreur » avec « message »,
+        synthèse = participant « synthese » (tour 0, sans « debut »), morceau finish_reason « stop », ligne « fin » (usage total, exclus, notes)."""
         tr = corps["table_ronde"]
         question = corps["messages"][-1]["content"][:60] if corps.get("messages") else ""
         noms = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "grok": "Grok", "deepseek": "DeepSeek", "gemma": "gemma"}
         couts = {"claude": 0.05, "codex": 0.04, "gemini": 0.0, "grok": 0.06, "deepseek": 0.003, "gemma": 0.0}
+        libelles = {"claude": "Claude", "codex": "ChatGPT / Codex", "gemini": "Gemini", "grok": "Grok", "deepseek": "DeepSeek", "gemma": "gemma (local)", "synthese": "Synthèse de Crew"}
 
-        def morceau(p, texte, tour=1):
-            return {"object": "chat.completion.chunk", "choices": [{"delta": {"content": texte}}], "participant": p, "tour": tour}
-
-        def usage(p, tour=1, duree=1.5):
-            return {"object": "chat.completion.chunk", "choices": [], "participant": p, "tour": tour,
-                    "usage": {"prompt_tokens": 40, "completion_tokens": 60, "cout_usd": couts.get(p, 0.0), "duree_s": duree}}
+        def sse(d):
+            return "data: " + json.dumps(d, ensure_ascii=False)
 
         def lignes():
-            tours = (1, 2) if tr.get("critique") else (1,)
-            for tour in tours:
+            yield sse({"object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}); yield ""
+            yield sse({"object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": None}]}); yield ""     # pulsation
+            total, exclus = 0.0, []
+            for tour in ((1, 2) if tr.get("critique") else (1,)):
                 for p in tr["participants"]:
                     if p == "grok" and "exclu" in question.lower():
-                        yield "data: " + json.dumps({"participant": p, "tour": tour, "statut": "exclu", "raison": "contenu confidentiel, traité en local seulement"}); yield ""
+                        exclus.append(p)
+                        yield sse({"evenement": "exclu", "participant": p, "tour": tour, "libelle": libelles[p],
+                                   "message": "exclue : contenu confidentiel, traité en local seulement"}); yield ""
                         continue
+                    yield sse({"evenement": "debut", "participant": p, "tour": tour, "libelle": libelles[p]}); yield ""
+                    time.sleep(0.05)
+                    yield sse({"object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": None}]}); yield ""     # pulsation
                     if p == "claude" and "echec" in question.lower():
-                        yield "data: " + json.dumps({"participant": p, "tour": tour, "statut": "erreur", "erreur": "503 surcharge simulée"}); yield ""
+                        yield sse({"evenement": "erreur", "participant": p, "tour": tour, "libelle": libelles[p], "message": "503 surcharge simulée"}); yield ""
                         continue
-                    debut = f"[réponse SIMULÉE de {noms.get(p, p)}" + (", tour de critique" if tour == 2 else "") + f"] Sur « {question} » : "
-                    for mot in (debut + "voici mon avis, avec une réserve importante sur les hypothèses. ").split(" "):
-                        time.sleep(0.02)
-                        yield "data: " + json.dumps(morceau(p, mot + " ", tour)); yield ""
-                    yield "data: " + json.dumps(usage(p, tour, round(1 + 0.4 * len(p), 1))); yield ""
+                    texte = f"[réponse SIMULÉE de {noms.get(p, p)}" + (", tour de critique" if tour == 2 else "") + f"] Sur « {question} » : voici mon avis, avec une réserve importante sur les hypothèses."
+                    total += couts.get(p, 0.0)
+                    yield sse({"evenement": "reponse", "participant": p, "tour": tour, "libelle": libelles[p], "duree_s": round(1 + 0.4 * len(p), 1),
+                               "choices": [{"index": 0, "delta": {"content": texte}, "finish_reason": None}],
+                               "usage": {"entree": 40, "sortie": 60, "cout_usd": couts.get(p, 0.0)}}); yield ""
             if tr.get("synthese", True):
-                for mot in "[SYNTHÈSE SIMULÉE] Les IA convergent sur l'essentiel ; Crew retient les points communs et signale les désaccords.".split(" "):
-                    time.sleep(0.02)
-                    yield "data: " + json.dumps(morceau("synthese", mot + " ")); yield ""
-                yield "data: " + json.dumps(usage("synthese", 1, 0.8)); yield ""
+                yield sse({"evenement": "reponse", "participant": "synthese", "tour": 0, "libelle": libelles["synthese"], "duree_s": 0.8,
+                           "choices": [{"index": 0, "delta": {"content": "[SYNTHÈSE SIMULÉE] Les IA convergent sur l'essentiel ; Crew retient les points communs et signale les désaccords."}, "finish_reason": None}],
+                           "usage": {"entree": 200, "sortie": 40, "cout_usd": 0.0}}); yield ""
+            yield sse({"object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}); yield ""
+            yield sse({"evenement": "fin", "usage": {"prompt_tokens": 300, "completion_tokens": 200, "total_tokens": 500, "cout_usd": round(total, 6)},
+                       "exclus": exclus, "notes": ["partageable/notes/mecanique.md"] if "note" in question.lower() else []}); yield ""
             yield "data: [DONE]"; yield ""
         return lignes()
 

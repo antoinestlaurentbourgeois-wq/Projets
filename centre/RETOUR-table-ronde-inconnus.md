@@ -1,3 +1,5 @@
+> **Remplacé par `RETOUR-table-ronde-suite.md`** : le contrat ci-dessous (provisoire) a été corrigé d'après le vrai Crew.
+
 # Table ronde — ce qui a été supposé sur le contrat avec Crew
 
 Le contrat fourni dans le prompt est **provisoire**. Voici tout ce que le Centre suppose. À vérifier avec le vrai Crew avant de considérer la table ronde comme validée.
