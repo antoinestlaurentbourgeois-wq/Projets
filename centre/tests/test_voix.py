@@ -73,13 +73,13 @@ def test_cout_usage_mini():
 def test_cout_usage_sans_detail_est_prudent():
     assert V.cout_usage("gpt-realtime-mini", {"input_tokens": 1000, "output_tokens": 1000}) == pytest.approx((1000 * 10 + 1000 * 20) / 1e6)
     assert V.cout_usage("gpt-realtime-mini", None) == 0 and V.cout_usage("inconnu", {"input_tokens": 5}) == 0
-    assert V.cout_usage("grok-voice-think-fast", {"input_tokens": 5}) == 0        # facturé à la durée
+    assert V.cout_usage("grok-voice-think-fast-1.0", {"input_tokens": 5}) == 0        # facturé à la durée
 
 
 def test_estimation_par_minute():
     assert V.estimation_par_minute("gpt-realtime-mini")[0] == pytest.approx(0.03)
     assert V.estimation_par_minute("gpt-realtime-2")[0] == pytest.approx(0.096)
-    assert V.estimation_par_minute("grok-voice-think-fast")[0] == 0.08
+    assert V.estimation_par_minute("grok-voice-think-fast-1.0")[0] == 0.08
 
 
 def test_multipart():
@@ -94,8 +94,8 @@ def test_multipart():
 def test_options(client, centre, simulateur):
     d = client.get("/api/voix/options").json()
     live = {m["id"]: m for m in d["live"]}
-    assert set(live) == {"gpt-realtime-mini", "gpt-realtime-2", "grok-voice-think-fast"}
-    assert live["gpt-realtime-mini"]["defaut"] and live["grok-voice-think-fast"]["par_minute_usd"] == 0.08
+    assert set(live) == {"gpt-realtime-mini", "gpt-realtime-2", "grok-voice-think-fast-1.0"}
+    assert live["gpt-realtime-mini"]["defaut"] and live["grok-voice-think-fast-1.0"]["par_minute_usd"] == 0.08
     assert not live["gpt-realtime-mini"]["disponible"] and "OPENAI_API_KEY" in live["gpt-realtime-mini"]["raison"]
     cles(simulateur)
     d = client.get("/api/voix/options").json()
@@ -196,7 +196,7 @@ def test_live_refuse_en_mode_confidentiel(client, centre, simulateur, amont):
 
 def test_live_refuse_sans_cle_et_au_plafond(client, centre, simulateur, amont):
     with ouvrir(client) as ws:
-        ws.send_json({"t": "demarrer", "modele": "grok-voice-think-fast"})
+        ws.send_json({"t": "demarrer", "modele": "grok-voice-think-fast-1.0"})
         assert "XAI_API_KEY" in recevoir(ws, "erreur")[0]["message"]
     cles(simulateur)
     centre.couts.definir_plafonds(1, None)
@@ -255,14 +255,25 @@ def test_live_bascule_en_mode_confidentiel_coupe(client, centre, simulateur, amo
         assert m["raison"] == "mode-confidentiel"
 
 
-def test_grok_facture_a_la_duree(client, centre, simulateur, amont, horloge):
+def test_grok_facture_a_la_duree(client, centre, simulateur, amont, horloge, reseau):
     cles(simulateur)
+    vu = {}
+    reseau.repondre(V.URL_SECRET_XAI, lambda c, e: (vu.update(corps=c, entetes=e) or (200, json.dumps({"value": "jeton-de-session-xai", "expires_at": 1}))))
     centre.voix.horloge = horloge
     centre.voix.intervalle_tick = 0.05
     with ouvrir(client) as ws:
-        pret = demarrer(ws, modele="grok-voice-think-fast")
+        pret = demarrer(ws, modele="grok-voice-think-fast-1.0")
         assert pret["fournisseur"] == "xai" and amont.connexions[0].url.startswith("wss://api.x.ai/v1/realtime")
-        assert amont.connexions[0].entetes["Authorization"] == "Bearer xai-secret-0000000000"
+        # méthode GLAMMBOX : la clé sert à créer un jeton de session de 5 minutes ; c'est LUI qui ouvre la WebSocket
+        assert vu["entetes"]["Authorization"] == "Bearer xai-secret-0000000000" and vu["corps"] == {"expires_after": {"seconds": 300}}
+        assert amont.connexions[0].entetes["Authorization"] == "Bearer jeton-de-session-xai"
+        assert "model=grok-voice-think-fast-1.0" in amont.connexions[0].url
+        sess = amont.connexions[0].envoyes[0]["session"]
+        assert sess["voice"] == "leo" and sess["turn_detection"]["threshold"] == 0.75 and sess["resumption"] == {"enabled": True}
+        assert sess["audio"]["input"]["transcription"] == {"model": "grok-transcribe"}
+        assert {"type": "web_search"} in sess["tools"] and {"type": "x_search"} in sess["tools"]
+        assert [t["name"] for t in sess["tools"] if t.get("type") == "function"] == ["consulter_salle", "chercher_memoire"]
+        assert "xai-secret" not in json.dumps(amont.connexions[0].envoyes)
         horloge.t += 120                                   # deux minutes « passent »
         m, _ = recevoir(ws, "cout")
         while m["minutes"] < 1.9:
@@ -433,3 +444,29 @@ def test_routes_voix_exigent_session_et_csrf(anonyme, client):
     del client.headers["X-Centre"]
     assert client.post("/api/voix/parler", json={}).status_code == 403
     assert client.post("/api/voix/transcrire", content=b"x").status_code == 403
+
+
+def test_grok_session_refusee_message_clair(client, simulateur, amont, reseau):
+    cles(simulateur)
+    reseau.repondre(V.URL_SECRET_XAI, lambda c, e: (401, json.dumps({"error": {"message": "bad key xai-secret-0000000000"}})))
+    with ouvrir(client) as ws:
+        ws.send_json({"t": "demarrer", "modele": "grok-voice-think-fast-1.0"})
+        m, _ = recevoir(ws, "erreur")
+        assert "Clé refusée" in m["message"] and "xai-secret" not in m["message"]
+        assert recevoir(ws, "fin")[0]["raison"] == "erreur"
+    assert amont.connexions == []
+
+
+def test_grok_voix_et_synthese_xai(client, centre, simulateur, reseau):
+    cles(simulateur)
+    d = client.get("/api/voix/options").json()
+    grok = [m for m in d["live"] if m["fournisseur"] == "xai"][0]
+    assert grok["id"] == "grok-voice-think-fast-1.0" and grok["voix"][0] == "leo"
+    vu = {}
+    reseau.repondre("https://api.x.ai/v1/tts", lambda c, e: (vu.update(corps=c, entetes=e) or (200, b"MP3XAI")))
+    conv, mid = message_ia(centre, "Bonjour Grok")
+    r = client.post("/api/voix/parler", json={"conversation": conv["id"], "message_id": mid, "fournisseur": "xai"})
+    assert r.status_code == 200 and r.content == b"MP3XAI"
+    assert vu["corps"] == {"text": "Bonjour Grok", "voice_id": "leo", "language": "fr"}          # format de l'API xAI (GLAMMBOX)
+    assert vu["entetes"]["Authorization"] == "Bearer xai-secret-0000000000"
+    assert centre.couts.totaux()["aujourdhui"]["par_ia"]["voix"] == pytest.approx(len("Bonjour Grok") * 15 / 1e6, abs=1e-4)

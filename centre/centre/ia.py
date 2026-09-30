@@ -17,12 +17,14 @@ Deux familles :
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 
 from .journal import masquer
 from .reseau import ErreurReseau
 
 MAX_ERREUR = 300
+CODES_REESSAI = (429, 502, 503, 504)
 
 
 @dataclass
@@ -64,7 +66,8 @@ def message_http(fournisseur, code, corps):
 # ------------------------------------------------------------------------------------------
 
 class OpenAICompat:
-    def __init__(self, reseau, fournisseur, url, lire_cle=None, cle_obligatoire=True, stream_usage=True):
+    def __init__(self, reseau, fournisseur, url, lire_cle=None, cle_obligatoire=True, stream_usage=True, pauses=(), dormir=time.sleep):
+        self.pauses, self.dormir = tuple(pauses), dormir
         self.reseau = reseau
         self.fournisseur = fournisseur
         self.url = url
@@ -85,16 +88,26 @@ class OpenAICompat:
         corps = {"model": req.modele, "messages": messages, "stream": True}
         if self.stream_usage:
             corps["stream_options"] = {"include_usage": True}
-        try:
-            code, lignes = self.reseau.flux_post(self.url, entetes, corps, annulation=annulation)
-        except ErreurReseau as e:
-            yield evt_erreur(e)
-            return
-        if code is None:
-            yield evt_erreur(f"{self.fournisseur} est injoignable : {masquer(lignes)}")
-            return
+        essai = 0
+        while True:
+            try:
+                code, lignes = self.reseau.flux_post(self.url, entetes, corps, annulation=annulation)
+            except ErreurReseau as e:
+                yield evt_erreur(e)
+                return
+            if code is None:
+                yield evt_erreur(f"{self.fournisseur} est injoignable : {masquer(lignes)}")
+                return
+            if code in CODES_REESSAI and essai < len(self.pauses) and not annulation.annule():
+                for _ in lignes:                      # on vide la réponse d'erreur avant de réessayer
+                    pass
+                self.dormir(self.pauses[essai])
+                essai += 1
+                continue
+            break
         if code != 200:
-            yield evt_erreur(message_http(self.fournisseur, code, "\n".join(lignes)))
+            suite = f" (après {essai + 1} essais)" if essai else ""
+            yield evt_erreur(message_http(self.fournisseur, code, "\n".join(lignes)) + suite)
             return
         usage = None
         annule = False

@@ -43,6 +43,8 @@ class ReseauDemo:
     def requete(self, methode, url, entetes=None, corps=None, delai=30, octets=False, max_octets=0):
         if url.endswith("/models"):
             return 200, json.dumps({"data": [{"id": "modele-demo-1"}, {"id": "modele-demo-2"}]})
+        if url.endswith("/realtime/client_secrets"):
+            return 200, json.dumps({"value": "jeton-de-session-demo", "expires_at": 0})
         if url.endswith("/audio/transcriptions") or url.endswith("/v1/stt"):
             return 200, json.dumps({"text": "Bonjour, ceci est une question posée à voix haute (transcription simulée)."})
         if url.endswith("/audio/speech") or url.endswith("/v1/tts"):

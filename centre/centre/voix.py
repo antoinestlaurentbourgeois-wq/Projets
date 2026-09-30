@@ -37,12 +37,14 @@ MODELES_LIVE = {
                           "audio_sortie": 20.0, "texte_entree": 0.60, "texte_sortie": 2.40},
     "gpt-realtime-2": {"fournisseur": "openai", "libelle": "GPT Realtime 2 (plus puissant, plus cher)", "audio_entree": 32.0,
                        "audio_sortie": 64.0, "texte_entree": 4.0, "texte_sortie": 16.0},
-    "grok-voice-think-fast": {"fournisseur": "xai", "libelle": "Grok Voice", "par_minute": 0.08},
+    "grok-voice-think-fast-1.0": {"fournisseur": "xai", "libelle": "Grok Voice (xAI)", "par_minute": 0.08},
 }
 MODELE_LIVE_DEFAUT = "gpt-realtime-mini"
 URLS_LIVE = {"openai": "wss://api.openai.com/v1/realtime", "xai": "wss://api.x.ai/v1/realtime"}
+URL_SECRET_XAI = "https://api.x.ai/v1/realtime/client_secrets"      # jeton de session éphémère (méthode de GLAMMBOX, avec la clé officielle)
+DUREE_SECRET_XAI = 300
 CLES_FOURNISSEUR = {"openai": "openai", "xai": "xai"}
-VOIX_PAR_FOURNISSEUR = {"openai": ["marin", "cedar", "alloy", "echo", "shimmer"], "xai": ["eve", "ara", "rex", "sal", "leo"]}
+VOIX_PAR_FOURNISSEUR = {"openai": ["marin", "cedar", "alloy", "echo", "shimmer"], "xai": ["leo", "eve", "ara", "rex", "sal"]}
 
 # Hypothèse d'estimation « par minute » avant de démarrer : 10 jetons/s d'audio entrant, 20 jetons/s d'audio sortant.
 JETONS_ENTREE_PAR_MIN, JETONS_SORTIE_PAR_MIN = 600, 1200
@@ -60,7 +62,7 @@ TRANSCRIPTION = {"openai": {"url": "https://api.openai.com/v1/audio/transcriptio
                  "xai": {"url": "https://api.x.ai/v1/stt", "par_heure": 0.10}}      # adresse supposée ; tarif vérifié
 SYNTHESE = {"openai": {"url": "https://api.openai.com/v1/audio/speech", "modele": "gpt-4o-mini-tts",
                        "par_million_caracteres": 12.0, "voix": "alloy"},               # tarif placeholder
-            "xai": {"url": "https://api.x.ai/v1/tts", "par_million_caracteres": 15.0, "voix": "eve"}}  # adresse supposée
+            "xai": {"url": "https://api.x.ai/v1/tts", "par_million_caracteres": 15.0, "voix": "leo"}}  # adresse et corps : ceux de GLAMMBOX
 AUDIO_ACCEPTE = ("audio/webm", "audio/ogg", "audio/mp4", "audio/wav", "audio/mpeg", "audio/x-m4a", "audio/x-wav")
 MAX_AUDIO_OCTETS = 8_000_000
 MAX_LECTURE_CARACTERES = 3000
@@ -253,6 +255,28 @@ class Voix:
                        ". L'utilisateur doit l'accepter dans la page Salles du Centre.]")
         return sortie[:MAX_SORTIE_OUTIL]
 
+    def jeton_session_xai(self, cle):
+        """Clé xAI -> jeton de session éphémère (POST /v1/realtime/client_secrets). BLOQUANT. Lève ErreurVoix."""
+        try:
+            code, texte = self.reseau.requete("POST", URL_SECRET_XAI, {"Authorization": "Bearer " + cle, "Content-Type": "application/json"},
+                                              {"expires_after": {"seconds": DUREE_SECRET_XAI}}, delai=20)
+        except ErreurReseau as e:
+            raise ErreurVoix(str(e), 502)
+        finally:
+            del cle
+        if code is None:
+            raise ErreurVoix("xAI est injoignable : impossible d'ouvrir une session vocale Grok.", 502)
+        if code != 200:
+            from .ia import message_http
+            raise ErreurVoix(message_http("xAI (session vocale)", code, texte), 502)
+        try:
+            valeur = json.loads(texte).get("value")
+        except (ValueError, AttributeError):
+            valeur = None
+        if not valeur:
+            raise ErreurVoix("Réponse de xAI inattendue : pas de jeton de session.", 502)
+        return str(valeur)
+
     # ----- talkie-walkie ---------------------------------------------------------------------------------
 
     def _cle(self, fournisseur):
@@ -325,12 +349,11 @@ class Voix:
         tronque = len(texte) > MAX_LECTURE_CARACTERES
         texte = texte[:MAX_LECTURE_CARACTERES]
         cfg = SYNTHESE[fournisseur]
-        corps = {"input": texte, "voice": voix if voix and voix.isalnum() and len(voix) < 20 else cfg["voix"],
-                 "response_format": "mp3"}
-        if "modele" in cfg:
-            corps["model"] = cfg["modele"]
+        choix = voix if voix and voix.isalnum() and len(voix) < 20 else cfg["voix"]
+        if fournisseur == "xai":
+            corps = {"text": texte, "voice_id": choix, "language": "fr"}      # format de l'API xAI (comme GLAMMBOX)
         else:
-            corps["text"] = texte
+            corps = {"input": texte, "voice": choix, "response_format": "mp3", "model": cfg["modele"]}
         cle = self._cle(fournisseur)
         try:
             code, audio = self.reseau.requete("POST", cfg["url"], {"Authorization": "Bearer " + cle}, corps, delai=90, octets=True)
@@ -435,6 +458,14 @@ class SessionVive:
             await self._navigateur({"t": "fin", "raison": "plafond", "cout_usd": 0, "minutes": 0})
             return
         cle = self.voix.centre.salles.cles.lire(CLES_FOURNISSEUR[self.fournisseur])
+        if self.fournisseur == "xai":
+            # Comme GLAMMBOX : on échange la clé contre un jeton de session de 5 minutes ; c'est lui qui ouvre la WebSocket.
+            try:
+                cle = await asyncio.get_running_loop().run_in_executor(None, self.voix.jeton_session_xai, cle)
+            except ErreurVoix as e:
+                await self._navigateur({"t": "erreur", "message": str(e)})
+                await self._navigateur({"t": "fin", "raison": "erreur", "cout_usd": 0, "minutes": 0})
+                return
         url = URLS_LIVE[self.fournisseur] + "?" + urllib.parse.urlencode({"model": self.modele})
         try:
             self.amont = await self.voix.amont.ouvrir(url, {"Authorization": "Bearer " + cle})
@@ -465,14 +496,22 @@ class SessionVive:
             await self._terminer(self.raison or "termine")
 
     def _session_update(self):
-        session = {"type": "realtime", "instructions": INSTRUCTIONS, "tools": self.voix.definitions_outils(), "tool_choice": "auto",
-                   "output_modalities": ["audio"],
+        outils = self.voix.definitions_outils()
+        if self.fournisseur == "xai":
+            # Forme utilisée par GLAMMBOX pour Grok Voice ; web_search et x_search sont des outils NATIFS xAI (rien à exécuter chez nous).
+            session = {"voice": self.voix_nom, "instructions": INSTRUCTIONS + " Tu disposes aussi des recherches web et X natives.",
+                       "turn_detection": {"type": "server_vad", "threshold": 0.75, "silence_duration_ms": 850, "prefix_padding_ms": 300},
+                       "audio": {"input": {"format": {"type": "audio/pcm", "rate": 24000}, "transcription": {"model": "grok-transcribe"}},
+                                 "output": {"format": {"type": "audio/pcm", "rate": 24000}}},
+                       "tools": outils + [{"type": "web_search"}, {"type": "x_search"}], "tool_choice": "auto",
+                       "resumption": {"enabled": True}}
+            return {"type": "session.update", "session": session}
+        session = {"type": "realtime", "instructions": INSTRUCTIONS, "tools": outils, "tool_choice": "auto",
+                   "output_modalities": ["audio"], "model": self.modele,
                    "audio": {"input": {"format": {"type": "audio/pcm", "rate": 24000},
                                        "transcription": {"model": "gpt-4o-mini-transcribe", "language": "fr"},
                                        "turn_detection": {"type": "server_vad", "create_response": True, "interrupt_response": True}},
                              "output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": self.voix_nom}}}
-        if self.fournisseur == "openai":
-            session["model"] = self.modele
         return {"type": "session.update", "session": session}
 
     async def _du_navigateur(self):

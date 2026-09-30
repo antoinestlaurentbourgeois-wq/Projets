@@ -55,3 +55,11 @@ Vous pouvez donc faire une première passe sans rien payer, puis une passe réel
 
 - [ ] Après quelques essais : les dépenses « Voix (nuage) » s'affichent (aujourd'hui / ce mois-ci).
 - [ ] Le plafond bloque aussi le talkie-walkie (transcription/lecture) avec un message clair.
+
+## G. Grok Voice (clé officielle, méthode GLAMMBOX)
+
+- [ ] Avec `XAI_API_KEY` : page Voix → modèle « Grok Voice (xAI) », voix `leo` en premier. Démarrer : la session s'ouvre (le serveur a créé un jeton de session de 5 minutes).
+- [ ] Demandez « cherche sur le web… » puis « regarde sur X… » : les recherches natives répondent.
+- [ ] « Demande à Claude/DeepSeek… » : l'outil `consulter_salle` fonctionne aussi avec Grok.
+- [ ] Talkie-walkie avec le fournisseur xAI : lecture de la réponse avec la voix `leo`.
+- [ ] Si la connexion échoue : notez le message exact (adresse WebSocket ou en-tête à corriger, voir INCONNUS-phase3 n° 8).

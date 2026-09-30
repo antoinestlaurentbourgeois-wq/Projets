@@ -49,3 +49,8 @@
 
 19. **Lectures interdites à Claude.** Je passe `--disallowedTools "Read(**/.env),Read(**/.env.*),Read(**/.claude/.credentials.json),Read(**/.codex/auth.json),Read(**/.gemini/**),Read(**/verrou.json),Read(**/secrets/**),Read(**/*.pem),Read(**/id_rsa*),Read(**/id_ed25519*),Read(**/.ssh/**)"`.
     Syntaxe des motifs (`**` façon gitignore) **supposée** : à vérifier avec la documentation de Claude Code, et en demandant à Claude de lire un `.env` de test (il doit être refusé). Les règles `Read(...)` couvrent en principe aussi Grep/Glob, mais pas forcément une commande `Bash` approuvée : c'est une raison de plus de lire les cartes d'approbation.
+
+20. **(Testé en réel par la session locale, 29 sept.)** Claude (abonnement Pro) : format `stream-json` et lectures interdites confirmés. Codex (abonnement ChatGPT) : le modèle `gpt-4.1-mini` est REFUSÉ avec un compte ChatGPT ;
+    en mode abonnement le modèle par défaut est donc vide (pas de `-m`, Codex choisit) et la liste de modèles n'est pas proposée.
+21. **Gemini par abonnement : impossible pour un particulier** (Google refuse Gemini CLI pour les comptes personnels : « This client is no longer supported… »). L'option n'est plus offerte, sauf `"gemini_abonnement": true` dans `reglages.json`.
+    Modèle par défaut : `gemini-3-flash-preview` (le `gemini-flash-latest` répondait 503 une fois sur deux). Toutes les salles par API réessayent automatiquement 2 fois (1 s puis 2 s) sur 429/502/503/504, puis affichent « après 3 essais ».

@@ -618,3 +618,64 @@ def test_memoire_delai_long_pour_la_premiere_recherche(centre, simulateur, monke
     simulateur.http = lambda m, u, delai, entetes=None, corps_json=None: (vus.append((u, delai)) or original(m, u, delai, entetes, corps_json))
     centre.salles.memoire.chercher("couple serrage vis")
     assert [d for u, d in vus if "chercher" in u] == [60]
+
+
+# ----- retour de la session locale (essais réels) ----------------------------------------------------------------
+
+def test_codex_abonnement_laisse_codex_choisir_le_modele(centre, processus):
+    """Compte ChatGPT : `-m gpt-4.1-mini` est refusé ; le modèle par défaut doit être vide (pas de -m)."""
+    assert centre.salles.reglage("chatgpt") == {"auth": "abonnement", "modele": ""}
+    processus.scenarios["codex"] = flux_codex("ok")
+    envoyer(centre, "chatgpt", "q")
+    assert "-m" not in processus.lances[-1]["args"]
+    # un ancien réglage « gpt-4.1-mini » enregistré en mode abonnement est ignoré aussi
+    centre.salles.definir_reglage("chatgpt", modele="gpt-4.1-mini")
+    assert centre.salles.reglage("chatgpt")["modele"] == ""
+    envoyer(centre, "chatgpt", "q")
+    assert "-m" not in processus.lances[-1]["args"]
+    # en mode clé API, le modèle par défaut reste utilisable ; la liste de modèles n'est pas proposée en abonnement
+    assert centre.salles.modeles_disponibles("chatgpt") == []
+    assert centre.salles.definir_reglage("chatgpt", auth="cle")["modele"] == "gpt-4.1-mini"
+    assert centre.salles.definir_reglage("chatgpt", auth="abonnement")["modele"] == ""
+
+
+def test_gemini_abonnement_masque_par_defaut(centre):
+    centre.config.gemini_abonnement = False
+    g = {s["id"]: s for s in centre.salles.catalogue()}["gemini"]
+    assert [a["id"] for a in g["auths"]] == ["cle"] and g["modele"] == "gemini-3-flash-preview"
+    with pytest.raises(ErreurSalle, match="comptes personnels"):
+        centre.salles.definir_reglage("gemini", auth="abonnement")
+    centre.config.gemini_abonnement = True
+    assert [a["id"] for a in {s["id"]: s for s in centre.salles.catalogue()}["gemini"]["auths"]] == ["cle", "abonnement"]
+
+
+def test_reessais_automatiques_sur_surcharge(centre, simulateur, reseau):
+    essais = []
+    def route(c, e):
+        essais.append(1)
+        return (503, iter(['{"error":{"message":"overloaded"}}'])) if len(essais) < 3 else sse("enfin")
+    simulateur.cles["GEMINI_API_KEY"] = "AIza" + "a" * 30
+    reseau.repondre(URLS_API["gemini"], route)
+    evts, _ = envoyer(centre, "gemini", "q")
+    assert texte(evts) == "enfin" and len(essais) == 3 and centre.salles.pauses == [1.0, 2.0]
+
+
+@pytest.mark.parametrize("code", [429, 503])
+def test_surcharge_persistante_message_clair(centre, simulateur, reseau, code):
+    essais = []
+    simulateur.cles["GEMINI_API_KEY"] = "AIza" + "a" * 30
+    reseau.repondre(URLS_API["gemini"], lambda c, e: (essais.append(1) or (code, iter(["{}"]))))
+    evts, conv = envoyer(centre, "gemini", "q")
+    assert len(essais) == 3 and "après 3 essais" in evts[-1]["message"] and centre.couts.totaux()["aujourdhui"]["total"] == 0
+
+
+def test_pas_de_reessai_sur_les_autres_erreurs_ni_en_local(centre, simulateur, reseau):
+    essais = []
+    reseau.repondre(URLS_API["deepseek"], lambda c, e: (essais.append(1) or (401, iter(["{}"]))))
+    envoyer(centre, "deepseek", "q")
+    assert len(essais) == 1
+    allumer(centre, simulateur)
+    essais.clear()
+    reseau.repondre(URL_GEMMA, lambda c, e: (essais.append(1) or (503, iter(["{}"]))))
+    envoyer(centre, "gemma", "q")
+    assert len(essais) == 1                      # LM Studio (local) : pas de nouvel essai

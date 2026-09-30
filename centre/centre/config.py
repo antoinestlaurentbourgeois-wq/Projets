@@ -65,6 +65,7 @@ class Config:
     # Tailscale (en-tête ajouté par « tailscale serve », jamais par « funnel » ni par Internet).
     exiger_identite_tailscale: bool = True
     utilisateurs_tailscale: tuple = ()
+    gemini_abonnement: bool = False      # Gemini CLI (comptes non personnels seulement) : voir Salles.auths
 
     def __post_init__(self):
         if not self.atelier:
@@ -82,6 +83,8 @@ class Config:
                 self.hotes_autorises = tuple(dict.fromkeys(self.hotes_autorises + extra))
             if isinstance(r.get("utilisateurs_tailscale"), list):
                 self.utilisateurs_tailscale = tuple(str(u).strip().lower() for u in r["utilisateurs_tailscale"] if str(u).strip())
+            if r.get("gemini_abonnement") is True:
+                self.gemini_abonnement = True
             if r.get("exiger_identite_tailscale") is False:
                 self.exiger_identite_tailscale = False
             if isinstance(r.get("atelier"), str) and r["atelier"].strip() and not os.environ.get("CENTRE_ATELIER"):
