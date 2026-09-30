@@ -36,6 +36,7 @@ class RequeteChat:
     outils_autorises: tuple = ()         # outils Claude approuvés pour ce tour
     ecriture: bool = False               # Codex : écriture dans l'atelier autorisée (bouton)
     atelier: str = ""
+    table_ronde: dict = None             # {"participants": [...], "critique": bool, "synthese": bool} : envoyé tel quel à Crew
 
 
 def evt_erreur(message):
@@ -405,3 +406,107 @@ class GeminiCLI(ProgrammeBase):
                              ". Êtes-vous connecté avec votre compte Google ? (lancez « gemini » une fois dans un terminal)")
             return
         yield {"t": "fin", "annule": False}
+
+
+# ------------------------------------------------------------------------------------------
+# Table ronde : plusieurs IA répondent à la même question, via Crew (contrat PROVISOIRE)
+# ------------------------------------------------------------------------------------------
+
+_ID_PARTICIPANT = re.compile(r"^[a-z0-9_-]{1,30}$")
+
+
+class CrewTableRonde:
+    """Flux de Crew avec, sur chaque morceau, `participant` (id de l'IA ou « synthese ») et `tour` (1 ou 2).
+
+    Événements produits (le Centre ne décide JAMAIS qui voit quoi : Crew applique ses paliers de confidentialité) :
+      tr_delta  {participant, tour, texte}          morceau de réponse
+      tr_exclu  {participant, tour, raison}         IA exclue par Crew (confidentialité…) : affiché tel quel
+      tr_erreur {participant, tour, message}        cette IA a échoué (les autres continuent)
+      tr_fin    {participant, tour, cout_usd, duree_s, entree, sortie}
+    """
+
+    def __init__(self, reseau, url, lire_cle, horloge=time.monotonic):
+        self.reseau, self.url, self.lire_cle, self.horloge = reseau, url, lire_cle, horloge
+
+    def repondre(self, req, annulation):
+        cle = self.lire_cle()
+        if not cle:
+            yield evt_erreur("Clé Crew absente.")
+            return
+        entetes = {"Accept": "text/event-stream", "Authorization": "Bearer " + cle}
+        del cle
+        corps = {"model": req.modele or "crew-tableronde", "messages": list(req.messages), "stream": True,
+                 "table_ronde": req.table_ronde}
+        try:
+            code, lignes = self.reseau.flux_post(self.url, entetes, corps, annulation=annulation)
+        except ErreurReseau as e:
+            yield evt_erreur(e)
+            return
+        if code is None:
+            yield evt_erreur(f"Crew est injoignable : {masquer(lignes)}")
+            return
+        if code != 200:
+            yield evt_erreur(message_http("Crew (table ronde)", code, "\n".join(lignes)))
+            return
+        debuts, termines = {}, set()
+        annule = False
+        for ligne in lignes:
+            if annulation.annule():
+                annule = True
+                break
+            if not ligne.startswith("data:"):
+                continue
+            donnees = ligne[5:].strip()
+            if donnees == "[DONE]":
+                break
+            try:
+                d = json.loads(donnees)
+            except ValueError:
+                continue
+            if not isinstance(d, dict):
+                continue
+            if isinstance(d.get("error"), dict) and not d.get("participant"):
+                yield evt_erreur("Crew : " + str(d["error"].get("message", "erreur")))
+                return
+            p = str(d.get("participant") or "synthese")
+            if not _ID_PARTICIPANT.match(p):
+                continue
+            try:
+                tour = 2 if int(d.get("tour") or 1) == 2 else 1
+            except (TypeError, ValueError):
+                tour = 1
+            cle_pt = (p, tour)
+            statut = str(d.get("statut") or "")
+            if statut == "exclu" or d.get("exclu") is True:
+                termines.add(cle_pt)
+                yield {"t": "tr_exclu", "participant": p, "tour": tour,
+                       "raison": masquer(str(d.get("raison") or "exclue par Crew"))[:300]}
+                continue
+            err = d.get("erreur") or (d.get("error") if isinstance(d.get("error"), (str, dict)) else None)
+            if statut == "erreur" or err:
+                termines.add(cle_pt)
+                if isinstance(err, dict):
+                    err = err.get("message")
+                yield {"t": "tr_erreur", "participant": p, "tour": tour, "message": masquer(str(err or "erreur"))[:300]}
+                continue
+            for choix in d.get("choices") or []:
+                texte = (choix.get("delta") or {}).get("content")
+                if texte:
+                    if cle_pt not in debuts:
+                        debuts[cle_pt] = self.horloge()
+                    yield {"t": "tr_delta", "participant": p, "tour": tour, "texte": texte}
+            u = d.get("usage")
+            if isinstance(u, dict):
+                cout = u.get("cout_usd")
+                duree = u.get("duree_s")
+                if not isinstance(duree, (int, float)) or isinstance(duree, bool):
+                    duree = round(self.horloge() - debuts[cle_pt], 2) if cle_pt in debuts else 0.0
+                termines.add(cle_pt)
+                yield {"t": "tr_fin", "participant": p, "tour": tour,
+                       "cout_usd": float(cout) if isinstance(cout, (int, float)) and not isinstance(cout, bool) else None,
+                       "duree_s": float(duree), "entree": int(u.get("prompt_tokens") or 0), "sortie": int(u.get("completion_tokens") or 0)}
+        for (p, tour), t0 in debuts.items():              # participants qui n'ont jamais envoyé de bloc « usage »
+            if (p, tour) not in termines:
+                yield {"t": "tr_fin", "participant": p, "tour": tour, "cout_usd": None,
+                       "duree_s": round(self.horloge() - t0, 2), "entree": 0, "sortie": 0}
+        yield {"t": "fin", "annule": annule}

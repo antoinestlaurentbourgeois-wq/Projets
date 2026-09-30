@@ -78,6 +78,9 @@ class Simulateur:
         # Clés attendues par les serveurs simulés (le panneau, lui, lit ses clés ailleurs).
         self.cle_crew_serveur = "cle-crew-secrete"
         self.cle_webui_serveur = "cle-webui-secrete"
+        self.table_ronde_disponible = True       # /table-ronde/* exposé par Crew ?
+        self.table_ronde_couts = {"claude": 0.05, "codex": 0.04, "gemini": 0.0, "grok": 0.06, "deepseek": 0.003, "gemma": 0.0}
+        self.table_ronde_indispos = {}           # id -> raison (IA grisée)
         self.memoire_disponible = True           # /memoire/* exposé par Crew ?
         self.memoire_docs = [                    # bibliothèque simulée
             {"chemin": "partageable/notes/mecanique.md", "zone": "partageable",
@@ -184,7 +187,7 @@ class Simulateur:
             auth = (entetes or {}).get("Authorization", "")
             self.requetes.append((methode, url, bool(auth)))
             if url.startswith(R.URL_CREW_MODE) or url.startswith(R.URL_CREW_MOTEURS) \
-                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]):
+                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]) or url == R.URL_CREW_TABLE_ESTIMATION:
                 return self._crew_api(methode, url, auth, corps_json)
             if url.startswith(R.URL_WEBUI_BASE + "/api/v1/chats"):
                 return self._webui_api(url, auth)
@@ -361,6 +364,8 @@ class Simulateur:
                  "detail": "Clé DEEPSEEK_API_KEY présente"},
             ] + self.moteurs_crew_supplementaires
             return 200, json.dumps({"moteurs": moteurs}, ensure_ascii=False)
+        if url == R.URL_CREW_TABLE_ESTIMATION:
+            return self._crew_table_estimation(corps_json)
         if url in (R.URL_CREW_MEMOIRE_ETAT, R.URL_CREW_MEMOIRE_CHERCHER):
             return self._crew_memoire(methode, url, corps_json)
         # /mode : comme le vrai serveur, le mode est gardé dans mode_crew.json.
@@ -371,6 +376,27 @@ class Simulateur:
             self.fichiers[R.FICHIER_MODE_CREW] = json.dumps({"mode": demande})
         actuel = json.loads(self.fichiers.get(R.FICHIER_MODE_CREW) or "{}").get("mode", "econome")
         return 200, json.dumps({"mode": actuel, "modes": self.modes_crew}, ensure_ascii=False)
+
+    # ----- serveur Crew : /table-ronde/estimation (contrat provisoire) -----------------------
+
+    def _crew_table_estimation(self, corps):
+        if not self.table_ronde_disponible:
+            return 404, '{"detail": "Not Found"}'
+        tr = (corps or {}).get("table_ronde") if isinstance(corps, dict) else None
+        if not isinstance(tr, dict) or not isinstance(tr.get("participants"), list):
+            return 422, '{"error": {"message": "table_ronde.participants manquant", "type": "invalid_request"}}'
+        participants, total = [], 0.0
+        tours = 2 if tr.get("critique") else 1
+        for ident in tr["participants"]:
+            cout = self.table_ronde_couts.get(ident)
+            if cout is None:
+                continue
+            raison = self.table_ronde_indispos.get(ident, "")
+            c = round(cout * tours, 6)
+            participants.append({"id": ident, "cout_estime_usd": c, "disponible": not raison, "raison": raison})
+            if not raison:
+                total += c
+        return 200, json.dumps({"participants": participants, "total_usd": round(total, 6)})
 
     # ----- serveur Crew : /memoire/* (adresses prévues) ---------------------------------
 

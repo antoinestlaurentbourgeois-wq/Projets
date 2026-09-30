@@ -503,6 +503,11 @@ def creer_app(centre=None, verrou=None, config=None):
             return _erreur("Requête illisible.")
         options = {"memoire": bool(d.get("memoire")), "autoriser_ecriture": bool(d.get("autoriser_ecriture")),
                    "tiroir": [str(x) for x in d.get("tiroir", [])[:10]] if isinstance(d.get("tiroir"), list) else []}
+        t = d.get("table_ronde")
+        if isinstance(t, dict):
+            options["table_ronde"] = {"participants": [str(x) for x in t.get("participants", [])[:12]] if isinstance(t.get("participants"), list) else [],
+                                      "critique": bool(t.get("critique")), "synthese": t.get("synthese") is not False,
+                                      "confirme_depassement": bool(t.get("confirme_depassement"))}
         try:
             ex = await run_in_threadpool(salles.demarrer_envoi, request.path_params["cid"], str(d.get("texte", "")),
                                          options, session_courte(request))
@@ -547,6 +552,35 @@ def creer_app(centre=None, verrou=None, config=None):
         except ErreurSalle as e:
             return erreur_salle(e)
         return _json(r, 201)
+
+    async def api_tr_options(request):
+        return _json(await run_in_threadpool(salles.table_ronde.options))
+
+    async def api_tr_estimation(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        from . import tableronde as tr_mod
+        try:
+            participants = tr_mod.nettoyer(d.get("participants"))
+        except tr_mod.ErreurTableRonde as e:
+            return _erreur(str(e), 400)
+        messages = []
+        cid = d.get("conversation")
+        if cid:
+            try:
+                conv = await run_in_threadpool(salles.conversation, str(cid))
+                messages = [{"role": m["role"], "content": m["texte"]} for m in conv["messages"][-20:] if m.get("texte") and not m.get("erreur")]
+            except ErreurSalle as e:
+                return erreur_salle(e)
+        messages.append({"role": "user", "content": str(d.get("texte") or "")[:30000] or "?"})
+        # `tous` : l'écran demande l'état de TOUTES les IA (pour griser les indisponibles) ; le total ne compte que les cochées.
+        selection = None
+        if d.get("tous") is True:
+            selection = participants
+            participants = list(tr_mod.IDS)
+        est = await run_in_threadpool(salles.table_ronde.estimer, messages, participants, bool(d.get("critique")), d.get("synthese") is not False, selection)
+        return _json(est)
 
     async def api_tiroir_lister(request):
         return _json({"elements": await run_in_threadpool(salles.tiroir.lister)})
@@ -801,6 +835,7 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/conversations/{cid}/arreter", api_arreter, methods=["POST"]),
         Route("/api/conversations/{cid}/approbation", api_approbation, methods=["POST"]),
         Route("/api/conversations/{cid}/relais", api_relais, methods=["POST"]),
+        Route("/api/table-ronde/options", api_tr_options), Route("/api/table-ronde/estimation", api_tr_estimation, methods=["POST"]),
         Route("/api/tiroir", api_tiroir_lister), Route("/api/tiroir", api_tiroir_ajouter, methods=["POST"]),
         Route("/api/tiroir/{ident}", api_tiroir_lire), Route("/api/tiroir/{ident}", api_tiroir_zone, methods=["PUT"]),
         Route("/api/tiroir/{ident}", api_tiroir_supprimer, methods=["DELETE"]),

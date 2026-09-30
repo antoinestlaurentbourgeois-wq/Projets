@@ -22,6 +22,7 @@ from .memoire import Memoire, ZONE_PARTAGEABLE
 from .politique import Politique
 from .reseau import Annulation, Processus, Reseau
 from .tiroir import Tiroir, ErreurTiroir
+from . import tableronde as tr_mod
 
 journal = logging.getLogger("centre")
 
@@ -207,6 +208,7 @@ class Salles:
         self.memoire = Memoire(centre)
         self.conversations = Conversations(cfg.chemin("conversations"))
         self.tiroir = Tiroir(cfg.chemin("tiroir.json"))
+        self.table_ronde = tr_mod.TableRonde(centre)
         self.tarifs = Tarifs(cfg.chemin("tarifs.json"))
         self._chemin_reglages = cfg.chemin("salles.json")
         self._verrou = threading.RLock()
@@ -373,7 +375,9 @@ class Salles:
 
     # ----- adaptateurs -----------------------------------------------------------------------------------------
 
-    def _adaptateur(self, salle):
+    def _adaptateur(self, salle, table_ronde=False):
+        if table_ronde:
+            return ia.CrewTableRonde(self.reseau, self.centre.L.R.URL_CREW_CHAT, self._cle_crew)
         r = self.reglage(salle)
         d = SALLES[salle]
         R = self.centre.L.R
@@ -550,12 +554,53 @@ class Salles:
         if not ok:
             yield ia.evt_erreur(raison)
             return
+        tr = None
+        if options.get("table_ronde"):
+            try:
+                tr = self._preparer_table_ronde(conv, salle, texte, enrichi, options, prive)
+            except tr_mod.ErreurTableRonde as e:
+                ev = ia.evt_erreur(str(e))
+                if isinstance(e.code, str):
+                    ev["code"] = e.code          # ex. « depassement » : l'écran demande alors une confirmation
+                yield ev
+                return
         ecriture = bool(options.get("autoriser_ecriture")) and salle == "chatgpt" and self.reglage(salle)["auth"] == "abonnement"
         conv["prive"] = prive
         m_user = self.conversations.ajouter_message(conv, "user", texte, contexte=contexte, sensible=prive)
         self.conversations.enregistrer(conv)
         req = self._requete(conv, salle, enrichi, prive, ecriture)
+        if tr:
+            req.table_ronde, req.modele = tr, tr_mod.MODELE
         yield from self._tour(conv, salle, req, m_user["id"], annulation, session, prive)
+
+    def _preparer_table_ronde(self, conv, salle, texte, enrichi, options, prive):
+        """Contrôles AVANT tout appel payant : salle Crew, Crew allumé, plafonds, estimation affichée, seuil. Renvoie le corps `table_ronde`."""
+        o = options["table_ronde"] if isinstance(options["table_ronde"], dict) else {}
+        if salle != "crew":
+            raise tr_mod.ErreurTableRonde("La table ronde n'existe que dans la salle Crew.")
+        participants = tr_mod.nettoyer(o.get("participants"))
+        critique, synthese = bool(o.get("critique")), o.get("synthese") is not False
+        if self.centre.etats["crew"].code != self.centre.L.ACTIF:
+            raise tr_mod.ErreurTableRonde(self.table_ronde.options()["raison"])
+        # Filet de sécurité du Centre (règle absolue « le privé ne va jamais au nuage »), plus strict que Crew, jamais plus permissif :
+        if prive and [p for p in participants if p != "gemma"]:
+            raise tr_mod.ErreurTableRonde("Cette conversation contient du contenu privé : seule gemma (locale) peut participer à la table ronde.")
+        ok, msg = self.centre.couts.peut_utiliser("crew", self.mode_crew())
+        if not ok:
+            raise tr_mod.ErreurTableRonde(msg)
+        messages = self._messages_pour_ia(conv, "") if conv["messages"] else []
+        messages.append({"role": "user", "content": enrichi})       # la question n'est pas encore dans l'historique enregistré
+        est = self.table_ronde.estimer(messages, participants, critique, synthese)
+        if not est["ok"]:
+            raise tr_mod.ErreurTableRonde(est["message"] or "Estimation impossible : aucune IA n'est appelée.")
+        indispo = [p for p in est["participants"] if p["id"] in participants and not p["disponible"]]
+        if indispo:
+            raise tr_mod.ErreurTableRonde("IA indisponible(s) : " + " ; ".join(f"{p['libelle']} ({p['raison'] or 'indisponible'})" for p in indispo)
+                                          + ". Décochez-les.")
+        if est["depasse"] and not o.get("confirme_depassement"):
+            raise tr_mod.ErreurTableRonde(est["message"] + " Confirmez pour envoyer.", code="depassement")
+        journal.info("Table ronde : %s (critique=%s) estimée à %.4f $", ",".join(participants), critique, est["total_usd"])
+        return {"participants": participants, "critique": critique, "synthese": synthese}
 
     def _requete(self, conv, salle, dernier_texte, prive, ecriture=False, outils=()):
         if salle in ("claude", "chatgpt", "gemini"):
@@ -584,12 +629,24 @@ class Salles:
             self._actifs[cid] = annulation
         texte, erreur, usage, cout_cli, interrompu = [], None, None, None, False
         approbations = []
+        tr_data = {}              # (participant, tour) -> {texte, statut, raison, cout_usd, duree_s}
         try:
             yield {"t": "debut", "conversation": cid, "salle": salle, "modele": req.modele}
-            adaptateur = self._adaptateur(salle)
+            adaptateur = self._adaptateur(salle, table_ronde=bool(req.table_ronde))
             for e in adaptateur.repondre(req, annulation):
                 t = e["t"]
-                if t == "delta":
+                if t.startswith("tr_"):
+                    d = tr_data.setdefault((e["participant"], e["tour"]), {"texte": [], "statut": "ok", "raison": "", "cout_usd": None, "duree_s": None})
+                    if t == "tr_delta":
+                        d["texte"].append(e["texte"])
+                    elif t == "tr_exclu":
+                        d["statut"], d["raison"] = "exclu", e["raison"]
+                    elif t == "tr_erreur":
+                        d["statut"], d["raison"] = "erreur", e["message"]
+                    elif t == "tr_fin":
+                        d["cout_usd"], d["duree_s"] = e["cout_usd"], e["duree_s"]
+                    yield e
+                elif t == "delta":
                     texte.append(e["texte"])
                     yield e
                 elif t == "session":
@@ -611,8 +668,14 @@ class Salles:
             erreur = f"Erreur inattendue : {ex}"
         finally:
             reponse = "".join(texte)
-            cout = self._cout(salle, req, reponse, usage, prive)
+            tr_msg = None
+            if req.table_ronde:
+                tr_msg, reponse, cout = self._resume_table_ronde(tr_data, req)
+            else:
+                cout = self._cout(salle, req, reponse, usage, prive)
             extra = {"salle": salle, "modele": req.modele, "cout_usd": cout["usd"], "sensible": bool(prive)}
+            if tr_msg:
+                extra["table_ronde"] = tr_msg
             if interrompu:
                 extra["interrompu"] = True
             if erreur and not reponse:
@@ -626,7 +689,12 @@ class Salles:
                 conv["titre"] = re.sub(r"\s+", " ", premier)[:60] or conv["titre"]
             try:
                 self.conversations.enregistrer(conv)
-                if cout["usd"] > 0:
+                if tr_msg:
+                    for (p, tour), d in tr_data.items():
+                        if d["cout_usd"]:
+                            self.centre.couts.enregistrer(tr_mod.IA_DES_COUTS.get(p, "crew"), d["cout_usd"], estime=False,
+                                                          detail=f"table ronde {p} tour {tour}"[:200])
+                elif cout["usd"] > 0:
                     self.centre.couts.enregistrer(salle, cout["usd"], detail=f"{req.modele} {cout['detail']}"[:200],
                                                   estime=cout["estime"])
                 self.centre.recus.ajouter("message", "erreur" if erreur else ("interrompu" if interrompu else "ok"),
@@ -643,6 +711,24 @@ class Salles:
             yield {"t": "cout", "usd": cout["usd"], "texte": cout["texte"]}
             yield {"t": "fin", "annule": interrompu, "message_id": conv["messages"][-1]["id"] if conv["messages"] else None,
                    "titre": conv["titre"]}
+
+    def _resume_table_ronde(self, tr_data, req):
+        """(structure enregistrée dans le message, texte de l'historique, coût). Le texte de l'historique est la synthèse, sinon un
+        condensé « IA : réponse » du premier tour, pour que la conversation garde du contenu utile."""
+        reponses = []
+        for (p, tour), d in sorted(tr_data.items(), key=lambda x: (x[0][0] == "synthese", x[0][1], tr_mod.IDS.index(x[0][0]) if x[0][0] in tr_mod.IDS else 99)):
+            reponses.append({"participant": p, "libelle": tr_mod.LIBELLE.get(p, p), "tour": tour, "texte": "".join(d["texte"]),
+                             "statut": d["statut"], "raison": d["raison"], "cout_usd": d["cout_usd"], "duree_s": d["duree_s"]})
+        synth = "".join(r["texte"] for r in reponses if r["participant"] == "synthese")
+        if synth:
+            historique = synth
+        else:
+            historique = "\n\n".join(f"{r['libelle']} : {r['texte']}" for r in reponses if r["tour"] == 1 and r["texte"])
+        total = round(sum(r["cout_usd"] or 0.0 for r in reponses), 6)
+        cout = {"usd": total, "estime": False, "detail": "table ronde",
+                "texte": f"{total:.4f} $ (coût réel, {sum(1 for r in reponses if r['participant'] != 'synthese' and r['tour'] == 1 and r['statut'] == 'ok')} IA)"
+                if total else "Gratuit (local)"}
+        return {"reponses": reponses, "critique": bool(req.table_ronde.get("critique")), "synthese": bool(req.table_ronde.get("synthese"))}, historique, cout
 
     def _cout(self, salle, req, reponse, usage, prive):
         """Coût réel ou estimé d'un tour : {usd, estime, detail, texte}."""

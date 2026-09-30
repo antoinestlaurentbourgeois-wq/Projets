@@ -102,6 +102,7 @@ URL_CREW_MOTEURS = "http://127.0.0.1:8765/moteurs"
 URL_CREW_MEMOIRE_ETAT = "http://127.0.0.1:8765/memoire/etat"
 URL_CREW_MEMOIRE_CHERCHER = "http://127.0.0.1:8765/memoire/chercher"
 URL_CREW_CHAT = "http://127.0.0.1:8765/v1/chat/completions"
+URL_CREW_TABLE_ESTIMATION = "http://127.0.0.1:8765/table-ronde/estimation"     # contrat PROVISOIRE (à confirmer par la session locale)
 URL_LMSTUDIO_CHAT = "http://127.0.0.1:1234/v1/chat/completions"
 FICHIER_ENV_CREW = DOSSIER_CREW + r"\.env"
 NOM_CLE_CREW = "CREW_API_KEY"

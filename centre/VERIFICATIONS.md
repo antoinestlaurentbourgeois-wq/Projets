@@ -52,3 +52,12 @@
 
 - [ ] Le panneau tkinter s'ouvre toujours et fonctionne comme avant.
 - [ ] `scripts\lancer_tests.bat` : tous les tests passent (Centre + panneau).
+
+## G. Table ronde (vrai Crew requis)
+- [ ] Salle Crew : « Table ronde » activable ; cases avec coût estimé ; IA indisponibles grisées avec raison.
+- [ ] Coût estimé affiché avant envoi ; confirmation au-dessus du seuil ; changer `seuil_table_ronde_usd` dans reglages.json.
+- [ ] Un message → colonnes en flux avec coût réel + durée, puis synthèse de Crew.
+- [ ] Question confidentielle : IA du nuage marquées « exclue : contenu confidentiel, traité en local seulement ».
+- [ ] Tour de critique : surcoût affiché, 2e tour dans les colonnes.
+- [ ] Crew arrêté / Mode jeu : table ronde désactivée, les autres salles marchent.
+- [ ] Téléphone : colonnes repliables l'une sous l'autre.

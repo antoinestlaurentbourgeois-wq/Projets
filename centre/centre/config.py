@@ -65,6 +65,7 @@ class Config:
     # Tailscale (en-tête ajouté par « tailscale serve », jamais par « funnel » ni par Internet).
     exiger_identite_tailscale: bool = True
     utilisateurs_tailscale: tuple = ()
+    seuil_table_ronde_usd: float = 0.10     # avertissement (et confirmation) si une table ronde coûte plus que ça par message
     gemini_abonnement: bool = False      # Gemini CLI (comptes non personnels seulement) : voir Salles.auths
 
     def __post_init__(self):
@@ -83,6 +84,9 @@ class Config:
                 self.hotes_autorises = tuple(dict.fromkeys(self.hotes_autorises + extra))
             if isinstance(r.get("utilisateurs_tailscale"), list):
                 self.utilisateurs_tailscale = tuple(str(u).strip().lower() for u in r["utilisateurs_tailscale"] if str(u).strip())
+            v = r.get("seuil_table_ronde_usd")
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1000:
+                self.seuil_table_ronde_usd = float(v)
             if r.get("gemini_abonnement") is True:
                 self.gemini_abonnement = True
             if r.get("exiger_identite_tailscale") is False:

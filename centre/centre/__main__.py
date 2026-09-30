@@ -71,6 +71,7 @@ def demo():
     sim = Simulateur(temps_reel=True)
     sim.delai_docker, sim.delai_webui, sim.delai_crew = 2, 1, 1
     sim.tout_allumer()
+    sim.table_ronde_indispos = {"codex": "Codex : abonnement ChatGPT non connecté"}
     sim.cles.update({"GEMINI_API_KEY": "cle-demo", "XAI_API_KEY": "cle-demo", "OPENAI_API_KEY": "cle-demo"})
     demarrer(config, sim, ReseauDemo(), ProcessusDemo(), AmontDemo())
 
