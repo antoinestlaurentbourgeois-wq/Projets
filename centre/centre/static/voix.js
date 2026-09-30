@@ -4,6 +4,7 @@
   var C = window.Centre, h = C.h, vider = C.vider, api = C.api;
   var opts = null, live = null, talkie = { conv: null, salle: null, enregistrement: null, lecture: null };
   var racine = null;
+  function elt(id) { return document.getElementById(id); }
 
   function b64depuisBuffer(buf) {
     var octets = new Uint8Array(buf), s = "";
@@ -33,6 +34,7 @@
       "Elle est désactivée en modes Confidentiel et Ultra-confidentiel. Jamais de contenu privé (zone « prive », conversations privées)."));
     racine.appendChild(carteLive());
     racine.appendChild(carteTalkie());
+    restaurerLive();
   }
 
   // ------------------------------------------------ LIVE
@@ -64,13 +66,41 @@
     return carte;
   }
 
+  // Les lignes du live sont mémorisées : la conversation continue même si l'on change de page, et on les retrouve en revenant sur « Voix ».
   function ligneLive(role, texte) {
-    var fil = document.getElementById("live-fil"); if (!fil) return null;
-    var b = h("div", { class: "bulle " + (role === "user" ? "user" : role === "outil" ? "" : "assistant") }, h("div", { class: "meta", texte: role === "user" ? "Vous" : role === "outil" ? "Outil" : "Assistant vocal" }), h("div", { texte: texte }));
-    fil.appendChild(b); b.scrollIntoView({ block: "nearest" });
-    return b;
+    var e = { role: role, texte: texte, el: null };
+    if (live) live.lignes.push(e);
+    monterLigne(e);
+    return e;
   }
-  function dire(texte) { var e = document.getElementById("live-etat"); if (e) e.textContent = texte; }
+  function monterLigne(e) {
+    var fil = elt("live-fil");
+    if (!fil) { e.el = null; return; }
+    e.el = h("div", { class: "bulle " + (e.role === "user" ? "user" : e.role === "outil" ? "" : "assistant") },
+      h("div", { class: "meta", texte: e.role === "user" ? "Vous" : e.role === "outil" ? "Outil" : "Assistant vocal" }), h("div", { texte: e.texte }));
+    fil.appendChild(e.el); e.el.scrollIntoView({ block: "nearest" });
+  }
+  function ecrireLigne(e, texte) { e.texte = texte; if (e.el) e.el.lastChild.textContent = texte; }
+  function dire(texte) { if (live) live.dernierEtat = texte; var e = elt("live-etat"); if (e) e.textContent = texte; }
+  function restaurerLive() {       // retour sur la page Voix pendant un live : on remet les boutons, l'état, le compteur et les lignes
+    var d = elt("live-demarrer"), ar = elt("live-arreter");
+    if (!live) return;
+    if (d) d.disabled = true;
+    if (ar) ar.classList.remove("cache");
+    if (live.dernierEtat) dire(live.dernierEtat);
+    var c = elt("live-compteur"); if (c && live.compteurTexte) c.textContent = live.compteurTexte;
+    live.lignes.forEach(monterLigne);
+  }
+  // Le rond du haut (toutes pages) : état du bouton et coût en direct
+  function majBouton() {
+    var b = elt("noyau-bouton"); if (!b) return;
+    b.setAttribute("aria-pressed", live ? "true" : "false");
+    b.setAttribute("aria-label", live ? "Conversation vocale en direct en cours : toucher pour arrêter" : "Conversation vocale en direct : démarrer");
+    b.title = live ? "Conversation vocale en cours : touchez pour l'arrêter (les frais s'arrêtent avec elle)" : "Conversation vocale en direct : touchez pour démarrer, touchez de nouveau pour arrêter (limite les frais quand vous ne parlez pas)";
+    document.body.dataset.live = live ? "1" : "0";
+    C.liveActif = !!live;
+    var t = elt("live-cout"); if (t) { t.hidden = !live; if (!live) t.textContent = ""; else if (!t.textContent) t.textContent = "LIVE…"; }
+  }
 
   function demarrerLive() {
     var m = opts.live.filter(function (x) { return x.id === document.getElementById("live-modele").value; })[0];
@@ -83,8 +113,9 @@
   }
 
   function lancerLive(m, voix) {
-    live = { ws: null, ctx: null, flux: null, noeud: null, sources: [], prochain: 0, verrou: null, ligneIA: null, fini: false };
-    document.getElementById("live-demarrer").disabled = true;
+    live = { ws: null, ctx: null, flux: null, noeud: null, sources: [], prochain: 0, verrou: null, ligneIA: null, fini: false, lignes: [], dernierEtat: "", compteurTexte: "" };
+    var bd = elt("live-demarrer"); if (bd) bd.disabled = true;
+    majBouton();
     dire("Autorisation du micro…");
     var constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
     return navigator.mediaDevices.getUserMedia(constraints).then(function (flux) {
@@ -106,7 +137,7 @@
       live.noeud.port.onmessage = function (e) {
         if (live && live.ws && live.ws.readyState === 1 && !live.fini) live.ws.send(JSON.stringify({ t: "audio", pcm: b64depuisBuffer(e.data) }));
       };
-      document.getElementById("live-arreter").classList.remove("cache");
+      var ba = elt("live-arreter"); if (ba) ba.classList.remove("cache");
     }).catch(function (e) {
       var msg = e && e.name === "NotAllowedError" ? "Le micro a été refusé : autorisez-le dans le navigateur." : (e.message || String(e));
       finLive(false); dire(msg); C.informer("Micro ou audio indisponible", msg);
@@ -123,14 +154,16 @@
       if (m.role === "user") { ligneLive("user", m.texte); live.ligneIA = null; }
       else {
         if (!live.ligneIA) live.ligneIA = ligneLive("assistant", "");
-        if (live.ligneIA) { var zone = live.ligneIA.lastChild; zone.textContent = m.final ? m.texte : zone.textContent + m.texte; }
+        ecrireLigne(live.ligneIA, m.final ? m.texte : live.ligneIA.texte + m.texte);
         if (m.final) live.ligneIA = null;
       }
     }
     else if (m.t === "outil") { dire(m.etat === "appel" ? "Consultation : " + m.nom + "…" : "Réponse de l'outil reçue."); if (m.etat === "fini") ligneLive("outil", m.nom + " → " + (m.resume || "")); }
     else if (m.t === "cout") {
-      var e = document.getElementById("live-compteur");
-      if (e) e.textContent = dollars(m.usd) + " · " + m.minutes.toFixed(1) + " min" + (m.restant_usd != null ? " · reste " + m.restant_usd.toFixed(2) + " $" : "");
+      var texteC = dollars(m.usd) + " · " + m.minutes.toFixed(1) + " min" + (m.restant_usd != null ? " · reste " + m.restant_usd.toFixed(2) + " $" : "");
+      live.compteurTexte = texteC;
+      var e = elt("live-compteur"); if (e) e.textContent = texteC;
+      var t = elt("live-cout"); if (t) t.textContent = "LIVE · " + dollars(m.usd) + " · " + m.minutes.toFixed(1) + " min";
     }
     else if (m.t === "erreur") { dire(m.message); ligneLive("outil", "⚠ " + m.message); }
     else if (m.t === "fin") { dire("Terminé (" + m.raison + ") — coût " + dollars(m.cout_usd) + " pour " + m.minutes + " min."); finLive(false); }
@@ -170,9 +203,10 @@
     if (l.ctx) l.ctx.close().catch(function () {});
     if (l.verrou) l.verrou.release().catch(function () {});
     live = null;
+    majBouton();
     C.etat("repos");
-    var d = document.getElementById("live-demarrer"); if (d) d.disabled = false;
-    var a = document.getElementById("live-arreter"); if (a) a.classList.add("cache");
+    var d = elt("live-demarrer"); if (d) d.disabled = false;
+    var ar = elt("live-arreter"); if (ar) ar.classList.add("cache");
     api("GET", "/api/voix/options").then(function (o) { opts = o; }).catch(function () {});
   }
 
@@ -346,6 +380,34 @@
     },
     arreterLecture: function () { if (talkie.lecture) { talkie.lecture.pause(); talkie.lecture = null; C.etat("repos"); } }
   };
+
+  // ------------------------------------------------ le rond du haut : un appui démarre le LIVE, un autre l'arrête (pour ne pas payer quand on ne parle pas)
+  function arreterRapide() {
+    finLive(true);                                              // demande polie : le serveur termine et enregistre le coût
+    setTimeout(function () { if (live) finLive(false); }, 1500);      // sinon on coupe nous-mêmes la connexion (le serveur enregistre aussi dans ce cas)
+  }
+  function confirmeDeja() { try { return sessionStorage.getItem("centre.live.confirme") === "1"; } catch (e) { return false; } }
+  C.basculerLive = function () {
+    if (live) { arreterRapide(); return Promise.resolve(); }
+    var b = elt("noyau-bouton"); if (b) b.disabled = true;
+    return C.voixOptions(true).then(function (o) {
+      opts = o;
+      if (!o.disponible) { C.informer("Voix indisponible", o.raison); return; }
+      var sm = elt("live-modele"), sv = elt("live-voix");
+      var m = (sm && o.live.filter(function (x) { return x.id === sm.value && x.disponible; })[0]) || o.live.filter(function (x) { return x.defaut && x.disponible; })[0] || o.live.filter(function (x) { return x.disponible; })[0];
+      if (!m) { C.informer("Voix indisponible", (o.live[0] && o.live[0].raison) || "Aucun modèle vocal n'est disponible."); return; }
+      var voix = (sv && m.voix.indexOf(sv.value) >= 0 && sv.value) || m.voix[0];
+      var suite = confirmeDeja() ? Promise.resolve(true) : C.confirmer("Démarrer la conversation vocale en direct ?",
+        m.libelle + "\nCoût estimé : " + m.estimation + "\n" + (o.restant_usd != null ? "Reste avant plafond : " + o.restant_usd.toFixed(2) + " $\n" : "Aucun plafond réglé.\n") +
+        "Durée maximale : " + o.duree_max_minutes + " min.\nPour arrêter (et arrêter les frais), touchez de nouveau le rond en haut à gauche. Cette confirmation ne sera plus demandée pendant cette session.", "Démarrer");
+      return suite.then(function (ok) {
+        if (!ok) return;
+        try { sessionStorage.setItem("centre.live.confirme", "1"); } catch (e) { /* facultatif */ }
+        return lancerLive(m, voix);
+      });
+    }).catch(function (e) { if (e.message !== "session") C.informer("Impossible", e.message); }).then(function () { if (b) b.disabled = false; });
+  };
+  (function () { var b = elt("noyau-bouton"); if (b) b.addEventListener("click", function () { C.basculerLive(); }); })();
 
   document.addEventListener("visibilitychange", function () { /* le LIVE continue en arrière-plan tant que le micro reste autorisé */ });
   window.addEventListener("pagehide", function () { if (live) finLive(true); });

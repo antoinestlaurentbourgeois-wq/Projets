@@ -185,7 +185,7 @@
       zone.appendChild(h("button", { type: "button", class: c.bloque ? "alerte" : "", title: c.bloque ? c.message : "Dépenses estimées aujourd'hui", onclick: function () { aller("couts"); } },
         "💲 " + dollars(c.totaux.aujourdhui.total) + (j.plafond != null ? " / " + dollars(j.plafond) : "")));
       if (d.action && d.action.statut === "en_cours") Centre.etat("reflexion");
-      else if (document.body.dataset.etat === "reflexion" && !Centre.enCours) Centre.etat("repos");
+      else if (document.body.dataset.etat === "reflexion" && !Centre.enCours && !Centre.liveActif) Centre.etat("repos");
     }).catch(function () { /* session expirée : gérée ailleurs */ });
   }
   Centre.barreEtat = barreEtat;

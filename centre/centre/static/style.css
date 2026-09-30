@@ -376,3 +376,14 @@ dialog .formulaire-image { max-height: 60vh; overflow-y: auto; padding-right: 4p
 .vignette-image a.petit { text-decoration: none; display: inline-flex; align-items: center; }
 .image-generee .prompt-image { margin-top: 6px; -webkit-line-clamp: 4; }
 .job-image { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ---- Le rond du haut = bouton de la conversation vocale en direct (LIVE) : un appui démarre, un autre arrête ---- */
+.noyau-bouton { flex: 0 0 auto; width: 44px; height: 44px; padding: 0; border: 0; background: none; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
+.noyau-bouton:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.noyau-bouton:disabled { cursor: not-allowed; opacity: .6; }
+.noyau-bouton .noyau { display: block; }
+body[data-live="1"] .noyau .anneau { border-color: var(--vert); opacity: 1; border-width: 2px; }
+body[data-live="1"] .noyau .point { background: var(--vert); box-shadow: 0 0 10px var(--vert); }
+body[data-live="1"][data-etat="ecoute"] .noyau .point { background: var(--orange); box-shadow: 0 0 12px var(--orange); }
+.live-cout { display: block; font-size: 11px; color: var(--vert); font-weight: 700; }
+.live-cout[hidden] { display: none; }
