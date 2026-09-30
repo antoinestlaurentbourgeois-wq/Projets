@@ -69,7 +69,6 @@ class Config:
     seuil_image_usd: float = 0.10           # confirmation si une génération d'images du nuage coûte (estimation) plus que ça
     seuil_table_ronde_usd: float = 0.10     # avertissement (et confirmation) si une table ronde coûte plus que ça par message
     dossier_comfyui: str = ""               # dossier de ComfyUI (les deux scripts démarrer / arrêter) ; vide : I:\\IA\\ComfyUI. Validé avant tout emploi.
-    outils_lecture_permanents: tuple = ()   # outils MCP EN LECTURE SEULE (noms exacts « mcp__serveur__outil ») ajoutés à la liste blanche de « Toujours approuver »
     gemini_abonnement: bool = False      # Gemini CLI (comptes non personnels seulement) : voir Salles.auths
 
     def __post_init__(self):
@@ -96,9 +95,6 @@ class Config:
                 self.seuil_image_usd = float(v)
             if isinstance(r.get("dossier_comfyui"), str) and r["dossier_comfyui"].strip():
                 self.dossier_comfyui = r["dossier_comfyui"].strip()
-            if isinstance(r.get("outils_lecture_permanents"), list):
-                self.outils_lecture_permanents = tuple(dict.fromkeys(
-                    o for o in r["outils_lecture_permanents"] if isinstance(o, str) and re.match(r"^mcp__[A-Za-z0-9_-]{1,60}__[A-Za-z0-9_-]{1,80}$", o)))[:50]
             if r.get("gemini_abonnement") is True:
                 self.gemini_abonnement = True
             if r.get("exiger_identite_tailscale") is False:

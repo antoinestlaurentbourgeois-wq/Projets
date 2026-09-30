@@ -46,7 +46,8 @@ def test_ajout_lecture_suppression(tmp_path):
     assert p.supprimer(e["id"]) and not p.existe(e["id"])
 
 
-@pytest.mark.parametrize("mauvais,code", [("", 400), ("pas du base64 !!", 400), (b64(b"<svg/>"), 415), (b64(b"MZ" + b"\0" * 50), 415), (b64(png(2) + b"0" * 7_000_000), 413)])
+@pytest.mark.parametrize("mauvais,code", [("", 400), ("pas du base64 !!", 400), (b64(b"<svg/>"), 415), (b64(b"MZ" + b"\0" * 50), 415), (b64(png(2) + b"0" * 7_000_000), 413)],
+                         ids=["vide", "pas-base64", "svg", "executable", "trop-lourd"])
 def test_refus(tmp_path, mauvais, code):
     with pytest.raises(ErreurPiece) as e:
         Pieces(str(tmp_path)).ajouter_base64(mauvais)

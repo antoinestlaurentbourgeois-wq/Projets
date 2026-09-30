@@ -175,9 +175,23 @@ _ID_SESSION = re.compile(r"^[A-Za-z0-9_-]{6,100}$")
 _MODELE = re.compile(r"^[A-Za-z0-9._:/-]{1,80}$")
 _BASH_SUR = re.compile(r"^[A-Za-z0-9 _.,:=/\\\-]{1,200}$")
 _OUTIL_SUR = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
-# Liste blanche de « Toujours approuver » (bouton ou mode automatique) : outils en LECTURE SEULE, noms exacts. Jamais Bash, WebFetch, WebSearch ni un outil qui
-# modifie des fichiers. Des outils MCP en lecture seule peuvent s'y ajouter par la clé « outils_lecture_permanents » de reglages.json.
-OUTILS_LECTURE_PERMANENTS = ("Read", "Glob", "Grep", "LS", "NotebookRead")
+# Liste blanche de « Toujours approuver » (bouton ou mode automatique) : UNIQUEMENT des outils en lecture seule, reconnus par une liste explicite.
+# Tout le reste, nom inconnu compris, est refusé : Bash, WebFetch, écritures, et tout outil MCP qui n'est pas « list_ / get_ / search_ ».
+OUTILS_LECTURE_PERMANENTS = ("Read", "Glob", "Grep", "LS", "NotebookRead", "WebSearch")
+_MCP_LECTURE = re.compile(r"^mcp__[A-Za-z0-9_]+__(list|get|search)_[a-z_]+$")
+# Refus absolu si le nom contient l'un de ces mots (même s'il ressemble à une lecture : get_attachment, list_drafts…).
+MOTS_INTERDITS = ("send", "reply", "forward", "create", "update", "delete", "connect", "attach", "write", "post", "publish", "pay", "buy", "remove", "draft", "invite")
+
+
+def outil_lecture_seule(nom):
+    """Vrai seulement pour un outil de la liste blanche (nom EXACT, sans argument) ou un outil MCP de lecture (list_/get_/search_) sans mot interdit."""
+    if not isinstance(nom, str) or not 0 < len(nom) <= 200:
+        return False
+    if any(m in nom.lower() for m in MOTS_INTERDITS):
+        return False
+    return nom in OUTILS_LECTURE_PERMANENTS or bool(_MCP_LECTURE.match(nom))
+
+
 OUTILS_ECRITURE = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 

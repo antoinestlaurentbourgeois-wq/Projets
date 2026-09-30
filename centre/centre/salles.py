@@ -1066,13 +1066,10 @@ class Salles:
     # « Toujours approuver » : liste d'outils EN LECTURE SEULE (liste blanche) mémorisée sur ce PC, révocable à tout moment. Jamais Bash, WebFetch ni
     # les outils qui modifient des fichiers (toujours demandés un par un). Valable pour la salle Claude seulement.
 
-    def liste_blanche(self):
-        return ia.OUTILS_LECTURE_PERMANENTS + tuple(self.centre.config.outils_lecture_permanents)
-
     def permanent_possible(self, demande):
         """Seulement un outil en lecture seule de la liste blanche, sans argument (motif = nom exact de l'outil)."""
         m = demande.get("motif")
-        return bool(isinstance(m, str) and m == demande.get("outil") and m in self.liste_blanche())
+        return bool(isinstance(m, str) and m == demande.get("outil") and ia.outil_lecture_seule(m))
 
     def permanents(self):
         """Approbations permanentes mémorisées, re-filtrées par la liste blanche À CHAQUE LECTURE (fichier trafiqué ou ancienne version : ignoré)."""
@@ -1081,8 +1078,7 @@ class Salles:
                 d = json.load(f)
         except (OSError, ValueError):
             return []
-        blanche = self.liste_blanche()
-        return [m for m in d if isinstance(m, str) and m in blanche][:200] if isinstance(d, list) else []
+        return [m for m in d if ia.outil_lecture_seule(m)][:200] if isinstance(d, list) else []
 
     def _ecrire_permanents(self, liste):
         t = self.centre.config.chemin("approbations_permanentes.json")
@@ -1091,7 +1087,7 @@ class Salles:
         os.replace(t + ".tmp", t)
 
     def ajouter_permanent(self, motif):
-        if motif not in self.liste_blanche():
+        if not ia.outil_lecture_seule(motif):
             raise ErreurSalle("Cette action n'est pas dans la liste des outils en lecture seule : elle reste à approuver à chaque fois.", 403)
         with self._verrou:
             liste = self.permanents()

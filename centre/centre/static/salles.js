@@ -733,7 +733,7 @@
         lancerFlux("/api/conversations/" + S.conv.id + "/approbation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decisions: choix }) });
       } }),
       " ", demandes.every(function (d) { return d.permanent_possible; }) ? h("button", { class: "petit", type: "button", id: "toujours-tout", texte: "Tout approuver, toujours", onclick: function () {
-        C.confirmer("Toujours approuver ?", "Claude pourra désormais utiliser sans vous demander les outils EN LECTURE SEULE de la liste blanche (lire et chercher des fichiers). Les commandes (Bash), les pages web et les modifications de fichiers demanderont toujours votre accord. Vous pouvez le désactiver dans « Gérer les approbations permanentes ».", "Toujours approuver").then(function (ok) {
+        C.confirmer("Toujours approuver ?", "Claude pourra désormais utiliser sans vous demander les outils EN LECTURE SEULE de la liste blanche (lire et chercher des fichiers, chercher sur le web, lister ou lire dans vos applications). Les envois, suppressions, commandes (Bash), pages web et modifications de fichiers demanderont toujours votre accord. Vous pouvez le désactiver dans « Gérer les approbations permanentes ».", "Toujours approuver").then(function (ok) {
           if (!ok) return;
           var tout = {}; demandes.forEach(function (d) { tout[d.id] = "approuver"; });
           api("PUT", "/api/approbations/auto", { actif: true }).then(function () {
