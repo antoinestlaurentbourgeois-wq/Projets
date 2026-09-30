@@ -37,6 +37,7 @@ MAX_MESSAGE = 30000
 
 # Prix indicatifs en dollars US par million de jetons (entrée, sortie). PLACEHOLDERS non vérifiés : le vrai
 # tarif se règle dans la page Coûts (fichier tarifs.json) ; tant qu'il n'est pas réglé, l'affichage dit « estimation grossière ».
+PAUSES_REESSAI = (1.0, 2.0)      # nouveaux essais automatiques sur 429/502/503/504 (surcharge chez le fournisseur)
 PRIX_DEFAUT = {"deepseek": (0.30, 1.20), "gemini": (0.30, 2.50), "grok": (3.00, 15.00), "chatgpt": (0.50, 2.00),
                "claude": (3.00, 15.00), "crew": (0.30, 1.20)}
 
@@ -58,9 +59,9 @@ SALLES = {s.ident: s for s in [
     DefSalle("claude", "Claude", "Programme officiel « claude » (Claude Code), avec votre abonnement.",
              ("abonnement", "cle"), "", "anthropic"),
     DefSalle("chatgpt", "ChatGPT / Codex", "Programme officiel « codex » (Se connecter avec ChatGPT), ou clé OpenAI.",
-             ("abonnement", "cle"), "gpt-4.1-mini", "openai"),
+             ("abonnement", "cle"), "gpt-4.1-mini", "openai"),     # en mode abonnement le modèle par défaut est « » (voir _defaut_modele)
     DefSalle("gemini", "Gemini", "API Gemini (clé GEMINI_API_KEY), ou programme officiel « gemini ».",
-             ("cle", "abonnement"), "gemini-flash-latest", "gemini"),
+             ("cle", "abonnement"), "gemini-3-flash-preview", "gemini"),     # « abonnement » (Gemini CLI) : refusé par Google pour les particuliers
     DefSalle("grok", "Grok", "API officielle xAI (clé XAI_API_KEY).", ("cle",), "grok-4", "xai"),
     DefSalle("deepseek", "DeepSeek", "API DeepSeek (clé DEEPSEEK_API_KEY).", ("cle",), "deepseek-chat", "deepseek"),
     DefSalle("gemma", "gemma (local)", "Modèle local dans LM Studio : gratuit, rien ne quitte le PC.",
@@ -213,6 +214,7 @@ class Salles:
         self._executions = {}                # conversation -> Execution
         self.atelier = cfg.atelier
         self._adaptateurs = {}
+        self.dormir = time.sleep
 
     # ----- réglages par salle -------------------------------------------------------------------
 
@@ -224,28 +226,47 @@ class Salles:
         except (OSError, ValueError):
             return {}
 
-    def reglage(self, salle):
+    def auths(self, salle):
+        """Connexions proposées. Gemini CLI n'accepte plus les comptes Google de particuliers : « abonnement » n'est offert
+        pour Gemini que si `gemini_abonnement` est activé dans reglages.json (ex. compte Workspace/Code Assist)."""
         d = SALLES[salle]
+        if salle == "gemini" and not getattr(self.centre.config, "gemini_abonnement", False):
+            return tuple(a for a in d.auths if a != "abonnement")
+        return d.auths
+
+    def _defaut_modele(self, salle, auth):
+        if salle == "gemma":
+            return self.centre.L.R.MODELE_GEMMA
+        if salle == "chatgpt" and auth == "abonnement":
+            return ""          # compte ChatGPT : Codex choisit lui-même le modèle de l'abonnement (gpt-4.1-mini est refusé)
+        return SALLES[salle].modele_defaut
+
+    def reglage(self, salle):
         r = self._reglages().get(salle) or {}
-        auth = r.get("auth") if r.get("auth") in d.auths else d.auths[0]
-        defaut = self.centre.L.R.MODELE_GEMMA if salle == "gemma" else d.modele_defaut
+        auths = self.auths(salle)
+        auth = r.get("auth") if r.get("auth") in auths else auths[0]
+        defaut = self._defaut_modele(salle, auth)
         modele = r.get("modele") if ia.modele_valide(r.get("modele") or "") else defaut
+        if salle == "chatgpt" and auth == "abonnement" and modele in ("", "gpt-4.1-mini"):
+            modele = ""
         return {"auth": auth, "modele": modele}
 
     def definir_reglage(self, salle, auth=None, modele=None):
         if salle not in SALLES:
             raise ErreurSalle("Salle inconnue.", 404)
-        d = SALLES[salle]
         actuel = self.reglage(salle)
         if auth is not None:
-            if auth not in d.auths:
-                raise ErreurSalle("Connexion inconnue pour cette salle.")
+            if auth not in self.auths(salle):
+                raise ErreurSalle("Connexion inconnue ou non disponible pour cette salle."
+                                  + (" Google n'accepte plus les comptes personnels dans Gemini CLI : utilisez la clé GEMINI_API_KEY." if salle == "gemini" and auth == "abonnement" else ""))
             actuel["auth"] = auth
+            if modele is None and salle == "chatgpt":
+                actuel["modele"] = self._defaut_modele(salle, auth)
         if modele is not None:
             modele = str(modele).strip()
             if modele and not ia.modele_valide(modele):
                 raise ErreurSalle("Nom de modèle invalide (lettres, chiffres, . _ : / - seulement).")
-            actuel["modele"] = modele or (self.centre.L.R.MODELE_GEMMA if salle == "gemma" else d.modele_defaut)
+            actuel["modele"] = modele or self._defaut_modele(salle, actuel["auth"])
         with self._verrou:
             tout = self._reglages()
             tout[salle] = actuel
@@ -325,7 +346,7 @@ class Salles:
             ok, raison = self.disponibilite(s.ident)
             r = self.reglage(s.ident)
             sortie.append({"id": s.ident, "libelle": s.libelle, "description": s.description,
-                           "locale": s.locale or s.ident == "crew", "auths": [{"id": a, "texte": TEXTE_AUTH[a]} for a in s.auths],
+                           "locale": s.locale or s.ident == "crew", "auths": [{"id": a, "texte": TEXTE_AUTH[a]} for a in self.auths(s.ident)],
                            "auth": r["auth"], "modele": r["modele"], "disponible": ok, "raison": raison,
                            "approbations": s.ident in ("claude",), "ecriture": s.ident == "chatgpt" and r["auth"] == "abonnement",
                            "estimation": self.estimer(s.ident, 0, 0)["texte"]})
@@ -362,7 +383,8 @@ class Salles:
             return ia.OpenAICompat(self.reseau, "Crew", R.URL_CREW_CHAT, self._cle_crew, True, stream_usage=False)
         if r["auth"] == "cle" and salle != "claude":
             f = d.fournisseur
-            return ia.OpenAICompat(self.reseau, d.libelle, URLS_API[f], lambda: self.cles.lire(f))
+            return ia.OpenAICompat(self.reseau, d.libelle, URLS_API[f], lambda: self.cles.lire(f),
+                                   pauses=PAUSES_REESSAI, dormir=lambda t: self.dormir(t))
         if salle == "claude":
             env = (lambda: self._env_cli_avec_cle("anthropic")) if r["auth"] == "cle" else self._env_cli
             return ia.ClaudeCLI(self.processus, "Claude", lambda: self._exe("claude"), env)
@@ -543,6 +565,8 @@ class Salles:
                 pass
         r = self.reglage(salle)
         modele = r["modele"]
+        if salle == "chatgpt" and r["auth"] == "abonnement" and modele in ("", "gpt-4.1-mini"):
+            modele = ""            # compte ChatGPT : laisser Codex choisir le modèle de l'abonnement
         if salle == "crew":
             # Contenu privé : on demande explicitement le modèle confidentiel (jamais de nuage).
             modele = "crew-confidentiel" if prive and self.mode_crew() not in MODES_CREW_LOCAUX else (modele or "crew-normal")

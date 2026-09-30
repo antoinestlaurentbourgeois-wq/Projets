@@ -203,7 +203,11 @@ def amont():
 @pytest.fixture
 def centre(tmp_path, simulateur, reseau, processus, amont):
     config = Config(dossier_donnees=str(tmp_path / "donnees"), rafraichir_en_fond=False)
-    return Centre(config, systeme=simulateur, reseau=reseau, processus=processus, amont=amont)
+    config.gemini_abonnement = True          # les tests de programmes utilisent Gemini CLI comme véhicule ; l'option est testée à part
+    c = Centre(config, systeme=simulateur, reseau=reseau, processus=processus, amont=amont)
+    c.salles.dormir = lambda s: c.salles.pauses.append(s)          # pas d'attente réelle entre les essais
+    c.salles.pauses = []
+    return c
 
 
 @pytest.fixture

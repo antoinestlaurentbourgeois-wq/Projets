@@ -24,10 +24,15 @@ simulée), un vrai serveur `uvicorn`, un vrai client WebSocket, et l'interface d
 7. **Coupure au plafond** : le serveur coupe quand `coût de la session ≥ reste avant plafond`, ou quand le plafond global est atteint (dépenses enregistrées chaque minute). Il ne peut pas empêcher
    les jetons déjà facturés d'une réponse en cours : le dépassement possible est de l'ordre d'une réponse.
 
-## Grok Voice (xAI)
+## Grok Voice (xAI) : méthode de GLAMMBOX, avec la clé officielle `XAI_API_KEY`
 
-8. **Tout est supposé** : `wss://api.x.ai/v1/realtime?model=grok-voice-think-fast`, même protocole que OpenAI Realtime (JSON), voix `eve, ara, rex, sal, leo`. Je n'ai aucune documentation vérifiée de ce service.
-   Facturation calculée **à la durée** (0,08 $/min, votre chiffre), pas aux jetons. S'il ne marche pas, l'erreur s'affichera : envoyez-la-moi ; il faudra peut-être adapter `_session_update` et les noms d'événements pour xAI.
+8. **Ce qui vient de GLAMMBOX (lu dans son serveur)** : le serveur échange la clé contre un jeton de session de 5 minutes (`POST https://api.x.ai/v1/realtime/client_secrets`, corps `{"expires_after":{"seconds":300}}`, réponse `{"value": …}`) ;
+   modèle `grok-voice-think-fast-1.0`, voix `leo` par défaut (`eve, ara, rex, sal`), configuration `session.update` identique (détection de fin de phrase seuil 0,75 / silence 850 ms, PCM 24 kHz, transcription `grok-transcribe`,
+   outils natifs `web_search` et `x_search`, `resumption`) ; synthèse vocale `POST https://api.x.ai/v1/tts` avec `{"text","voice_id","language"}`.
+   **Ce que je n'ai pas pu lire** : dans GLAMMBOX, le code du navigateur qui ouvre la WebSocket. Chez nous, c'est le SERVEUR qui l'ouvre, en `wss://api.x.ai/v1/realtime?model=grok-voice-think-fast-1.0` avec `Authorization: Bearer <jeton de session>` :
+   l'adresse et l'en-tête sont **supposés**. Si xAI refuse, l'erreur s'affiche à l'écran : envoyez-la-moi.
+   **Non fait, volontairement :** l'utilisation du jeton d'abonnement SuperGrok (bloquée par le système de sécurité de la session, y compris pour la session locale). Seule la clé officielle `XAI_API_KEY` est utilisée.
+   Facturation calculée à la durée (0,08 $/min, votre chiffre).
 
 ## Talkie-walkie
 
