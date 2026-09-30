@@ -16,8 +16,10 @@
 </head>
 <body data-etat="repos">
 <header class="haut">
-  <div class="noyau" id="noyau" aria-hidden="true"><span class="anneau"></span><span class="point"></span></div>
-  <div class="marque"><b>CENTRE</b><span id="etat-texte" class="etat" role="status">connexion…</span></div>
+  <button class="noyau-bouton" id="noyau-bouton" type="button" aria-pressed="false" aria-label="Conversation vocale en direct : démarrer"
+    title="Conversation vocale en direct : touchez pour démarrer, touchez de nouveau pour arrêter (limite les frais quand vous ne parlez pas)">
+    <span class="noyau" id="noyau" aria-hidden="true"><span class="anneau"></span><span class="point"></span></span></button>
+  <div class="marque"><b>CENTRE</b><span id="etat-texte" class="etat" role="status">connexion…</span><span id="live-cout" class="live-cout" hidden></span></div>
   <button class="bouton" id="deconnexion" type="button" title="Se déconnecter" aria-label="Se déconnecter">⏻</button>
 </header>
 <nav class="onglets" id="onglets" aria-label="Pages">
