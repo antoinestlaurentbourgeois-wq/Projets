@@ -175,6 +175,9 @@ _ID_SESSION = re.compile(r"^[A-Za-z0-9_-]{6,100}$")
 _MODELE = re.compile(r"^[A-Za-z0-9._:/-]{1,80}$")
 _BASH_SUR = re.compile(r"^[A-Za-z0-9 _.,:=/\\\-]{1,200}$")
 _OUTIL_SUR = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+# Liste blanche de « Toujours approuver » (bouton ou mode automatique) : outils en LECTURE SEULE, noms exacts. Jamais Bash, WebFetch, WebSearch ni un outil qui
+# modifie des fichiers. Des outils MCP en lecture seule peuvent s'y ajouter par la clé « outils_lecture_permanents » de reglages.json.
+OUTILS_LECTURE_PERMANENTS = ("Read", "Glob", "Grep", "LS", "NotebookRead")
 OUTILS_ECRITURE = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
 

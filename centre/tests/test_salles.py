@@ -681,67 +681,91 @@ def test_pas_de_reessai_sur_les_autres_erreurs_ni_en_local(centre, simulateur, r
     assert len(essais) == 1                      # LM Studio (local) : pas de nouvel essai
 
 
-def test_claude_toujours_approuver_memorise_et_ne_redemande_plus(centre, processus):
-    processus.scenarios["claude"] = flux_claude("Je dois lancer une commande.",
-                                                refus=[("t1", "Bash", {"command": "git status"}), ("t2", "mcp__AgentMail__list_messages", {}),
-                                                       ("t3", "Write", {"file_path": "notes.txt"})])
+def test_claude_toujours_approuver_liste_blanche_en_lecture_seule(centre, processus):
+    processus.scenarios["claude"] = flux_claude("Je cherche.", refus=[("t1", "Grep", {"pattern": "x"}), ("t2", "Bash", {"command": "git status"}),
+                                                                      ("t3", "WebFetch", {"url": "https://exemple.com/a"}), ("t4", "Write", {"file_path": "notes.txt"}),
+                                                                      ("t5", "mcp__AgentMail__list_messages", {})])
     conv = centre.salles.creer_conversation("claude")
     evts = centre.salles.demarrer_envoi(conv["id"], "range", {}).attendre()
     demandes = [e for e in evts if e["t"] == "approbation"][0]["demandes"]
-    assert [d["permanent_possible"] for d in demandes] == [True, True, False]                    # jamais pour les modifications de fichiers
+    assert [d["permanent_possible"] for d in demandes] == [True, False, False, False, False]       # ni Bash, ni WebFetch, ni écriture, ni MCP non listé
     processus.scenarios["claude"] = flux_claude("Fait.")
-    centre.salles.demarrer_approbation(conv["id"], {"t1": "toujours", "t2": "toujours", "t3": "toujours"}).attendre()
-    assert centre.salles.permanents() == ["Bash(git status)", "mcp__AgentMail__list_messages"]  # Write n'est pas mémorisé
+    centre.salles.demarrer_approbation(conv["id"], {d["id"]: "toujours" for d in demandes}).attendre()
+    assert centre.salles.permanents() == ["Grep"]                                                   # les autres ont été approuvées UNE fois, sans être mémorisées
     assert any(r["resultat"] == "permanente" for r in centre.recus.derniers())
-    # une NOUVELLE conversation : ces actions sont déjà autorisées d'avance, rien d'autre
     conv2 = centre.salles.creer_conversation("claude")
     centre.salles.demarrer_envoi(conv2["id"], "encore", {}).attendre()
-    outils = processus.lances[-1]["args"][processus.lances[-1]["args"].index("--allowedTools") + 1].split(",")
-    assert "mcp__AgentMail__list_messages" in outils and "Bash(git status)" in outils and "Write" not in outils
-    centre.salles.retirer_permanent("Bash(git status)")
-    assert centre.salles.permanents() == ["mcp__AgentMail__list_messages"]
+    a = processus.lances[-1]["args"]
+    outils = a[a.index("--allowedTools") + 1].split(",")
+    assert "Grep" in outils and not any(o.startswith(("Bash", "WebFetch", "Write")) for o in outils)
+    centre.salles.retirer_permanent("Grep")
+    assert centre.salles.permanents() == []
     with pytest.raises(ErreurSalle):
-        centre.salles.retirer_permanent("Bash(git status)")
+        centre.salles.retirer_permanent("Grep")
+    for interdit in ("Bash", "Bash(git status)", "WebFetch", "WebFetch(domain:exemple.com)", "WebSearch", "Write", "Edit", "MultiEdit", "NotebookEdit"):
+        with pytest.raises(ErreurSalle) as e:
+            centre.salles.ajouter_permanent(interdit)
+        assert e.value.code == 403
+
+
+def test_outils_mcp_en_lecture_seule_par_reglages(centre, processus):
+    centre.config.outils_lecture_permanents = ("mcp__AgentMail__list_messages",)
+    processus.scenarios["claude"] = flux_claude("x", refus=[("t1", "mcp__AgentMail__list_messages", {}), ("t2", "mcp__AgentMail__send_message", {})])
+    conv = centre.salles.creer_conversation("claude")
+    evts = centre.salles.demarrer_envoi(conv["id"], "q", {}).attendre()
+    assert [d["permanent_possible"] for d in [e for e in evts if e["t"] == "approbation"][0]["demandes"]] == [True, False]
+
+
+def test_reglages_outils_lecture_valides(tmp_path):
+    from centre.config import Config
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "reglages.json").write_text('{"outils_lecture_permanents": ["mcp__A__lire", "Bash", "mcp__A__x; rm", 5, "Write"]}', encoding="utf-8")
+    assert Config(dossier_donnees=str(d)).outils_lecture_permanents == ("mcp__A__lire",)
 
 
 def test_permanentes_fichier_trafique_ignore(centre):
     import json
     with open(centre.config.chemin("approbations_permanentes.json"), "w", encoding="utf-8") as f:
-        json.dump(["Write", "Edit", "ok\nmal", "x" * 400, 5, "WebFetch(domain:exemple.com)"], f)
-    assert centre.salles.permanents() == ["WebFetch(domain:exemple.com)"]
+        json.dump(["Write", "Edit", "Bash", "Bash(git status)", "WebFetch(domain:x.com)", "ok\nmal", "x" * 400, 5, "Read", "LS"], f)
+    assert centre.salles.permanents() == ["Read", "LS"]                                             # tout ce qui n'est pas en liste blanche est ignoré à la lecture
 
 
 def test_routes_permanentes(client, centre):
-    centre.salles.ajouter_permanent("mcp__X__y")
-    assert client.get("/api/approbations/permanentes").json() == {"motifs": ["mcp__X__y"], "auto": False}
-    assert client.request("DELETE", "/api/approbations/permanentes", json={"motif": "mcp__X__y"}).json() == {"motifs": []}
-    assert client.request("DELETE", "/api/approbations/permanentes", json={"motif": "mcp__X__y"}).status_code == 404
+    centre.salles.ajouter_permanent("Glob")
+    assert client.get("/api/approbations/permanentes").json() == {"motifs": ["Glob"], "auto": False}
+    assert client.request("DELETE", "/api/approbations/permanentes", json={"motif": "Glob"}).json() == {"motifs": []}
+    assert client.request("DELETE", "/api/approbations/permanentes", json={"motif": "Glob"}).status_code == 404
 
 
-def test_mode_toujours_approuver_poursuit_sans_redemander_les_actions_simples(centre, processus):
-    assert centre.salles.approbation_auto() is False                                              # désactivé par défaut
-    processus.scenarios["claude"] = flux_claude("Je regarde.", refus=[("t1", "mcp__AgentMail__list_messages", {})])
+def test_mode_toujours_approuver_seulement_la_liste_blanche(centre, processus):
+    assert centre.salles.approbation_auto() is False                                                # désactivé par défaut
+    processus.scenarios["claude"] = flux_claude("Je regarde.", refus=[("t1", "Read", {"file_path": "a.txt"})])
     conv = centre.salles.creer_conversation("claude")
-    evts = centre.salles.demarrer_envoi(conv["id"], "mes courriels", {}).attendre()
-    assert any(e["t"] == "approbation" for e in evts)                                             # mode désactivé : on demande
+    assert any(e["t"] == "approbation" for e in centre.salles.demarrer_envoi(conv["id"], "q", {}).attendre())   # mode désactivé : on demande
     centre.salles.definir_approbation_auto(True)
     conv2 = centre.salles.creer_conversation("claude")
     n = len(processus.lances)
     processus.scenarios["claude"] = lambda args, stdin: (flux_claude("Voilà.") if "approuvé" in (stdin or "")
-                                                         else flux_claude("Je regarde.", refus=[("t1", "mcp__AgentMail__list_messages", {})]))
-    evts = centre.salles.demarrer_envoi(conv2["id"], "mes courriels", {}).attendre()
-    assert not any(e["t"] == "approbation" for e in evts) and len(processus.lances) == n + 2       # relancé tout seul, une fois
-    assert "mcp__AgentMail__list_messages" in processus.lances[-1]["args"][processus.lances[-1]["args"].index("--allowedTools") + 1]
+                                                         else flux_claude("Je regarde.", refus=[("t1", "Read", {"file_path": "a.txt"})]))
+    evts = centre.salles.demarrer_envoi(conv2["id"], "q", {}).attendre()
+    assert not any(e["t"] == "approbation" for e in evts) and len(processus.lances) == n + 2         # relancé tout seul, une fois
     assert any(r["resultat"] == "auto" for r in centre.recus.derniers())
 
 
-def test_mode_toujours_approuver_redemande_si_une_action_n_est_pas_simple(centre, processus):
+@pytest.mark.parametrize("refus", [
+    [("t1", "Bash", {"command": "git status"})],
+    [("t1", "WebFetch", {"url": "https://exemple.com"})],
+    [("t1", "Write", {"file_path": "a.txt"})],
+    [("t1", "Read", {"file_path": "a.txt"}), ("t2", "Bash", {"command": "ls"})],           # un seul intrus dans le lot : rien d'automatique
+    [("t1", "mcp__AgentMail__list_messages", {})]])
+def test_mode_automatique_ne_touche_jamais_bash_web_ecriture_ni_mcp_non_liste(centre, processus, refus):
     centre.salles.definir_approbation_auto(True)
-    processus.scenarios["claude"] = flux_claude("x", refus=[("t1", "Bash", {"command": "git status"}), ("t2", "Write", {"file_path": "a.txt"})])
+    processus.scenarios["claude"] = flux_claude("x", refus=refus)
     conv = centre.salles.creer_conversation("claude")
     n = len(processus.lances)
-    evts = centre.salles.demarrer_envoi(conv["id"], "range", {}).attendre()
-    assert any(e["t"] == "approbation" for e in evts) and len(processus.lances) == n + 1           # une écriture dans le lot : rien d'automatique
+    evts = centre.salles.demarrer_envoi(conv["id"], "q", {}).attendre()
+    assert any(e["t"] == "approbation" for e in evts) and len(processus.lances) == n + 1
 
 
 def test_route_auto(client, centre):

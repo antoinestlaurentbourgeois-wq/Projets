@@ -1063,20 +1063,26 @@ class Salles:
 
     # ----- approbations (Claude) ---------------------------------------------------------------------------------------------
 
-    # « Toujours approuver » : liste de motifs (un outil, un domaine web, une commande exacte) mémorisée sur ce PC, révocable à tout moment.
-    # Jamais pour les outils qui modifient des fichiers, ni pour une demande jugée trop complexe. Valable pour la salle Claude seulement.
+    # « Toujours approuver » : liste d'outils EN LECTURE SEULE (liste blanche) mémorisée sur ce PC, révocable à tout moment. Jamais Bash, WebFetch ni
+    # les outils qui modifient des fichiers (toujours demandés un par un). Valable pour la salle Claude seulement.
+
+    def liste_blanche(self):
+        return ia.OUTILS_LECTURE_PERMANENTS + tuple(self.centre.config.outils_lecture_permanents)
 
     def permanent_possible(self, demande):
+        """Seulement un outil en lecture seule de la liste blanche, sans argument (motif = nom exact de l'outil)."""
         m = demande.get("motif")
-        return bool(isinstance(m, str) and 0 < len(m) <= 300 and "\n" not in m and demande.get("outil") not in ia.OUTILS_ECRITURE and m not in ia.OUTILS_ECRITURE)
+        return bool(isinstance(m, str) and m == demande.get("outil") and m in self.liste_blanche())
 
     def permanents(self):
+        """Approbations permanentes mémorisées, re-filtrées par la liste blanche À CHAQUE LECTURE (fichier trafiqué ou ancienne version : ignoré)."""
         try:
             with open(self.centre.config.chemin("approbations_permanentes.json"), encoding="utf-8") as f:
                 d = json.load(f)
         except (OSError, ValueError):
             return []
-        return [m for m in d if isinstance(m, str) and 0 < len(m) <= 300 and "\n" not in m and m not in ia.OUTILS_ECRITURE][:200] if isinstance(d, list) else []
+        blanche = self.liste_blanche()
+        return [m for m in d if isinstance(m, str) and m in blanche][:200] if isinstance(d, list) else []
 
     def _ecrire_permanents(self, liste):
         t = self.centre.config.chemin("approbations_permanentes.json")
@@ -1085,6 +1091,8 @@ class Salles:
         os.replace(t + ".tmp", t)
 
     def ajouter_permanent(self, motif):
+        if motif not in self.liste_blanche():
+            raise ErreurSalle("Cette action n'est pas dans la liste des outils en lecture seule : elle reste à approuver à chaque fois.", 403)
         with self._verrou:
             liste = self.permanents()
             if motif not in liste:
@@ -1097,8 +1105,8 @@ class Salles:
                 raise ErreurSalle("Cette approbation permanente n'existe pas.", 404)
             self._ecrire_permanents([m for m in liste if m != motif])
 
-    # Mode « toujours approuver » : désactivé par défaut. Approuve d'avance les demandes SIMPLES (mêmes règles que « Toujours approuver » : jamais les
-    # modifications de fichiers ni les commandes complexes). Dès qu'une demande du lot n'est pas simple, rien n'est automatique : le panneau s'affiche.
+    # Mode « toujours approuver » : désactivé par défaut. N'approuve d'avance que les outils de la liste blanche (lecture seule ; jamais Bash, WebFetch ni
+    # modifications de fichiers). Dès qu'une demande du lot n'y est pas, rien n'est automatique : le panneau s'affiche.
 
     def approbation_auto(self):
         try:

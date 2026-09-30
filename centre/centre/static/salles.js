@@ -708,8 +708,8 @@
       auto.addEventListener("change", function () {
         api("PUT", "/api/approbations/auto", { actif: auto.checked }).catch(function (e) { auto.checked = !auto.checked; if (e.message !== "session") C.informer("Réglage impossible", e.message); });
       });
-      var bloc = h("div", null, h("label", { class: "case-prive" }, auto, " Toujours approuver les actions simples (sans redemander)"),
-        h("p", { class: "doux", texte: "Jamais les modifications de fichiers ni les commandes complexes : celles-ci demandent toujours votre accord." }), liste);
+      var bloc = h("div", null, h("label", { class: "case-prive" }, auto, " Toujours approuver les outils en lecture seule (sans redemander)"),
+        h("p", { class: "doux", texte: "Jamais Bash, les pages web ni les modifications de fichiers : ceux-ci demandent toujours votre accord." }), liste);
       C.demander("Approbations permanentes", "Ces actions sont approuvées d'avance pour la salle Claude. Retirez-en une pour que Claude redemande.", [{ texte: "Fermer", valeur: true, style: "principal" }], bloc);
     }).catch(function (e) { if (e.message !== "session") C.informer("Lecture impossible", e.message); });
   }
@@ -722,18 +722,18 @@
       var etat = h("span", { class: "badge", texte: libelle[choix[d.id]] });
       function choisir(v) { choix[d.id] = v; etat.textContent = libelle[v]; }
       var bo = h("button", { class: "petit", type: "button", texte: "Approuver", disabled: !d.motif, onclick: function () { choisir("approuver"); } });
-      var bt = d.permanent_possible ? h("button", { class: "petit", type: "button", texte: "Toujours approuver", title: "Claude ne redemandera plus cette action exacte (révocable)", onclick: function () { choisir("toujours"); } }) : null;
+      var bt = d.permanent_possible ? h("button", { class: "petit", type: "button", texte: "Toujours approuver", title: "Claude ne redemandera plus cet outil en lecture seule (révocable)", onclick: function () { choisir("toujours"); } }) : null;
       var br = h("button", { class: "petit", type: "button", texte: "Refuser", onclick: function () { choisir("refuser"); } });
       return h("div", { class: "ligne" }, h("span", { class: "texte", texte: d.resume + (d.motif ? "" : " — trop complexe pour être approuvé ici : faites-le vous-même") }), bo, bt, br, etat);
     });
     return h("div", { class: "demande-approbation", role: "alert" },
-      h("strong", { texte: "Claude demande votre approbation" }), h("div", { class: "doux", texte: "Rien n'est exécuté sans votre accord. « Approuver » vaut pour cette demande seulement ; « Toujours approuver » mémorise cette action exacte (jamais les modifications de fichiers)." }), lignes,
+      h("strong", { texte: "Claude demande votre approbation" }), h("div", { class: "doux", texte: "Rien n'est exécuté sans votre accord. « Approuver » vaut pour cette demande seulement ; « Toujours approuver » n'existe que pour les outils en lecture seule (jamais Bash, pages web ni modifications de fichiers)." }), lignes,
       h("button", { class: "bouton principal", type: "button", texte: "Valider mes choix", onclick: function () {
         demarrerLive();
         lancerFlux("/api/conversations/" + S.conv.id + "/approbation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decisions: choix }) });
       } }),
       " ", demandes.every(function (d) { return d.permanent_possible; }) ? h("button", { class: "petit", type: "button", id: "toujours-tout", texte: "Tout approuver, toujours", onclick: function () {
-        C.confirmer("Toujours approuver ?", "Claude pourra désormais exécuter sans vous demander toutes les actions SIMPLES (lecture, recherche web, commandes courantes). Les modifications de fichiers et les commandes complexes demanderont toujours votre accord. Vous pouvez le désactiver dans « Gérer les approbations permanentes ».", "Toujours approuver").then(function (ok) {
+        C.confirmer("Toujours approuver ?", "Claude pourra désormais utiliser sans vous demander les outils EN LECTURE SEULE de la liste blanche (lire et chercher des fichiers). Les commandes (Bash), les pages web et les modifications de fichiers demanderont toujours votre accord. Vous pouvez le désactiver dans « Gérer les approbations permanentes ».", "Toujours approuver").then(function (ok) {
           if (!ok) return;
           var tout = {}; demandes.forEach(function (d) { tout[d.id] = "approuver"; });
           api("PUT", "/api/approbations/auto", { actif: true }).then(function () {
