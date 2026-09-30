@@ -328,6 +328,21 @@ def creer_app(centre=None, verrou=None, config=None):
     async def api_moteurs(request):
         return _json(await run_in_threadpool(centre.moteurs))
 
+    async def api_autorisations(request):
+        return _json(await run_in_threadpool(centre.autorisations))
+
+    async def api_autorisation_definir(request):
+        refus = sensible(request)
+        if refus:
+            return refus
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            return _json(await run_in_threadpool(centre.definir_autorisation, d.get("nom"), d.get("autorise"), d.get("limite_jour"), session_courte(request)))
+        except ErreurService as e:
+            return _erreur(str(e), e.code)
+
     async def api_ouvrir(request):
         refus = sensible(request)
         if refus:
@@ -820,7 +835,8 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/etat", api_etat), Route("/api/plan", api_plan),
         Route("/api/action", api_action_lire), Route("/api/action", api_action_lancer, methods=["POST"]),
         Route("/api/crew/mode", api_mode_lire), Route("/api/crew/mode", api_mode_changer, methods=["PUT"]),
-        Route("/api/crew/moteurs", api_moteurs), Route("/api/ouvrir", api_ouvrir, methods=["POST"]),
+        Route("/api/crew/moteurs", api_moteurs), Route("/api/crew/autorisations", api_autorisations),
+        Route("/api/crew/autorisations", api_autorisation_definir, methods=["PUT"]), Route("/api/ouvrir", api_ouvrir, methods=["POST"]),
         Route("/api/couts", api_couts), Route("/api/couts/plafonds", api_couts_plafonds, methods=["PUT"]),
         Route("/api/couts/deepseek", api_couts_deepseek),
         Route("/api/recus", api_recus), Route("/api/journal", api_journal),

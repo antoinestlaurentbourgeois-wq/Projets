@@ -96,7 +96,7 @@ input[type=text], input[type=password], input[type=number], input[type=search] {
 @media (max-width: 520px) { .grille2 { grid-template-columns: 1fr; } main { padding: 12px 16px; } }
 
 dialog { border: 1px solid var(--bord); border-radius: 14px; background: var(--carte); color: var(--texte);
-  max-width: min(480px, calc(100vw - 32px)); padding: 18px; }
+  max-width: min(480px, calc(100vw - 32px)); padding: 18px; max-height: calc(100dvh - 32px); overflow-y: auto; }
 dialog::backdrop { background: rgba(0, 0, 0, .45); }
 dialog h3 { margin: 0 0 8px; }
 dialog .boutons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
@@ -252,7 +252,11 @@ button.retour { display: inline-block; background: none; border: 0; color: var(-
 .bascule.on { background: var(--vert); border-color: var(--vert); color: #06210f; }
 .bascule.stop { background: var(--erreur-fond); border-color: var(--rouge); color: var(--rouge); }
 .bascule[hidden] { display: none; }
-.indice { margin-left: auto; font-size: 11px; color: var(--orange); min-height: 14px; }
+.indice { margin-left: auto; font-size: 11px; color: var(--orange); min-height: 14px; flex: 1 1 0; min-width: 0; text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }     /* une seule ligne : le texte qui change ne fait jamais passer le dock à la ligne */
+.saisie-rangee { position: relative; }
+.saisie-miroir { position: absolute !important; left: -9999px; top: 0; visibility: hidden; pointer-events: none; height: 0 !important; min-height: 0 !important; max-height: none !important;
+  overflow: hidden; box-sizing: border-box; }
 
 /* ---- Écran de verrouillage ---- */
 .verrou-page { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px; background: radial-gradient(120% 80% at 50% 0%, var(--carte2), var(--fond)); }
@@ -283,7 +287,7 @@ button.retour { display: inline-block; background: none; border: 0; color: var(-
 .tr-case.grise { opacity: .55; }
 .tr-raison { color: var(--orange); font-size: 12px; }
 .tr-options { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
-.tr-cout { margin-top: 6px; font-size: 12px; color: var(--doux); }
+.tr-cout { margin-top: 6px; font-size: 12px; color: var(--doux); min-height: 2.8em; }      /* 2 lignes réservées : le texte qui change ne bouge rien */
 .tr-cout.alerte { color: var(--rouge); font-weight: 700; }
 .bulle.tableronde { margin-right: 0; }
 .tr-grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-top: 6px; }

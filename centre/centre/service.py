@@ -268,8 +268,37 @@ class Centre:
         return {"moteurs": [{"nom": m.nom, "libelle": m.libelle, "local": m.local,
                              "capacite": self.C.texte_capacite(m.capacite), "cout": self.C.texte_cout(m.cout),
                              "forces": m.forces, "etat": m.etat, "etat_texte": self.C.TEXTE_ETAT_MOTEUR.get(m.etat, m.etat or "?"),
-                             "voyant": self.C.couleur_moteur(m.etat), "detail": m.detail}
+                             "voyant": self.C.couleur_moteur(m.etat), "detail": m.detail, "abonnement": m.abonnement}
                             for m in info.moteurs], "message": ""}
+
+    # ----- Claude et Codex (abonnement) dans Crew ------------------------------------------------
+
+    def _json_autorisations(self, liste):
+        return {"disponible": True, "message": "", "limite_min": self.C.LIMITE_MIN, "limite_max": self.C.LIMITE_MAX,
+                "autorisations": [{"nom": a.nom, "autorise": a.autorise, "limite_jour": a.limite_jour, "utilise_aujourdhui": a.utilise_aujourdhui}
+                                  for a in liste]}
+
+    def autorisations(self):
+        """Lecture seule. Crew arrêté ou injoignable : pas d'erreur, un message (l'écran l'affiche à la place des réglages)."""
+        try:
+            return self._json_autorisations(self.crew.lire_autorisations(crew_actif=self.etats["crew"].code == self.L.ACTIF))
+        except self.C.ErreurCrew as e:
+            return {"disponible": False, "message": str(e), "autorisations": []}
+
+    def definir_autorisation(self, nom, autorise, limite_jour=None, session=""):
+        """UNIQUEMENT sur un clic de l'utilisateur (route PUT protégée par la session, le NIP à distance et l'en-tête anti-CSRF)."""
+        if self.etats["crew"].code != self.L.ACTIF:
+            raise ErreurService("Le serveur Crew est éteint : allumez-le pour régler les autorisations.", 422)
+        try:
+            liste = self.crew.definir_autorisation(nom, autorise, limite_jour)
+        except self.C.ErreurDemande as e:
+            self.recus.ajouter("autorisation_crew", "refuse", ia=str(nom)[:20], session=session)
+            raise ErreurService(str(e), 400)
+        except self.C.ErreurCrew as e:
+            self.recus.ajouter("autorisation_crew", "erreur", ia=str(nom)[:20], session=session)
+            raise ErreurService(str(e), 422)
+        self.recus.ajouter("autorisation_crew", "ok", ia=nom, autorise=autorise, limite_jour=limite_jour, session=session)
+        return self._json_autorisations(liste)
 
     # ----- ouvrir une application ----------------------------------------------------------------
 

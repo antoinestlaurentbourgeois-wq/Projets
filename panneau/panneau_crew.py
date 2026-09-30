@@ -64,6 +64,19 @@ class Moteur:
     forces: list = field(default_factory=list)
     etat: str = ""
     detail: str = ""
+    abonnement: bool = False         # IA sur abonnement (Claude, Codex) : limites d'usage, jamais choisie tant qu'elle n'est pas autorisée
+
+
+NOMS_AUTORISATION = ("claude", "codex")
+LIMITE_MIN, LIMITE_MAX = 1, 500
+
+
+@dataclass
+class Autorisation:
+    nom: str
+    autorise: bool = False
+    limite_jour: int = 20
+    utilise_aujourdhui: int = 0
 
 
 @dataclass
@@ -78,6 +91,10 @@ class ErreurCrew(Exception):
 
 class ServeurEteint(ErreurCrew):
     pass
+
+
+class ErreurDemande(ErreurCrew):
+    """La demande elle-même est invalide (mauvais nom, limite hors 1–500…) : ce n'est pas une panne de Crew."""
 
 
 # ---------------------------------------------------------------------------
@@ -143,8 +160,28 @@ def analyser_moteurs(corps):
             nom=nom, libelle=str(m.get("libelle") or nom), local=bool(m.get("local")),
             capacite=m.get("capacite"), cout=m.get("cout"),
             forces=[str(f) for f in forces], etat=str(m.get("etat") or ""),
-            detail=str(m.get("detail") or "")))
+            detail=str(m.get("detail") or ""), abonnement=m.get("abonnement") is True))
     return moteurs
+
+
+def _entier(v, defaut=0):
+    return int(v) if isinstance(v, int) and not isinstance(v, bool) else defaut
+
+
+def analyser_autorisations(corps):
+    """Réponse de /autorisations -> [Autorisation]. Lève ValueError si illisible."""
+    try:
+        donnees = json.loads(corps)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"réponse /autorisations illisible : {e}")
+    liste = donnees.get("autorisations") if isinstance(donnees, dict) else None
+    if not isinstance(liste, list):
+        raise ValueError("réponse /autorisations inattendue (pas de liste « autorisations »)")
+    sortie = []
+    for a in liste:
+        if isinstance(a, dict) and a.get("nom") in NOMS_AUTORISATION:
+            sortie.append(Autorisation(a["nom"], a.get("autorise") is True, _entier(a.get("limite_jour"), 20), _entier(a.get("utilise_aujourdhui"))))
+    return sortie
 
 
 def texte_capacite(capacite):
@@ -287,6 +324,48 @@ class CrewDistant:
             raise ErreurCrew(f"Impossible d'écrire {R.FICHIER_MODE_CREW} : {e}")
         journal.info("Mode Crew changé dans le fichier (serveur éteint) : %s", ident)
         return self._info_depuis_fichier("Serveur Crew éteint")
+
+    def lire_autorisations(self, crew_actif=True):
+        """Autorisations de Claude et Codex dans Crew (lecture seule, aucun effet)."""
+        if not crew_actif:
+            raise ServeurEteint("Serveur Crew éteint")
+        statut, texte = self._appel("GET", R.URL_CREW_AUTORISATIONS)
+        if statut != 200:
+            raise ErreurCrew(f"/autorisations a répondu {statut}")
+        try:
+            return analyser_autorisations(texte)
+        except ValueError as e:
+            raise ErreurCrew(str(e))
+
+    def definir_autorisation(self, nom, autorise, limite_jour=None):
+        """Change l'autorisation d'UNE IA. À n'appeler que sur un clic de l'utilisateur. Renvoie la liste complète à jour."""
+        if nom not in NOMS_AUTORISATION:
+            raise ErreurDemande("IA inconnue : seules Claude et Codex se règlent ici.")
+        if not isinstance(autorise, bool):
+            raise ErreurDemande("« Autoriser » doit être oui ou non.")
+        corps = {"nom": nom, "autorise": autorise}
+        if limite_jour is not None:
+            if not isinstance(limite_jour, int) or isinstance(limite_jour, bool) or not LIMITE_MIN <= limite_jour <= LIMITE_MAX:
+                raise ErreurDemande(f"La limite par jour doit être un nombre entier de {LIMITE_MIN} à {LIMITE_MAX}.")
+            corps["limite_jour"] = limite_jour
+        statut, texte = self._appel("PUT", R.URL_CREW_AUTORISATIONS, corps)
+        if statut == 400:
+            raise ErreurDemande("Crew a refusé ce réglage" + self._detail_erreur(texte))
+        if statut != 200:
+            raise ErreurCrew(f"/autorisations a répondu {statut}")
+        try:
+            return analyser_autorisations(texte)
+        except ValueError as e:
+            raise ErreurCrew(str(e))
+
+    @staticmethod
+    def _detail_erreur(texte):
+        try:
+            d = json.loads(texte)
+            m = (d.get("error") or {}).get("message") if isinstance(d.get("error"), dict) else d.get("detail")
+            return f" ({str(m)[:200]})" if m else "."
+        except (ValueError, AttributeError, TypeError):
+            return "."
 
     def lire_moteurs(self, crew_actif=True):
         """Liste des IA que Crew peut utiliser (seulement si le serveur tourne)."""

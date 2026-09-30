@@ -154,13 +154,24 @@
     var pret = !!(s && s.disponible);
     var saisie = h("textarea", { id: "saisie", rows: "1", placeholder: pret ? "Écrire à " + s.libelle + "…" : "Cette salle est indisponible", disabled: !pret || S.enCours, "aria-label": "Votre message" });
     saisie.value = S.brouillon || ""; saisie.dataset.conv = S.conv ? S.conv.id : "";
-    function ajuster() { saisie.style.height = "auto"; saisie.style.height = Math.min(saisie.scrollHeight, 140) + "px"; }
+    // Hauteur mesurée sur un miroir invisible : la vraie zone n'est jamais repliée puis rouverte (ce qui faisait « sauter » la page à chaque touche).
+    var miroir = h("textarea", { class: "saisie-miroir", rows: "1", tabindex: "-1", "aria-hidden": "true", readonly: "" });
+    function ajuster() {
+      if (!saisie.isConnected) return;
+      if (!miroir.isConnected) saisie.parentNode.appendChild(miroir);
+      miroir.style.width = saisie.offsetWidth + "px";
+      miroir.value = saisie.value + "\u200b";
+      var bord = getComputedStyle(saisie).boxSizing === "border-box" ? saisie.offsetHeight - saisie.clientHeight : 0;
+      var cible = Math.max(44, Math.min(miroir.scrollHeight + bord, 140)) + "px";
+      if (saisie.style.height !== cible) saisie.style.height = cible;
+    }
     saisie.addEventListener("input", function () { ajuster(); estimer(saisie, s); });
     saisie.addEventListener("keydown", function (e) {
       var tactile = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
       if (e.key === "Enter" && !e.shiftKey && !tactile) { e.preventDefault(); envoyer(); }
     });
     setTimeout(ajuster, 0);
+    if (window.ResizeObserver) new ResizeObserver(function () { if (saisie.isConnected) ajuster(); }).observe(saisie);          // rotation, clavier…
     var voixOk = !!(S.voixOpts && S.voixOpts.disponible);
     var bouton = h("button", { class: "cbbar", id: "ptt", type: "button", "aria-label": "Maintenir pour parler", disabled: !pret || S.enCours },
       "🎙 ", h("span", { id: "ptt-label", texte: voixOk ? "MAINTENIR POUR PARLER" : "MAINTENIR POUR PARLER (voix indisponible)" }));
@@ -194,8 +205,35 @@
   function dollars3(n) { return (Number(n) || 0).toLocaleString("fr-CA", { style: "currency", currency: "USD", minimumFractionDigits: 3, maximumFractionDigits: 3 }); }
 
   // Panneau de la table ronde : cases à cocher (grisées avec la raison), options, coût estimé AVANT l'envoi.
+  function texteCoutCase(d, coche) {
+    if (!d || !d.disponible) return "";
+    if (d.cout_estime_usd) return " ≈ " + dollars3(d.cout_estime_usd);
+    return coche && d.cout_estime_usd === null ? " · coût inconnu" : "";
+  }
+  function grisageTr(est) {                      // ce qui change la STRUCTURE du panneau (le reste se met à jour sur place)
+    return est && est.ok ? est.participants.map(function (p) { return p.id + ":" + (p.disponible ? 1 : 0) + ":" + (p.raison || ""); }).join("|") : "?";
+  }
+  function texteResumeTr() {
+    var est = S.tr.est;
+    return "🎯 Table ronde — " + S.tr.participants.length + " IA, via Crew" + (est && est.ok ? " · " + auMoins(est) + dollars3(est.total_usd) + (est.depasse ? " ⚠" : "") : "") + (S.tr.critique ? " · critique" : "");
+  }
+  // Met à jour le panneau SANS le reconstruire (la page ne bouge pas pendant la frappe). Renvoie false si la structure a changé.
+  function majPanneauTrSurPlace() {
+    var resume = document.getElementById("tr-resume");
+    if (!resume || grisageTr(S.tr.est) !== S.tr.sigDessinee) return false;
+    resume.textContent = texteResumeTr();
+    var dispo = {};
+    if (S.tr.est && S.tr.est.ok) S.tr.est.participants.forEach(function (p) { dispo[p.id] = p; });
+    Object.keys(dispo).forEach(function (id) {
+      var el = document.getElementById("tr-c-" + id);
+      if (el) el.textContent = texteCoutCase(dispo[id], S.tr.participants.indexOf(id) >= 0);
+    });
+    trAfficherCout();
+    return true;
+  }
   function panneauTr() {
     var est = S.tr.est, dispo = {};
+    S.tr.sigDessinee = grisageTr(est);
     if (est && est.ok) est.participants.forEach(function (p) { dispo[p.id] = p; });
     var cases = (S.tr.options ? S.tr.options.participants : Object.keys(LIBELLE_TR).filter(function (k) { return k !== "synthese"; }).map(function (id) { return { id: id, libelle: LIBELLE_TR[id] }; })).map(function (p) {
       var d = dispo[p.id], grise = !!(d && !d.disponible), coche = S.tr.participants.indexOf(p.id) >= 0 && !grise;
@@ -206,8 +244,7 @@
         stocker("tr.participants", JSON.stringify(S.tr.participants)); trEstimer();
       });
       return h("label", { class: "tr-case" + (grise ? " grise" : ""), title: grise ? (d.raison || "indisponible") : "" }, c, " " + p.libelle,
-        d && d.disponible && d.cout_estime_usd ? h("span", { class: "doux", texte: " ≈ " + dollars3(d.cout_estime_usd) }) : null,
-        d && d.disponible && coche && d.cout_estime_usd === null ? h("span", { class: "doux", texte: " · coût inconnu" }) : null,
+        h("span", { class: "doux", id: "tr-c-" + p.id, texte: texteCoutCase(d, coche) }),
         grise ? h("span", { class: "tr-raison", texte: " — " + (d.raison || "indisponible") }) : null);
     });
     var sans = h("input", { type: "checkbox", id: "tr-sans", checked: !S.tr.synthese });
@@ -228,8 +265,7 @@
     });
     var ligne = h("div", { class: "tr-cout", id: "tr-cout", role: "status" });
     trAfficherCout(ligne);
-    var resume = "🎯 Table ronde — " + S.tr.participants.length + " IA, via Crew" + (est && est.ok ? " · " + auMoins(est) + dollars3(est.total_usd) + (est.depasse ? " ⚠" : "") : "") + (S.tr.critique ? " · critique" : "");
-    var panneau = h("details", { class: "tr-panneau" }, h("summary", { texte: resume }),
+    var panneau = h("details", { class: "tr-panneau" }, h("summary", { id: "tr-resume", texte: texteResumeTr() }),
       h("div", { class: "tr-cases" }, cases),
       h("div", { class: "tr-options" }, h("label", null, sans, " Sans synthèse"), h("label", null, crit, " Tour de critique (2e tour)")),
       ligne);
@@ -243,7 +279,7 @@
     el.classList.toggle("alerte", !!(e && e.ok && e.depasse));
     if (!e) el.textContent = "Estimation du coût en cours…";
     else if (!e.ok) el.textContent = "⚠ " + e.message + " (aucune IA ne sera appelée)";
-    else el.textContent = "Coût estimé : " + (e.total_incomplet ? "au moins " : "") + dollars3(e.total_usd) + " au total" + (e.total_incomplet ? " (tarif inconnu pour au moins une IA)" : "") + (e.depasse ? " — ⚠ au-dessus du seuil de " + dollars3(e.seuil_usd) + " : une confirmation sera demandée." : " (seuil " + dollars3(e.seuil_usd) + ").");
+    else el.textContent = "Coût estimé : " + (e.total_incomplet ? "au moins " : "") + dollars3(e.total_usd) + " au total" + (e.total_incomplet ? " (tarif inconnu pour au moins une IA)" : "") + (e.depasse ? " — ⚠ au-dessus du seuil de " + dollars3(e.seuil_usd) + " : confirmation demandée." : " (seuil " + dollars3(e.seuil_usd) + ").");
   }
   var minuteurTr = null;
   function trEstimer(opts) {
@@ -261,7 +297,7 @@
           S.tr.est = e;
           var grises = e.ok ? e.participants.filter(function (p) { return !p.disponible; }).map(function (p) { return p.id; }) : [];
           if (grises.length) S.tr.participants = S.tr.participants.filter(function (x) { return grises.indexOf(x) < 0; });
-          if (C.courante() === "salles" && trActive()) redessinerDockEnGardantSaisie();
+          if (C.courante() === "salles" && trActive() && !majPanneauTrSurPlace()) redessinerDockEnGardantSaisie();
           resolve(e);
         });
       }, 250);
@@ -337,21 +373,58 @@
     }).catch(function (e) { C.informer("Impossible d'ouvrir", e.message); });
   }
 
-  // Réglages de la salle Crew : menu déroulant (liste fixe côté Centre, sans rien demander à Crew).
+  // Réglages de la salle Crew : menu de modèles (liste fixe) + « IA sur abonnement dans Crew » (Claude, Codex).
+  var AIDE_ABONNEMENT = "Ces IA passent par votre abonnement (limites d'usage) et leurs questions partent dans le nuage. Elles répondent en texte seulement, sans accès à vos fichiers. Jamais utilisées en mode Confidentiel ou Ultra.";
+  var NOM_ABONNEMENT = { claude: "Claude", codex: "ChatGPT / Codex" };
   function reglagesCrew(s, m) {
-    var actuel = s.modele || m.defaut, connu = m.modeles.indexOf(actuel) >= 0;
-    var options = m.modeles.map(function (id) {
-      return { valeur: id, texte: id + (id === m.defaut ? " (par défaut)" : "") + (!connu && id === m.defaut ? " — recommandé pour remplacer" : "") };
-    });
-    var expl = {}; m.modeles.forEach(function (id) { expl[id] = m.explications[id]; });
-    if (!connu) {                                                      // valeur enregistrée hors liste : affichée, jamais supprimée en silence
-      options.unshift({ valeur: actuel, texte: actuel + " — inconnue" });
-      expl[actuel] = "⚠ « " + actuel + " » n'est pas un modèle connu de Crew (ancienne valeur ou faute de frappe) : Crew répondrait « Modèle inconnu ». Choisissez " + m.defaut + " pour la remplacer.";
-    }
-    var champs = [{ nom: "modele", label: "Modèle", type: "select", valeur: actuel, options: options, explications: expl }];
-    return C.formulaire("Réglages : " + s.libelle, "La table ronde ne se choisit pas ici : elle a son bouton dans la salle Crew.", champs, "Enregistrer").then(function (v) {
-      if (!v) return;
-      return api("PUT", "/api/salles/" + s.id + "/reglage", { modele: v.modele }).then(charger);
+    return api("GET", "/api/crew/autorisations").catch(function (e) { return { disponible: false, message: e.message, autorisations: [] }; }).then(function (aut) {
+      var actuel = s.modele || m.defaut, connu = m.modeles.indexOf(actuel) >= 0;
+      var options = m.modeles.map(function (id) {
+        return { valeur: id, texte: id + (id === m.defaut ? " (par défaut)" : "") + (!connu && id === m.defaut ? " — recommandé pour remplacer" : "") };
+      });
+      var expl = {}; m.modeles.forEach(function (id) { expl[id] = m.explications[id]; });
+      if (!connu) {                                                    // valeur enregistrée hors liste : affichée, jamais supprimée en silence
+        options.unshift({ valeur: actuel, texte: actuel + " — inconnue" });
+        expl[actuel] = "⚠ « " + actuel + " » n'est pas un modèle connu de Crew (ancienne valeur ou faute de frappe) : Crew répondrait « Modèle inconnu ». Choisissez " + m.defaut + " pour la remplacer.";
+      }
+      var champs = [{ nom: "modele", label: "Modèle", type: "select", valeur: actuel, options: options, explications: expl }];
+      var texte = "La table ronde ne se choisit pas ici : elle a son bouton dans la salle Crew.\n\nIA sur abonnement dans Crew — " + AIDE_ABONNEMENT;
+      var avant = {};
+      if (aut.disponible) {
+        aut.autorisations.forEach(function (a) {
+          avant[a.nom] = a;
+          champs.push({ nom: "aut_" + a.nom, label: "Autoriser Crew à utiliser " + (NOM_ABONNEMENT[a.nom] || a.nom), type: "checkbox", valeur: a.autorise });
+          champs.push({ nom: "lim_" + a.nom, label: "Limite par jour — " + (NOM_ABONNEMENT[a.nom] || a.nom) + " (" + aut.limite_min + " à " + aut.limite_max + ")",
+                        type: "number", min: aut.limite_min, max: aut.limite_max, valeur: a.limite_jour,
+                        aide: a.utilise_aujourdhui + (a.utilise_aujourdhui > 1 ? " appels utilisés" : " appel utilisé") + " aujourd'hui" });
+        });
+      } else {
+        texte += "\n\n" + (aut.message ? aut.message + " : les autorisations s'afficheront quand Crew sera allumé." : "Autorisations indisponibles pour le moment.");
+      }
+      return C.formulaire("Réglages : " + s.libelle, texte, champs, "Enregistrer").then(function (v) {
+        if (!v) return;
+        var changements = [];
+        Object.keys(avant).forEach(function (nom) {
+          var lim = Number(v["lim_" + nom]), a = avant[nom];
+          if (!/^\d+$/.test(String(v["lim_" + nom]).trim()) || lim < aut.limite_min || lim > aut.limite_max) { changements.erreur = "La limite par jour de " + NOM_ABONNEMENT[nom] + " doit être un nombre entier de " + aut.limite_min + " à " + aut.limite_max + "."; return; }
+          if (v["aut_" + nom] !== a.autorise || lim !== a.limite_jour) changements.push({ nom: nom, autorise: v["aut_" + nom], limite_jour: lim, active: v["aut_" + nom] && !a.autorise });
+        });
+        if (changements.erreur) { C.informer("Réglage impossible", changements.erreur); return; }
+        // Confirmation seulement pour AUTORISER (désautoriser : sans confirmation). Rien n'est envoyé à Crew sans ce clic sur « Enregistrer ».
+        var aConfirmer = changements.filter(function (c) { return c.active; });
+        var suite = aConfirmer.length
+          ? C.confirmer("Autoriser " + aConfirmer.map(function (c) { return NOM_ABONNEMENT[c.nom]; }).join(" et ") + " dans Crew ?",
+              "• Passe par votre abonnement (limites d'usage).\n• Les questions partent dans le nuage ; réponses en texte seulement, sans accès à vos fichiers.\n• Jamais utilisée en mode Confidentiel ou Ultra.", "Autoriser")
+          : Promise.resolve(true);
+        return suite.then(function (ok) {
+          if (!ok) return;
+          var chaine = api("PUT", "/api/salles/" + s.id + "/reglage", { modele: v.modele });
+          changements.forEach(function (c) {
+            chaine = chaine.then(function () { return api("PUT", "/api/crew/autorisations", { nom: c.nom, autorise: c.autorise, limite_jour: c.limite_jour }); });
+          });
+          return chaine.then(charger).catch(function (e) { C.informer("Réglage impossible", e.message); });
+        });
+      });
     });
   }
 
@@ -728,6 +801,14 @@
   };
   C.lireFlux = lireFlux;
   C.rendre = rendre;
+  // Si le fil était en bas, il le reste quand le bas d'écran grandit ou rétrécit (nouvelle ligne de saisie, panneau…) : rien ne « saute ».
+  (function () {
+    var zone = C.page, enBas = true;
+    zone.addEventListener("scroll", function () { enBas = zone.scrollHeight - zone.scrollTop - zone.clientHeight < 48; }, { passive: true });
+    if (window.ResizeObserver) new ResizeObserver(function () {
+      if (C.courante() === "salles" && enBas) zone.scrollTop = zone.scrollHeight;
+    }).observe(zone);
+  })();
   C.pages.salles = pageSalles;
   C.pages.tiroir = pageTiroir;
 })();
