@@ -40,7 +40,7 @@
 
   function interrupteur(m, actif, desactive, raison) {
     var piste = h("span", { class: "piste", "aria-hidden": "true" }, h("span", { class: "bouton-rond" }));
-    return h("button", { class: "interrupteur" + (actif ? " on" : ""), type: "button", role: "switch", "aria-checked": actif ? "true" : "false",
+    return h("button", { class: "glissiere" + (actif ? " on" : ""), type: "button", role: "switch", "aria-checked": actif ? "true" : "false",
       "aria-label": "Chef d'équipe : " + m.libelle, title: desactive ? raison : (actif ? "Chef actuel" : "Choisir ce modèle comme chef"),
       disabled: !!desactive, onclick: function () { cliquer(m, actif); } }, piste);
   }
