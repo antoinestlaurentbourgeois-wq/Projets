@@ -343,6 +343,21 @@ def creer_app(centre=None, verrou=None, config=None):
         except ErreurService as e:
             return _erreur(str(e), e.code)
 
+    async def api_chef(request):
+        return _json(await run_in_threadpool(centre.chef))
+
+    async def api_chef_definir(request):
+        refus = sensible(request)
+        if refus:
+            return refus
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            return _json(await run_in_threadpool(centre.definir_chef, d.get("modele"), session_courte(request)), 202)
+        except ErreurService as e:
+            return _erreur(str(e), e.code)
+
     async def api_ouvrir(request):
         refus = sensible(request)
         if refus:
@@ -472,7 +487,7 @@ def creer_app(centre=None, verrou=None, config=None):
 
     async def api_conversations(request):
         salle = request.query_params.get("salle")
-        return _json({"conversations": await run_in_threadpool(salles.conversations.lister, salle if salle in SALLES else None),
+        return _json({"conversations": await run_in_threadpool(salles.conversations.lister, salle if salles.existe(salle) else None),
                       "actives": salles.en_cours()})
 
     async def api_conversation_creer(request):
@@ -835,7 +850,8 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/etat", api_etat), Route("/api/plan", api_plan),
         Route("/api/action", api_action_lire), Route("/api/action", api_action_lancer, methods=["POST"]),
         Route("/api/crew/mode", api_mode_lire), Route("/api/crew/mode", api_mode_changer, methods=["PUT"]),
-        Route("/api/crew/moteurs", api_moteurs), Route("/api/crew/autorisations", api_autorisations),
+        Route("/api/crew/moteurs", api_moteurs), Route("/api/crew/autorisations", api_autorisations), Route("/api/crew/chef", api_chef),
+        Route("/api/crew/chef", api_chef_definir, methods=["PUT"]),
         Route("/api/crew/autorisations", api_autorisation_definir, methods=["PUT"]), Route("/api/ouvrir", api_ouvrir, methods=["POST"]),
         Route("/api/couts", api_couts), Route("/api/couts/plafonds", api_couts_plafonds, methods=["PUT"]),
         Route("/api/couts/deepseek", api_couts_deepseek),

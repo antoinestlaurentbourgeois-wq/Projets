@@ -72,6 +72,12 @@ def demo():
     sim.delai_docker, sim.delai_webui, sim.delai_crew = 2, 1, 1
     sim.tout_allumer()
     sim.table_ronde_indispos = {"codex": "Codex : abonnement ChatGPT non connecté"}
+    # Démo du chef d'équipe : un modèle dont le test est mauvais, un modèle dont le chargement échoue.
+    sim.chef_modeles_lm.append({"id": "demo/modele-trop-gros", "libelle": "Modèle trop gros (démo)", "taille_go": 31.0, "params": "70B", "architecture": "demo",
+                                "quantification": "Q4", "contexte": 8000, "parallele": 1,
+                                "avertissement": "Ce modèle est presque aussi gros que votre mémoire vidéo : le contexte sera réduit"})
+    sim.chef_test_mauvais_pour = {"google/gemma-3-27b"}
+    sim.chef_echec_pour = {"demo/modele-trop-gros": "Mémoire vidéo insuffisante pour charger ce modèle"}
     sim.cles.update({"GEMINI_API_KEY": "cle-demo", "XAI_API_KEY": "cle-demo", "OPENAI_API_KEY": "cle-demo"})
     demarrer(config, sim, ReseauDemo(), ProcessusDemo(), AmontDemo())
 

@@ -52,6 +52,12 @@ class TableRonde:
 
     # ----- ce que l'écran affiche avant tout choix ---------------------------------------------------------------
 
+    def libelle(self, ident):
+        """« gemma » du contrat désigne le CHEF ACTUEL : affiché « Chef local (<modèle>) » (l'identifiant du contrat ne change pas)."""
+        if ident == "gemma":
+            return f"Chef local ({self.centre.nom_chef()})"
+        return LIBELLE.get(ident, ident)
+
     def options(self):
         c = self.centre
         c.assurer_etats()
@@ -59,7 +65,7 @@ class TableRonde:
         return {"crew_actif": crew_actif,
                 "raison": "" if crew_actif else "Crew est arrêté (ou en Mode jeu) : la table ronde est indisponible. Les salles individuelles fonctionnent toujours.",
                 "seuil_usd": c.config.seuil_table_ronde_usd, "defaut": list(DEFAUT),
-                "participants": [{"id": i, "libelle": l, "defaut": i in DEFAUT} for i, l, _ in PARTICIPANTS]}
+                "participants": [{"id": i, "libelle": self.libelle(i), "defaut": i in DEFAUT} for i, l, _ in PARTICIPANTS]}
 
     def corps(self, messages, participants, critique, synthese, stream=False):
         return {"model": MODELE, "messages": messages, "stream": stream,
@@ -129,7 +135,7 @@ class TableRonde:
         if dispo is None:
             base["message"] = erreur
             return base
-        sortie = {i: {"id": i, "libelle": LIBELLE[i], "cout_estime_usd": None,
+        sortie = {i: {"id": i, "libelle": self.libelle(i), "cout_estime_usd": None,
                       "disponible": dispo.get(i, {}).get("disponible", False),
                       "raison": dispo.get(i, {}).get("raison") or ("" if i in dispo else "Crew ne connaît pas cette IA")}
                   for i in IDS}

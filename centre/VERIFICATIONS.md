@@ -61,3 +61,12 @@
 - [ ] Tour de critique : surcoût affiché, 2e tour dans les colonnes.
 - [ ] Crew arrêté / Mode jeu : table ronde désactivée, les autres salles marchent.
 - [ ] Téléphone : colonnes repliables l'une sous l'autre.
+
+## H. Chef d'équipe (vrai Crew + vrai LM Studio requis)
+- [ ] Page « Chef d'équipe » : les modèles LLM de LM Studio sont listés (pas les embeddings), un seul interrupteur actif = le chef.
+- [ ] Désactiver le chef : impossible (bulle). Activer un autre : confirmation, rien ne part avant « Changer de chef ».
+- [ ] Changement : progression par étapes, puis bandeau vert avec le résultat du test ; les salles changent de couleur (une seule verte).
+- [ ] Test mauvais : avertissement + « Revenir à … ». Échec de chargement : bandeau rouge, l'ancien chef est remis.
+- [ ] « Tout démarrer » avec un autre chef : seul ce chef est chargé (pas de deuxième copie de gemma) ; « Mode jeu » libère la carte.
+- [ ] Crew arrêté : la page lit `chef_crew.json`, interrupteurs désactivés avec la raison.
+- [ ] `lms load --parallel` accepté par votre version de `lms` (sinon repli automatique).

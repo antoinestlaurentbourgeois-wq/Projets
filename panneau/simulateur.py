@@ -73,6 +73,26 @@ class Simulateur:
         self.moteurs_crew_supplementaires = []   # pour tester l'ajout d'une IA
         # Claude et Codex dans Crew : abonnement, DÉCOCHÉS par défaut, limite de 20 appels par jour.
         self.autorisations = {n: {"autorise": False, "limite_jour": 20, "utilise_aujourdhui": 0} for n in ("claude", "codex")}
+        # Chef local de Crew (GET/PUT /chef) : modèles LLM proposés (jamais d'embeddings) et changement en arrière-plan à étapes.
+        self.chef_id = R.MODELE_GEMMA
+        self.chef_modeles_lm = [
+            {"id": R.MODELE_GEMMA, "libelle": "Gemma 4 12B (QAT)", "taille_go": 7.15, "params": "12B", "architecture": "gemma4", "quantification": "Q4_0",
+             "contexte": 32000, "parallele": 4, "avertissement": None},
+            {"id": "qwen/qwen3-14b", "libelle": "Qwen3 14B", "taille_go": 8.9, "params": "14B", "architecture": "qwen3", "quantification": "Q4_K_M",
+             "contexte": 32000, "parallele": 4, "avertissement": None},
+            {"id": "google/gemma-3-27b", "libelle": "Gemma 3 27B", "taille_go": 16.5, "params": "27B", "architecture": "gemma3", "quantification": "Q4_K_M",
+             "contexte": 16000, "parallele": 2,
+             "avertissement": "Ce modèle est presque aussi gros que votre mémoire vidéo : le contexte sera réduit"},
+        ]
+        self.chef_changement = None        # None ou dict du contrat (etat, cible, etape, message, debut)
+        self.chef_pas = 0
+        self.chef_conflit = False          # « un travail Crew est en cours » (409)
+        self.chef_echec = ""               # message : le chargement de la cible échoue, l'ancien chef est rechargé
+        self.chef_test_mauvais = False     # moins de 3 JSON valides sur 3
+        self.chef_test_mauvais_pour = set()   # idem, seulement pour ces modèles (démo)
+        self.chef_echec_pour = {}          # modèle -> message d'échec de chargement (démo)
+        self.chef_dernier_test = None
+        self.lms_parallel_supporte = True  # False : « lms load --parallel » est refusé (ancienne version)
         self.programmes_abonnement_absents = set()   # ex. {"claude"} -> « Programme « claude » introuvable »
         self.conversations = []   # [{"id", "updated_at", "models": [...]}] pour Open WebUI
         self.webui_liste_format = "liste"        # « liste » ou « items »
@@ -189,7 +209,7 @@ class Simulateur:
             auth = (entetes or {}).get("Authorization", "")
             self.requetes.append((methode, url, bool(auth)))
             if url.startswith(R.URL_CREW_MODE) or url.startswith(R.URL_CREW_MOTEURS) \
-                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]) or url in (R.URL_CREW_TABLE_ESTIMATION, R.URL_CREW_TABLE_PARTICIPANTS, R.URL_CREW_AUTORISATIONS):
+                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]) or url in (R.URL_CREW_TABLE_ESTIMATION, R.URL_CREW_TABLE_PARTICIPANTS, R.URL_CREW_AUTORISATIONS, R.URL_CREW_CHEF):
                 return self._crew_api(methode, url, auth, corps_json)
             if url.startswith(R.URL_WEBUI_BASE + "/api/v1/chats"):
                 return self._webui_api(url, auth)
@@ -297,6 +317,8 @@ class Simulateur:
             return Resultat(0, "Stopped the server on port 1234.")
         if args and args[0] == "load":
             cle = args[1]
+            if "--parallel" in args and not self.lms_parallel_supporte:
+                return Resultat(1, "", "error: unknown option '--parallel'")
             if cle not in self.modeles:
                 return Resultat(1, "", f"Error: model not found: {cle}")
             self.modeles[cle] += 1     # comme le vrai : charge une copie de plus
@@ -371,6 +393,8 @@ class Simulateur:
             return 200, json.dumps({"moteurs": moteurs}, ensure_ascii=False)
         if url == R.URL_CREW_AUTORISATIONS:
             return self._crew_autorisations(methode, corps_json)
+        if url == R.URL_CREW_CHEF:
+            return self._crew_chef(methode, corps_json)
         if url == R.URL_CREW_TABLE_PARTICIPANTS:
             return self._crew_table_participants()
         if url == R.URL_CREW_TABLE_ESTIMATION:
@@ -385,6 +409,60 @@ class Simulateur:
             self.fichiers[R.FICHIER_MODE_CREW] = json.dumps({"mode": demande})
         actuel = json.loads(self.fichiers.get(R.FICHIER_MODE_CREW) or "{}").get("mode", "econome")
         return 200, json.dumps({"mode": actuel, "modes": self.modes_crew}, ensure_ascii=False)
+
+    # ----- serveur Crew : /chef (contrat du vrai Crew) -------------------------------------------
+
+    def _etapes_chef(self, cible):
+        return ["Vérification qu'aucun travail n'est en cours…", f"Déchargement de {self.chef_id}…", f"Chargement de {cible}…", "Test de 3 demandes…"]
+
+    def _chef_avancer(self):
+        ch = self.chef_changement
+        if not ch or ch["etat"] != "en_cours":
+            return
+        etapes = self._etapes_chef(ch["cible"])
+        if self.chef_pas < len(etapes) - 1:
+            self.chef_pas += 1
+            ch["etape"] = etapes[self.chef_pas]
+            return
+        ancien = self.chef_id
+        echec = self.chef_echec or self.chef_echec_pour.get(ch["cible"], "")
+        if echec:
+            ch.update(etat="echec", etape="Rechargement de l'ancien chef", message=f"{echec}. Crew a remis {ancien}.")
+            return
+        self.modeles.setdefault(ch["cible"], 0)
+        if self.modeles.get(ancien, 0) > 0:
+            self.modeles[ancien] = 0
+        self.modeles[ch["cible"]] = 1
+        self.chef_id = ch["cible"]
+        info = next((m for m in self.chef_modeles_lm if m["id"] == ch["cible"]), {})
+        self.fichiers[R.FICHIER_CHEF] = json.dumps({"modele": self.chef_id, "contexte": info.get("contexte", 32000), "parallele": info.get("parallele", 4)})
+        mauvais = self.chef_test_mauvais or self.chef_id in self.chef_test_mauvais_pour
+        self.chef_dernier_test = {"modele": self.chef_id, "ok": not mauvais, "json_valides": 1 if mauvais else 3, "sur": 3, "duree_moy_s": 1.1}
+        ch.update(etat="termine", etape="Terminé", message="")
+
+    def _crew_chef(self, methode, corps):
+        if methode == "GET":
+            self._chef_avancer()
+            if not self.lms_serveur:
+                return 200, json.dumps({"lmstudio": False, "chef": self.chef_id, "chef_charge": False, "changement": self.chef_changement, "modeles": [],
+                                        "dernier_test": self.chef_dernier_test, "message": "LM Studio est arrêté : allumez-le pour changer de chef."})
+            modeles = [dict(m, charge=self.modeles.get(m["id"], 0) > 0, chef=m["id"] == self.chef_id) for m in self.chef_modeles_lm]
+            return 200, json.dumps({"lmstudio": True, "chef": self.chef_id, "chef_charge": self.modeles.get(self.chef_id, 0) > 0,
+                                    "changement": self.chef_changement, "modeles": modeles, "dernier_test": self.chef_dernier_test, "message": ""}, ensure_ascii=False)
+        if methode != "PUT" or not isinstance(corps, dict):
+            return 400, '{"error": {"message": "corps invalide"}}'
+        cible = corps.get("modele")
+        if not self.lms_serveur:
+            return 503, '{"error": {"message": "LM Studio est arrêté"}}'
+        if cible not in [m["id"] for m in self.chef_modeles_lm]:
+            return 400, '{"error": {"message": "modèle inconnu ou modèle d\'embeddings"}}'
+        if self.chef_conflit:
+            return 409, '{"error": {"message": "un travail Crew est en cours"}}'
+        if self.chef_changement and self.chef_changement["etat"] == "en_cours":
+            return 409, '{"error": {"message": "un changement est déjà en cours"}}'
+        self.chef_pas = 0
+        self.chef_changement = {"etat": "en_cours", "cible": cible, "etape": self._etapes_chef(cible)[0], "message": "", "debut": int(time.time())}
+        return 202, json.dumps({"changement": self.chef_changement}, ensure_ascii=False)
 
     # ----- serveur Crew : /autorisations (contrat du vrai Crew) ---------------------------------
 

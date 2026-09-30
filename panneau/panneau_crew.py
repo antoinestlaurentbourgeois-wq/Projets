@@ -21,7 +21,7 @@ import threading
 from dataclasses import dataclass, field
 
 import reglages as R
-from panneau_logique import ACTIF, ARRETE, INCONNU
+from panneau_logique import ACTIF, ARRETE, INCONNU, Chef, chef_depuis_donnees, identifiant_modele_valide, lire_chef_fichier  # noqa: F401
 
 journal = logging.getLogger("panneau")
 
@@ -80,6 +80,18 @@ class Autorisation:
 
 
 @dataclass
+class InfoChef:
+    """Réponse de GET /chef (Crew)."""
+    lmstudio: bool = True
+    chef: str = ""
+    chef_charge: bool = False
+    changement: object = None       # None ou {"etat": en_cours|termine|echec, "cible", "etape", "message", "debut"}
+    modeles: list = field(default_factory=list)
+    dernier_test: object = None     # None ou {"modele", "ok", "json_valides", "sur", "duree_moy_s"}
+    message: str = ""
+
+
+@dataclass
 class InfoMoteurs:
     moteurs: object = None           # liste de Moteur, ou None si indisponible
     message: str = ""
@@ -94,7 +106,11 @@ class ServeurEteint(ErreurCrew):
 
 
 class ErreurDemande(ErreurCrew):
-    """La demande elle-même est invalide (mauvais nom, limite hors 1–500…) : ce n'est pas une panne de Crew."""
+    """La demande elle-même est invalide (mauvais nom, limite hors 1–500…) ou refusée par Crew (409, 503) : pas une panne."""
+
+    def __init__(self, message, code=400):
+        super().__init__(message)
+        self.code = code
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +178,53 @@ def analyser_moteurs(corps):
             forces=[str(f) for f in forces], etat=str(m.get("etat") or ""),
             detail=str(m.get("detail") or ""), abonnement=m.get("abonnement") is True))
     return moteurs
+
+
+def _texte(v, n=300):
+    return str(v)[:n] if isinstance(v, (str, int, float)) and not isinstance(v, bool) else ""
+
+
+def _nombre(v):
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _est_embeddings(m):
+    return "embed" in (str(m.get("id", "")) + " " + str(m.get("architecture", ""))).lower()
+
+
+def analyser_chef(corps):
+    """Réponse de GET /chef -> InfoChef. Lève ValueError si illisible. Tolérant : champs absents = valeurs neutres.
+    Les modèles d'embeddings ne sont jamais gardés (par prudence : Crew ne doit déjà pas les lister)."""
+    try:
+        d = json.loads(corps)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"réponse /chef illisible : {e}")
+    if not isinstance(d, dict):
+        raise ValueError("réponse /chef inattendue")
+    modeles = []
+    for m in d.get("modeles") if isinstance(d.get("modeles"), list) else []:
+        if not isinstance(m, dict) or not identifiant_modele_valide(m.get("id")) or _est_embeddings(m):
+            continue
+        modeles.append({"id": m["id"], "libelle": _texte(m.get("libelle")) or m["id"], "taille_go": _nombre(m.get("taille_go")),
+                        "params": _texte(m.get("params")), "architecture": _texte(m.get("architecture")),
+                        "quantification": _texte(m.get("quantification")), "charge": m.get("charge") is True, "chef": m.get("chef") is True,
+                        "contexte": m.get("contexte") if isinstance(m.get("contexte"), int) and not isinstance(m.get("contexte"), bool) else None,
+                        "parallele": m.get("parallele") if isinstance(m.get("parallele"), int) and not isinstance(m.get("parallele"), bool) else None,
+                        "avertissement": _texte(m.get("avertissement")) or None})
+    ch = d.get("changement")
+    if isinstance(ch, dict) and ch.get("etat") in ("en_cours", "termine", "echec"):
+        ch = {"etat": ch["etat"], "cible": _texte(ch.get("cible"), 200), "etape": _texte(ch.get("etape")), "message": _texte(ch.get("message"), 500),
+              "debut": _nombre(ch.get("debut"))}
+    else:
+        ch = None
+    t = d.get("dernier_test")
+    if isinstance(t, dict):
+        t = {"modele": _texte(t.get("modele"), 200), "ok": t.get("ok") is True, "json_valides": _entier(t.get("json_valides")),
+             "sur": _entier(t.get("sur")), "duree_moy_s": _nombre(t.get("duree_moy_s"))}
+    else:
+        t = None
+    chef = d.get("chef") if identifiant_modele_valide(d.get("chef")) else ""
+    return InfoChef(d.get("lmstudio") is not False, chef, d.get("chef_charge") is True, ch, modeles, t, _texte(d.get("message"), 500))
 
 
 def _entier(v, defaut=0):
@@ -366,6 +429,38 @@ class CrewDistant:
             return f" ({str(m)[:200]})" if m else "."
         except (ValueError, AttributeError, TypeError):
             return "."
+
+    def lire_chef(self, crew_actif=True):
+        """GET /chef (lecture seule, aucun effet)."""
+        if not crew_actif:
+            raise ServeurEteint("Serveur Crew éteint")
+        statut, texte = self._appel("GET", R.URL_CREW_CHEF)
+        if statut != 200:
+            raise ErreurCrew(f"/chef a répondu {statut}")
+        try:
+            return analyser_chef(texte)
+        except ValueError as e:
+            raise ErreurCrew(str(e))
+
+    def definir_chef(self, modele):
+        """PUT /chef : Crew change le chef en arrière-plan (202). À n'appeler que sur un clic de l'utilisateur. Renvoie le « changement »."""
+        if not identifiant_modele_valide(modele):
+            raise ErreurDemande("Identifiant de modèle invalide.")
+        statut, texte = self._appel("PUT", R.URL_CREW_CHEF, {"modele": modele})
+        if statut in (200, 202):
+            try:
+                ch = analyser_chef('{"changement": ' + json.dumps((json.loads(texte) or {}).get("changement")) + "}").changement
+            except (ValueError, AttributeError, TypeError):
+                ch = None
+            return ch or {"etat": "en_cours", "cible": modele, "etape": "Démarrage du changement…", "message": "", "debut": None}
+        detail = self._detail_erreur(texte)
+        if statut == 400:
+            raise ErreurDemande("Crew refuse ce modèle" + detail, 400)
+        if statut == 409:
+            raise ErreurDemande("Crew est occupé" + detail, 409)
+        if statut == 503:
+            raise ErreurDemande("LM Studio est arrêté" + detail, 503)
+        raise ErreurCrew(f"/chef a répondu {statut}")
 
     def lire_moteurs(self, crew_actif=True):
         """Liste des IA que Crew peut utiliser (seulement si le serveur tourne)."""

@@ -11,7 +11,8 @@
   var DEFAUT_TR = ["gemini", "deepseek", "gemma"];
   S.tr = { ouvert: window.innerWidth > 720, actif: relire("tr.actif") === "oui", participants: DEFAUT_TR.slice(), critique: false, synthese: true, options: null, est: null };
   try { var sauve = JSON.parse(relire("tr.participants") || "null"); if (Array.isArray(sauve) && sauve.length) S.tr.participants = sauve.filter(function (x) { return typeof x === "string"; }); } catch (e) { /* défaut */ }
-  var LIBELLE_TR = { claude: "Claude", codex: "ChatGPT / Codex", gemini: "Gemini", grok: "Grok", deepseek: "DeepSeek", gemma: "gemma (local)", synthese: "Synthèse de Crew" };
+  function libellesTr(o) { (o.participants || []).forEach(function (p) { LIBELLE_TR[p.id] = p.libelle; }); }      // « gemma » s'affiche « Chef local (<modèle>) »
+  var LIBELLE_TR = { claude: "Claude", codex: "ChatGPT / Codex", gemini: "Gemini", grok: "Grok", deepseek: "DeepSeek", gemma: "Chef local", synthese: "Synthèse de Crew" };
   function trActive() { return S.tr.actif && S.salle === "crew"; }
 
   function stocker(k, v) { try { localStorage.setItem("centre." + k, v); } catch (e) { /* facultatif */ } }
@@ -86,7 +87,7 @@
     racine = h("div", { id: "salles" });
     C.page.appendChild(racine);
     S.salle = S.salle || relire("salle") || "crew";
-    api("GET", "/api/table-ronde/options").then(function (o) { S.tr.options = o; if (C.courante() === "salles") dessinerDock(salleCourante()); }).catch(function () {});
+    api("GET", "/api/table-ronde/options").then(function (o) { S.tr.options = o; libellesTr(o); if (C.courante() === "salles") dessinerDock(salleCourante()); }).catch(function () {});
     C.voixOptions().then(function (o) { S.voixOpts = o; if (C.courante() === "salles") dessinerDock(salleCourante()); }).catch(function () {});
     charger().then(function () {
       if (S.pendingConv) { var id = S.pendingConv; S.pendingConv = null; if (S.memoireInitiale) { S.opt.memoire = true; S.memoireInitiale = false; } return ouvrir(id); }
@@ -97,7 +98,7 @@
   function charger() {
     return Promise.all([api("GET", "/api/salles"), api("GET", "/api/conversations?salle=" + encodeURIComponent(S.salle || "crew")),
                         api("GET", "/api/table-ronde/options").catch(function () { return null; })]).then(function (r) {
-      if (r[2]) S.tr.options = r[2];
+      if (r[2]) { S.tr.options = r[2]; libellesTr(r[2]); }
       S.salles = r[0].salles; S.politique = r[0].politique; S.memoire = r[0].memoire; S.actives = r[1].actives; S.convs = r[1].conversations;
       dessiner();
     }).catch(function (e) { if (e.message !== "session") { vider(racine); racine.appendChild(h("div", { class: "bandeau erreur", texte: e.message })); } });
@@ -121,7 +122,8 @@
         h("span", { class: "voyant v-" + code, "aria-hidden": "true" }), x.libelle);
     })));
     if (!s) { dessinerDock(null); return; }
-    if (!s.disponible) racine.appendChild(h("div", { class: "bandeau erreur", role: "status", texte: s.libelle + " : " + s.raison }));
+    if (!s.disponible) racine.appendChild(h("div", { class: "bandeau erreur", role: "status" }, s.libelle + " : " + s.raison + (s.lecture_seule ? " Vous pouvez relire les anciennes conversations. " : " "),
+      s.lien === "chef" ? h("button", { class: "petit", type: "button", texte: "Ouvrir « Chef d'équipe »", onclick: function () { C.aller("chef"); } }) : null));
     // en-tête de salle
     racine.appendChild(h("div", { class: "rangee-titre" },
       h("span", { class: "doux", texte: s.description + " — " + (s.auths.filter(function (a) { return a.id === s.auth; })[0] || {}).texte + (s.modele ? " · " + s.modele : "") }),
