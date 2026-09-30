@@ -600,7 +600,7 @@ class Salles:
         if est["depasse"] and not o.get("confirme_depassement"):
             raise tr_mod.ErreurTableRonde(est["message"] + " Confirmez pour envoyer.", code="depassement")
         journal.info("Table ronde : %s (critique=%s) estimée à %.4f $", ",".join(participants), critique, est["total_usd"])
-        return {"participants": participants, "critique": critique, "synthese": synthese}
+        return {"participants": participants, "critique": critique, "synthese": synthese, "format": "brut"}
 
     def _requete(self, conv, salle, dernier_texte, prive, ecriture=False, outils=()):
         if salle in ("claude", "chatgpt", "gemini"):
@@ -629,15 +629,27 @@ class Salles:
             self._actifs[cid] = annulation
         texte, erreur, usage, cout_cli, interrompu = [], None, None, None, False
         approbations = []
+        tr_total = None
         tr_data = {}              # (participant, tour) -> {texte, statut, raison, cout_usd, duree_s}
         try:
             yield {"t": "debut", "conversation": cid, "salle": salle, "modele": req.modele}
             adaptateur = self._adaptateur(salle, table_ronde=bool(req.table_ronde))
             for e in adaptateur.repondre(req, annulation):
                 t = e["t"]
+                if t == "tr_total":
+                    tr_total = e
+                    for p in e["exclus"]:                     # « exclus » de la ligne finale : jamais silencieux
+                        if not any(k[0] == p and v["statut"] != "en_cours" for k, v in tr_data.items()):
+                            d = tr_data.setdefault((p, 1), {"texte": [], "statut": "ok", "raison": "", "cout_usd": None, "duree_s": None})
+                            d["statut"], d["raison"] = "exclu", "exclue par Crew"
+                            yield {"t": "tr_exclu", "participant": p, "tour": 1, "raison": "exclue par Crew"}
+                    continue
                 if t.startswith("tr_"):
                     d = tr_data.setdefault((e["participant"], e["tour"]), {"texte": [], "statut": "ok", "raison": "", "cout_usd": None, "duree_s": None})
-                    if t == "tr_delta":
+                    if t == "tr_debut":
+                        d["statut"] = "en_cours"
+                    elif t == "tr_delta":
+                        d["statut"] = "ok"
                         d["texte"].append(e["texte"])
                     elif t == "tr_exclu":
                         d["statut"], d["raison"] = "exclu", e["raison"]
@@ -670,7 +682,7 @@ class Salles:
             reponse = "".join(texte)
             tr_msg = None
             if req.table_ronde:
-                tr_msg, reponse, cout = self._resume_table_ronde(tr_data, req)
+                tr_msg, reponse, cout = self._resume_table_ronde(tr_data, req, tr_total)
             else:
                 cout = self._cout(salle, req, reponse, usage, prive)
             extra = {"salle": salle, "modele": req.modele, "cout_usd": cout["usd"], "sensible": bool(prive)}
@@ -712,10 +724,13 @@ class Salles:
             yield {"t": "fin", "annule": interrompu, "message_id": conv["messages"][-1]["id"] if conv["messages"] else None,
                    "titre": conv["titre"]}
 
-    def _resume_table_ronde(self, tr_data, req):
+    def _resume_table_ronde(self, tr_data, req, tr_total=None):
         """(structure enregistrée dans le message, texte de l'historique, coût). Le texte de l'historique est la synthèse, sinon un
         condensé « IA : réponse » du premier tour, pour que la conversation garde du contenu utile."""
         reponses = []
+        for d in tr_data.values():
+            if d["statut"] == "en_cours":            # « debut » sans réponse : le flux s'est arrêté avant
+                d["statut"], d["raison"] = "erreur", "Aucune réponse reçue."
         for (p, tour), d in sorted(tr_data.items(), key=lambda x: (x[0][0] == "synthese", x[0][1], tr_mod.IDS.index(x[0][0]) if x[0][0] in tr_mod.IDS else 99)):
             reponses.append({"participant": p, "libelle": tr_mod.LIBELLE.get(p, p), "tour": tour, "texte": "".join(d["texte"]),
                              "statut": d["statut"], "raison": d["raison"], "cout_usd": d["cout_usd"], "duree_s": d["duree_s"]})
@@ -725,10 +740,15 @@ class Salles:
         else:
             historique = "\n\n".join(f"{r['libelle']} : {r['texte']}" for r in reponses if r["tour"] == 1 and r["texte"])
         total = round(sum(r["cout_usd"] or 0.0 for r in reponses), 6)
+        if tr_total and tr_total["cout_usd"] is not None:
+            total = round(tr_total["cout_usd"], 6)          # coût réel total annoncé par Crew (ligne finale)
         cout = {"usd": total, "estime": False, "detail": "table ronde",
                 "texte": f"{total:.4f} $ (coût réel, {sum(1 for r in reponses if r['participant'] != 'synthese' and r['tour'] == 1 and r['statut'] == 'ok')} IA)"
                 if total else "Gratuit (local)"}
-        return {"reponses": reponses, "critique": bool(req.table_ronde.get("critique")), "synthese": bool(req.table_ronde.get("synthese"))}, historique, cout
+        msg = {"reponses": reponses, "critique": bool(req.table_ronde.get("critique")), "synthese": bool(req.table_ronde.get("synthese"))}
+        if tr_total and tr_total["notes"]:
+            msg["notes"] = tr_total["notes"]
+        return msg, historique, cout
 
     def _cout(self, salle, req, reponse, usage, prive):
         """Coût réel ou estimé d'un tour : {usd, estime, detail, texte}."""

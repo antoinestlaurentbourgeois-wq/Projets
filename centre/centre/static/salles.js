@@ -190,6 +190,7 @@
   var minuteurEstimation = null;
   function trOk() { return !S.tr.options || S.tr.options.crew_actif; }
   function trRaison() { return (S.tr.options && S.tr.options.raison) || "Table ronde indisponible."; }
+  function auMoins(e) { return e && e.total_incomplet ? "au moins " : "≈ "; }        // tarif inconnu (ex. Grok) : le total n'est qu'un minimum
   function dollars3(n) { return (Number(n) || 0).toLocaleString("fr-CA", { style: "currency", currency: "USD", minimumFractionDigits: 3, maximumFractionDigits: 3 }); }
 
   // Panneau de la table ronde : cases à cocher (grisées avec la raison), options, coût estimé AVANT l'envoi.
@@ -206,6 +207,7 @@
       });
       return h("label", { class: "tr-case" + (grise ? " grise" : ""), title: grise ? (d.raison || "indisponible") : "" }, c, " " + p.libelle,
         d && d.disponible && d.cout_estime_usd ? h("span", { class: "doux", texte: " ≈ " + dollars3(d.cout_estime_usd) }) : null,
+        d && d.disponible && coche && d.cout_estime_usd === null ? h("span", { class: "doux", texte: " · coût inconnu" }) : null,
         grise ? h("span", { class: "tr-raison", texte: " — " + (d.raison || "indisponible") }) : null);
     });
     var sans = h("input", { type: "checkbox", id: "tr-sans", checked: !S.tr.synthese });
@@ -217,7 +219,7 @@
       trEstimer({ critique: true }).then(function (e2) {
         if (!e2 || !e2.ok) { C.informer("Tour de critique indisponible", (e2 && e2.message) || "Estimation impossible."); return; }
         var base = S.tr.est && S.tr.est.ok ? S.tr.est.total_usd : 0;
-        C.confirmer("Activer le tour de critique ?", "Chaque IA relit les réponses des autres et réagit (2e tour).\nCoût estimé avec le tour de critique : " + dollars3(e2.total_usd) +
+        C.confirmer("Activer le tour de critique ?", "Chaque IA relit les réponses des autres et réagit (2e tour).\nCoût estimé avec le tour de critique : " + (e2.total_incomplet ? "au moins " : "") + dollars3(e2.total_usd) +
           " (au lieu de " + dollars3(base) + ", soit +" + dollars3(e2.total_usd - base) + ").\nSeuil d'avertissement : " + dollars3(e2.seuil_usd) + ".", "Activer").then(function (ok) {
           if (ok) { S.tr.critique = true; }
           trEstimer();
@@ -226,7 +228,7 @@
     });
     var ligne = h("div", { class: "tr-cout", id: "tr-cout", role: "status" });
     trAfficherCout(ligne);
-    var resume = "🎯 Table ronde — " + S.tr.participants.length + " IA, via Crew" + (est && est.ok ? " · ≈ " + dollars3(est.total_usd) + (est.depasse ? " ⚠" : "") : "") + (S.tr.critique ? " · critique" : "");
+    var resume = "🎯 Table ronde — " + S.tr.participants.length + " IA, via Crew" + (est && est.ok ? " · " + auMoins(est) + dollars3(est.total_usd) + (est.depasse ? " ⚠" : "") : "") + (S.tr.critique ? " · critique" : "");
     var panneau = h("details", { class: "tr-panneau" }, h("summary", { texte: resume }),
       h("div", { class: "tr-cases" }, cases),
       h("div", { class: "tr-options" }, h("label", null, sans, " Sans synthèse"), h("label", null, crit, " Tour de critique (2e tour)")),
@@ -241,12 +243,12 @@
     el.classList.toggle("alerte", !!(e && e.ok && e.depasse));
     if (!e) el.textContent = "Estimation du coût en cours…";
     else if (!e.ok) el.textContent = "⚠ " + e.message + " (aucune IA ne sera appelée)";
-    else el.textContent = "Coût estimé : " + dollars3(e.total_usd) + " au total" + (e.depasse ? " — ⚠ au-dessus du seuil de " + dollars3(e.seuil_usd) + " : une confirmation sera demandée." : " (seuil " + dollars3(e.seuil_usd) + ").");
+    else el.textContent = "Coût estimé : " + (e.total_incomplet ? "au moins " : "") + dollars3(e.total_usd) + " au total" + (e.total_incomplet ? " (tarif inconnu pour au moins une IA)" : "") + (e.depasse ? " — ⚠ au-dessus du seuil de " + dollars3(e.seuil_usd) + " : une confirmation sera demandée." : " (seuil " + dollars3(e.seuil_usd) + ").");
   }
   var minuteurTr = null;
   function trEstimer(opts) {
     opts = opts || {};
-    var corps = { participants: S.tr.participants, tous: true, critique: opts.critique === true ? true : S.tr.critique, synthese: S.tr.synthese,
+    var corps = { participants: S.tr.participants, critique: opts.critique === true ? true : S.tr.critique, synthese: S.tr.synthese,
                   texte: (document.getElementById("saisie") || {}).value || "", conversation: S.conv ? S.conv.id : null };
     var appel = function () {
       return api("POST", "/api/table-ronde/estimation", corps).catch(function (e) { return { ok: false, message: e.message, participants: [], total_usd: 0, depasse: false, seuil_usd: 0 }; });
@@ -422,8 +424,8 @@
             S.tr.est = e;
             if (!e.ok) { C.informer("Table ronde impossible", e.message + "\nAucune IA n'a été appelée. Les salles individuelles fonctionnent toujours."); return false; }
             if (!e.depasse) return true;
-            return C.confirmer("Coût au-dessus du seuil", "Coût estimé : " + dollars3(e.total_usd) + " pour ce message, au-dessus du seuil de " + dollars3(e.seuil_usd) + ".\n" +
-              e.participants.filter(function (p) { return p.disponible; }).map(function (p) { return "• " + p.libelle + " : ≈ " + dollars3(p.cout_estime_usd); }).join("\n") + "\n\nEnvoyer quand même ?", "Envoyer", "danger").then(function (ok2) { confirmeTr = ok2; return ok2; });
+            return C.confirmer("Coût au-dessus du seuil", "Coût estimé : " + (e.total_incomplet ? "au moins " : "") + dollars3(e.total_usd) + " pour ce message, au-dessus du seuil de " + dollars3(e.seuil_usd) + ".\n" +
+              e.participants.filter(function (p) { return p.disponible && S.tr.participants.indexOf(p.id) >= 0; }).map(function (p) { return "• " + p.libelle + " : " + (p.cout_estime_usd === null ? "coût inconnu" : "≈ " + dollars3(p.cout_estime_usd)); }).join("\n") + "\n\nEnvoyer quand même ?", "Envoyer", "danger").then(function (ok2) { confirmeTr = ok2; return ok2; });
           });
       });
     }
@@ -470,7 +472,10 @@
   }
   function appliquerTr(grille, e) {
     var r = colonneTr(grille, e.participant, LIBELLE_TR[e.participant] || e.participant);
-    if (e.t === "tr_delta") {
+    if (e.t === "tr_debut") {
+      if (e.tour === 2) { r.tour2.hidden = false; r.badge.textContent = "tour 2 en cours…"; }
+      else if (!r.badge.textContent) r.badge.textContent = "en cours…";
+    } else if (e.t === "tr_delta") {
       if (e.tour === 2) { r.tour2.hidden = false; r.texte2 += e.texte; rendre(r.corps2, r.texte2); }
       else { r.texte1 += e.texte; rendre(r.corps, r.texte1); }
       if (!r.badge.textContent) { r.badge.textContent = "en cours…"; }
@@ -487,8 +492,13 @@
     }
     return r;
   }
+  function notesTr(grille, notes) {                      // extraits de la mémoire de Crew utilisés (indiqués par Crew sur la ligne finale)
+    if (!notes || !notes.length || grille.querySelector(".tr-notes")) return;
+    grille.appendChild(h("p", { class: "doux tr-notes", texte: "Notes de la mémoire utilisées par Crew : " + notes.join(", ") }));
+  }
   function trEvenement(e) {
     if (!S.live) return;
+    if (e.t === "tr_total") { if (S.live.grille) notesTr(S.live.grille, e.notes); return; }
     if (!S.live.grille) { S.live.grille = grilleTr(); vider(S.live.corps); S.live.corps.appendChild(S.live.grille); S.live.meta.lastChild.textContent = "table ronde en cours…"; }
     appliquerTr(S.live.grille, e);
     var f = document.getElementById("fil"); if (f && f.lastChild) f.lastChild.scrollIntoView({ block: "nearest" });
@@ -504,6 +514,7 @@
       appliquerTr(g, { t: "tr_delta", participant: x.participant, tour: x.tour, texte: texteX });
       appliquerTr(g, { t: "tr_fin", participant: x.participant, tour: x.tour, cout_usd: x.cout_usd, duree_s: x.duree_s });
     });
+    notesTr(g, tr.notes);
     return g;
   }
 
