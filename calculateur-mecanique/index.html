@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MécaCalc — Calculateur d'ingénierie mécanique</title>
-<meta name="description" content="Calculateurs d'ingénierie mécanique : poutres, assemblages boulonnés, flambage, hydraulique et soudures.">
+<meta name="description" content="Calculateurs d'ingénierie mécanique : poutres, assemblages boulonnés, flambage, hydraulique, soudures et sélection de moteurs.">
 <style>
 :root{
   --bg:#f3f5f9; --panel:#ffffff; --panel2:#f7f9fc; --border:#e2e7ef; --border2:#cfd7e3;
@@ -78,6 +78,7 @@ main{min-width:0;padding:22px 28px 40px}
 .btn svg{width:16px;height:16px}
 
 .layout{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:18px;align-items:start}
+.app>*,.layout>*,.stack>*{min-width:0}
 .col-in{position:sticky;top:18px}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
 .card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px 0}
@@ -113,6 +114,7 @@ fieldset.grp legend+*{clear:both}
 .kpi.ok::before{background:var(--ok)} .kpi.warn::before{background:var(--warn)} .kpi.bad::before{background:var(--bad)}
 .kpi .kl{font-size:12px;color:var(--muted);font-weight:500}
 .kpi .kv{font-size:24px;font-weight:700;letter-spacing:-.02em;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kpi .kv.txt{white-space:normal;font-size:20px;line-height:1.25;margin-block:4px}
 .kpi .kv .ku{font-size:13px;font-weight:500;color:var(--muted);margin-left:5px;letter-spacing:0}
 .kpi .ks{font-size:12px;color:var(--faint);margin-top:1px}
 .kpi.ok .kv{color:var(--ok)} .kpi.warn .kv{color:var(--warn)} .kpi.bad .kv{color:var(--bad)}
@@ -156,6 +158,19 @@ table.dt td{padding:7px 0;border-bottom:1px solid var(--border)}
 table.dt tr:last-child td{border-bottom:0}
 table.dt td:last-child{text-align:right;font-family:var(--mono);font-size:12.8px;white-space:nowrap}
 table.dt td .u{color:var(--muted);font-family:Inter,system-ui,sans-serif;font-size:12px;margin-left:3px}
+table.cand{width:100%;border-collapse:collapse;font-size:12.8px;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.cand th{text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--border2)}
+table.cand td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12.3px}
+table.cand th:first-child,table.cand td:first-child{text-align:left;font-family:Inter,system-ui,sans-serif;font-size:13px}
+table.cand tbody tr{cursor:pointer}
+table.cand tbody tr:hover{background:var(--panel2)}
+table.cand tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+table.cand tr.sel{background:var(--accent-soft)!important}
+table.cand tr.sel td:first-child{font-weight:600;color:var(--accent-text)}
+table.cand td.ok{color:var(--ok)} table.cand td.warn{color:var(--warn)} table.cand td.bad{color:var(--bad)}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;font-weight:600;font-family:Inter,system-ui,sans-serif}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.bad{background:var(--bad-soft);color:var(--bad)}
+.scroll-x{overflow-x:auto}
 table.dt td small{display:block;color:var(--faint);font-size:11.5px;font-family:Inter,system-ui,sans-serif}
 table.dt .th td{padding-top:14px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-text);font-weight:600;border-bottom:1px solid var(--border2)}
 table.dt .th:first-child td{padding-top:2px}
@@ -166,7 +181,7 @@ table.dt .th td{text-align:left;font-family:Inter,system-ui,sans-serif}
 .chart-t{font-size:13px;font-weight:600;margin:6px 0 2px;display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
 .chart-t span{font-weight:400;color:var(--faint);font-size:12px}
 .chart{position:relative;width:100%}
-.chart svg{display:block;overflow:visible}
+.chart svg{display:block;overflow:visible;max-width:100%;height:auto}
 .chart .grid{stroke:var(--grid);stroke-width:1}
 .chart .zero{stroke:var(--axis);stroke-width:1}
 .chart .frame{stroke:var(--border2);fill:none}
@@ -303,6 +318,15 @@ const Q = {
   stiff:   { si: ['kN/mm', 1e6],    imp: ['lbf/in', 175.12685] },
   time:    { si: ['s', 1],          imp: ['s', 1] },
   pct:     { si: ['%', 0.01],       imp: ['%', 0.01] },
+  mass:    { si: ['kg', 1],         imp: ['lb', 0.45359237] },
+  nforce:  { si: ['N', 1],          imp: ['lbf', 4.4482216] },
+  mtorque: { si: ['N·m', 1],        imp: ['lbf·in', 0.11298483] },
+  minertia:{ si: ['kg·cm²', 1e-4],  imp: ['lb·in²', 2.9263965e-4] },
+  rpm:     { si: ['tr/min', 1],     imp: ['tr/min', 1] },
+  deg:     { si: ['°', 1],          imp: ['°', 1] },
+  hz:      { si: ['Hz', 1],         imp: ['Hz', 1] },
+  lspeed:  { si: ['m/s', 1],        imp: ['ft/min', 0.00508] },
+  accel:   { si: ['m/s²', 1],       imp: ['ft/s²', 0.3048] },
   none:    { si: ['', 1],           imp: ['', 1] }
 };
 let SYS = store.get('mc.units', 'si') === 'imp' ? 'imp' : 'si';
@@ -1172,13 +1196,245 @@ const MOD_WELD = {
 };
 
 /* =========================================================================
+   Module 6 — Sélection de moteur (servo / asynchrone AC)
+   ========================================================================= */
+const G0 = 9.80665, RHO_STEEL = 7850;
+// Catalogue générique : valeurs typiques d'une gamme de servomoteurs 200 V, 3000 tr/min, faible inertie
+const SERVOS = [[50, .16, .48, .045, 6000], [100, .32, .95, .078, 6000], [200, .64, 1.91, .22, 6000], [400, 1.27, 3.82, .37, 6000], [750, 2.39, 7.16, 1.26, 6000],
+  [1000, 3.18, 9.55, 2.3, 5000], [1500, 4.77, 14.3, 3.4, 5000], [2000, 6.37, 19.1, 4.6, 5000], [3000, 9.55, 28.7, 11.5, 5000], [5000, 15.9, 47.7, 19, 4500], [7000, 22.3, 66.9, 45, 4000]]
+  .map(([P, Tr, Tmax, J, Nmax]) => ({ id: 's' + P, n: `Servo ${P >= 1000 ? String(P / 1000).replace('.', ',') + ' kW' : P + ' W'}`, P, Tr, Tmax, J: J * 1e-4, Nr: 3000, Nmax }));
+// Moteurs asynchrones 4 pôles IE3 : puissance (kW), inertie du rotor typique (kg·m²)
+const ACMOT = [[.18, .0005], [.25, .0007], [.37, .0010], [.55, .0014], [.75, .0023], [1.1, .0035], [1.5, .0048], [2.2, .0092], [3, .012], [4, .015], [5.5, .030], [7.5, .040], [11, .070]];
+function acCatalog(s) {
+  const fb = +s.fb, Nr = fb === 50 ? 1450 : 1750;
+  return ACMOT.map(([P, J]) => {
+    const Tr = P * 1e3 / (2 * PI * Nr / 60);
+    return { id: 'a' + P, n: `Asynchrone ${String(P).replace('.', ',')} kW`, P: P * 1e3, Tr, Tmax: s.ovl * Tr, J, Nr, Nmax: Nr * s.fmax / fb };
+  });
+}
+const motorCatalog = s => s.mtype === 'ac' ? acCatalog(s) : SERVOS;
+// Courbes couple-vitesse idéalisées
+function tCont(m, N, ac) {
+  if (N > m.Nmax * 1.0001) return 0;
+  if (N <= m.Nr) return m.Tr;
+  return ac ? m.Tr * m.Nr / N : m.Tr * (1 - .25 * (N - m.Nr) / Math.max(m.Nmax - m.Nr, 1e-9));
+}
+function tPeak(m, N, ac) {
+  if (N > m.Nmax * 1.0001) return 0;
+  if (ac) return N <= m.Nr ? m.Tmax : m.Tmax * m.Nr / N;
+  const Nk = Math.max(.55 * m.Nmax, Math.min(m.Nr, m.Nmax));
+  return N <= Nk ? m.Tmax : m.Tmax * (1 - .65 * (N - Nk) / Math.max(m.Nmax - Nk, 1e-9));
+}
+const MECHS = [['screw', 'Vis à billes'], ['belt', 'Courroie crantée / pignon-crémaillère'], ['rot', 'Table rotative / disque']];
+const lin = s => s.mech !== 'rot';
+function loadCalc(s) {
+  const { tm, ta, t0 } = s, tc = tm - 2 * ta;
+  let Nload, J, T, Th = 0, v = NaN, F = NaN;
+  if (s.mech === 'rot') {
+    const w = (s.Sa * PI / 180) / (tm - ta);
+    Nload = w * 60 / (2 * PI); J = s.md * s.Dd * s.Dd / 8 + s.Jadd; T = s.Tf / s.eta;
+  } else {
+    v = s.S / (tm - ta);
+    const rad = s.theta * PI / 180, Fg = s.m * G0 * Math.sin(rad);
+    F = s.Fext + Fg + s.mu * s.m * G0 * Math.cos(rad);
+    const r = s.mech === 'screw' ? s.Pb / (2 * PI) : s.Dp / 2;
+    Nload = v / (2 * PI * r) * 60;
+    J = s.m * r * r + (s.mech === 'screw' ? PI * RHO_STEEL * s.Lb * s.Db ** 4 / 32 : s.Jp);
+    T = F * r / s.eta; Th = Fg * r;
+  }
+  const N = Nload * s.i, w = 2 * PI * N / 60;
+  return { N, Nload, v, F, J, Jm: J / (s.i * s.i) + s.JG, TL: T / (s.i * s.etag), Th: Th / s.i, eta: s.eta * s.etag, w, alpha: w / ta, ta, tc, t0, tcyc: tm + t0 };
+}
+function evalMotor(m, L, s, ac) {
+  const k = s.sf, Ta = (m.J + L.Jm / L.eta) * L.alpha, Tad = (m.J + L.Jm * L.eta) * L.alpha;
+  const T1 = k * (Ta + L.TL), T2 = k * L.TL, T3 = k * (L.TL - Tad), T4 = k * L.Th;
+  const Trms = Math.sqrt((T1 * T1 * L.ta + T2 * T2 * L.tc + T3 * T3 * L.ta + T4 * T4 * L.t0) / L.tcyc);
+  const Tpk = Math.max(Math.abs(T1), Math.abs(T3)), Tpa = tPeak(m, L.N, ac), Tca = tCont(m, L.N, ac), ratio = L.Jm / m.J;
+  const c = { pk: Tpa > 0 ? Tpk / Tpa : Infinity, rms: Trms / m.Tr, run: Tca > 0 ? Math.abs(T2) / Tca : Infinity, spd: L.N / m.Nmax, jr: ratio / s.jr };
+  return { m, Ta, T1, T2, T3, T4, Trms, Tpk, Tpa, Tca, ratio, c, ok: Object.values(c).every(x => x <= 1) };
+}
+function motorSVG(s, gear) {
+  let g = `<svg viewBox="0 0 560 170" aria-label="Schéma de la chaîne d'entraînement">`;
+  g += `<rect class="sk-steel" x="20" y="55" width="92" height="60" rx="6" style="fill:var(--steel2)"/><rect class="sk-steel" x="112" y="68" width="14" height="34"/>`;
+  for (let x = 32; x < 106; x += 12) g += `<line class="sk-thin" x1="${x}" y1="58" x2="${x}" y2="112"/>`;
+  g += `<text class="sk-txt m" x="66" y="138" text-anchor="middle">${s.mtype === 'ac' ? 'Moteur AC' : 'Servomoteur'}</text>`;
+  let x = 126;
+  g += `<line class="sk-line" x1="${x}" y1="85" x2="${x + 18}" y2="85" style="stroke-width:5"/>`; x += 18;
+  if (gear) {
+    g += `<rect class="sk-steel" x="${x}" y="62" width="56" height="46" rx="4"/><text class="sk-txt m" x="${x + 28}" y="90" text-anchor="middle">i = ${fmtNum(s.i, 3)}</text><text class="sk-txt m" x="${x + 28}" y="138" text-anchor="middle">Réducteur</text>`;
+    x += 56; g += `<line class="sk-line" x1="${x}" y1="85" x2="${x + 18}" y2="85" style="stroke-width:5"/>`; x += 18;
+  }
+  if (s.mech === 'screw') {
+    g += `<rect class="sk-steel" x="${x}" y="80" width="${530 - x}" height="10"/>`;
+    for (let xx = x + 4; xx < 530; xx += 7) g += `<line class="sk-thin" x1="${xx}" y1="80" x2="${xx + 4}" y2="90"/>`;
+    const nx = x + (530 - x) * .45;
+    g += `<rect class="sk-steel" x="${nx}" y="42" width="80" height="58" rx="3" style="fill:var(--steel2)"/><text class="sk-txt" x="${nx + 40}" y="64" text-anchor="middle">m</text>`;
+    g += `<line class="sk-load" x1="${nx + 90}" y1="52" x2="${nx + 118}" y2="52"/><path class="sk-loadf" d="M${nx + 112} 47L${nx + 112} 57L${nx + 122} 52Z"/><text class="sk-txt l" x="${nx + 94}" y="42">v</text>`;
+    g += `<text class="sk-txt m" x="${(x + 530) / 2}" y="138" text-anchor="middle">Vis à billes, pas P<tspan dy="3" font-size="9">B</tspan></text>`;
+  } else if (s.mech === 'belt') {
+    const x1 = x + 26, x2 = 506;
+    g += `<circle class="sk-steel" cx="${x1}" cy="85" r="24"/><circle class="sk-steel" cx="${x2}" cy="85" r="24"/><line class="sk-line" x1="${x1}" y1="61" x2="${x2}" y2="61"/><line class="sk-line" x1="${x1}" y1="109" x2="${x2}" y2="109"/>`;
+    const nx = (x1 + x2) / 2 - 40;
+    g += `<rect class="sk-steel" x="${nx}" y="30" width="80" height="31" rx="3" style="fill:var(--steel2)"/><text class="sk-txt" x="${nx + 40}" y="51" text-anchor="middle">m</text>`;
+    g += `<line class="sk-load" x1="${nx + 88}" y1="40" x2="${nx + 116}" y2="40"/><path class="sk-loadf" d="M${nx + 110} 35L${nx + 110} 45L${nx + 120} 40Z"/>`;
+    g += `<text class="sk-txt m" x="${(x1 + x2) / 2}" y="138" text-anchor="middle">Courroie, poulie Ø D<tspan dy="3" font-size="9">p</tspan></text>`;
+  } else {
+    const cx = (x + 530) / 2 + 20;
+    g += `<line class="sk-line" x1="${x}" y1="85" x2="${cx}" y2="85" style="stroke-width:5"/><ellipse class="sk-steel" cx="${cx}" cy="70" rx="${Math.min(120, 520 - cx)}" ry="22"/><rect class="sk-steel" x="${cx - 8}" y="76" width="16" height="30"/>`;
+    g += `<path class="sk-load" d="M${cx + 60} 40 A 70 20 0 0 1 ${cx + 100} 58"/><path class="sk-loadf" d="M${cx + 94} 52L${cx + 104} 60L${cx + 92} 62Z"/>`;
+    g += `<text class="sk-txt m" x="${cx}" y="138" text-anchor="middle">Table rotative Ø D</text>`;
+  }
+  return g + '</svg>';
+}
+const MOD_MOTOR = {
+  id: 'motor', name: 'Sélection de moteur',
+  desc: 'Dimensionnement d\'un servomoteur ou d\'un moteur asynchrone avec variateur : inertie, couples crête et efficace, vitesse et choix dans un catalogue.',
+  icon: '<rect x="3" y="7" width="12" height="10" rx="2"/><path d="M15 12h6M6 7v10M9 7v10M12 7v10"/>',
+  groups: [
+    { title: 'Mécanisme', fields: [
+      { id: 'mech', type: 'sel', label: 'Type de mécanisme', def: 'screw', opts: MECHS },
+      { id: 'm', label: 'Masse de la charge (table incluse)', sym: 'm', q: 'mass', def: 20, when: lin },
+      { id: 'theta', label: 'Inclinaison', sym: 'θ', q: 'deg', def: 0, when: lin, hint: '0° horizontal ; 90° vertical (montée)' },
+      { id: 'mu', label: 'Coefficient de frottement du guidage', sym: 'μ', q: 'none', def: .1, when: lin, hint: 'Guidage à billes 0,005–0,02 ; patins lisses 0,1–0,2' },
+      { id: 'Fext', label: 'Force extérieure (poussée, usinage)', sym: 'F_ext', q: 'nforce', def: 0, when: lin },
+      { id: 'Pb', label: 'Pas de la vis', sym: 'P_B', q: 'dim', def: .01, when: s => s.mech === 'screw' },
+      { id: 'Db', label: 'Diamètre de la vis', sym: 'D_B', q: 'dim', def: .02, when: s => s.mech === 'screw' },
+      { id: 'Lb', label: 'Longueur de la vis', sym: 'L_B', q: 'dim', def: .5, when: s => s.mech === 'screw' },
+      { id: 'Dp', label: 'Diamètre primitif de la poulie / du pignon', sym: 'D_p', q: 'dim', def: .05, when: s => s.mech === 'belt' },
+      { id: 'Jp', label: 'Inertie des poulies (total)', sym: 'J_p', q: 'minertia', def: 2e-4, when: s => s.mech === 'belt' },
+      { id: 'Dd', label: 'Diamètre du disque', sym: 'D', q: 'dim', def: .3, when: s => s.mech === 'rot' },
+      { id: 'md', label: 'Masse du disque (charge incluse)', sym: 'm', q: 'mass', def: 10, when: s => s.mech === 'rot' },
+      { id: 'Jadd', label: 'Inertie additionnelle', sym: 'J_add', q: 'minertia', def: 0, when: s => s.mech === 'rot' },
+      { id: 'Tf', label: 'Couple de frottement à la table', sym: 'T_f', q: 'mtorque', def: .5, when: s => s.mech === 'rot' },
+      { id: 'eta', label: 'Rendement du mécanisme', sym: 'η', q: 'pct', def: .9 }
+    ] },
+    { title: 'Réducteur', fields: [
+      { id: 'i', label: 'Rapport de réduction', sym: 'i', q: 'none', def: 1, hint: 'Vitesse moteur / vitesse de sortie ; 1 = entraînement direct' },
+      { id: 'etag', label: 'Rendement du réducteur', sym: 'η_G', q: 'pct', def: 1 },
+      { id: 'JG', label: 'Inertie réducteur + accouplement (côté moteur)', sym: 'J_G', q: 'minertia', def: 0 }
+    ] },
+    { title: 'Profil de mouvement', fields: [
+      { id: 'S', label: 'Course', sym: 'S', q: 'dim', def: .2, when: lin },
+      { id: 'Sa', label: 'Angle de rotation', sym: 'θ', q: 'deg', def: 90, when: s => s.mech === 'rot' },
+      { id: 'tm', label: 'Temps de déplacement', sym: 't_m', q: 'time', def: .5 },
+      { id: 'ta', label: 'Temps d\'accélération (= décélération)', sym: 't_a', q: 'time', def: .1, hint: 't_a = t_m/2 donne un profil triangulaire' },
+      { id: 't0', label: 'Temps d\'arrêt entre les mouvements', sym: 't_0', q: 'time', def: .5 }
+    ] },
+    { title: 'Moteur', fields: [
+      { id: 'mtype', type: 'sel', label: 'Technologie', def: 'servo', opts: [['servo', 'Servomoteur AC (brushless)'], ['ac', 'Moteur asynchrone + variateur']],
+        onChange: s => { s.motor = 'auto'; s.jr = s.mtype === 'ac' ? 5 : 10; } },
+      { id: 'fb', type: 'sel', label: 'Réseau / fréquence de base', def: '60', opts: [['60', '60 Hz — 1750 tr/min'], ['50', '50 Hz — 1450 tr/min']], when: s => s.mtype === 'ac', onChange: s => { s.fmax = +s.fb; } },
+      { id: 'fmax', label: 'Fréquence maximale du variateur', sym: 'f_max', q: 'hz', def: 60, when: s => s.mtype === 'ac', hint: 'Au-delà de la fréquence de base, le couple diminue (puissance constante)' },
+      { id: 'ovl', label: 'Surcharge admise du variateur', sym: 'T_max/T_n', q: 'pct', def: 1.5, when: s => s.mtype === 'ac', hint: 'Typiquement 150 % pendant 60 s' },
+      { id: 'motor', type: 'sel', label: 'Moteur', def: 'auto', opts: s => [['auto', 'Automatique (plus petit moteur conforme)'], ...motorCatalog(s).map(m => [m.id, m.n]), ['custom', 'Moteur personnalisé (données du fabricant)']] },
+      { id: 'cTr', label: 'Couple nominal', sym: 'T_n', q: 'mtorque', def: 1.27, when: s => s.motor === 'custom' },
+      { id: 'cTmax', label: 'Couple maximal', sym: 'T_max', q: 'mtorque', def: 3.82, when: s => s.motor === 'custom' },
+      { id: 'cJ', label: 'Inertie du rotor', sym: 'J_M', q: 'minertia', def: .37e-4, when: s => s.motor === 'custom' },
+      { id: 'cNr', label: 'Vitesse nominale', sym: 'N_n', q: 'rpm', def: 3000, when: s => s.motor === 'custom' },
+      { id: 'cNmax', label: 'Vitesse maximale', sym: 'N_max', q: 'rpm', def: 6000, when: s => s.motor === 'custom' }
+    ] },
+    { title: 'Critères de sélection', fields: [
+      { id: 'sf', label: 'Facteur de sécurité sur les couples', sym: 'k', q: 'none', def: 1.2 },
+      { id: 'jr', label: 'Rapport d\'inertie maximal', sym: 'J_L/J_M', q: 'none', def: 10, hint: 'Servo : ≤ 10 usuel (≤ 5 pour haute dynamique, jusqu\'à 30 avec réglage) ; asynchrone : ≤ 5' }
+    ] }
+  ],
+  notes: [
+    'Méthode classique des guides de dimensionnement des fabricants : inertie et couples ramenés à l\'arbre moteur, profil trapézoïdal symétrique (t_a = t_d), puis comparaison aux couples crête et nominal du moteur.',
+    'Couple d\'accélération T_a = (J_M + J_L/η)·ω/t_a ; en décélération, T_d = (J_M + J_L·η)·ω/t_a. Couple efficace T_rms = √(Σ T_i²·t_i / t_cycle). Le facteur de sécurité k multiplie tous les couples.',
+    'Vis à billes : J = m·(P_B/2π)² + π·ρ·L_B·D_B⁴/32 (acier, ρ = 7850 kg/m³), T = F·P_B/(2π·η). Courroie/pignon : J = m·(D_p/2)² + J_p, T = F·D_p/(2η). Disque plein : J = m·D²/8.',
+    'Pendant l\'arrêt, le couple de maintien est la composante de gravité (axe incliné/vertical). Prévoir un frein pour les axes verticaux.',
+    'Les catalogues intégrés sont génériques : valeurs typiques d\'une gamme de servomoteurs 200 V / 3000 tr/min et de moteurs asynchrones IE3 4 pôles. Courbes couple-vitesse idéalisées. Valider le choix avec les données et le logiciel du fabricant retenu (tension, codeur, frein, IP).',
+    'Non vérifiés : énergie de freinage (résistance de freinage), résonance et rigidité de la transmission, vitesse critique et flambage de la vis, déclassement thermique des moteurs asynchrones autoventilés à basse vitesse, précision de positionnement.'
+  ],
+  compute(s) {
+    const R = newRes(), ac = s.mtype === 'ac';
+    if (!(s.tm > 0 && s.ta > 0)) R.errors.push('Les temps de déplacement et d\'accélération doivent être positifs.');
+    else if (2 * s.ta > s.tm * (1 + 1e-9)) R.errors.push('Le temps d\'accélération doit être ≤ la moitié du temps de déplacement.');
+    if (!(s.t0 >= 0)) R.errors.push('Le temps d\'arrêt doit être positif ou nul.');
+    if (!(s.eta > 0 && s.eta <= 1) || !(s.etag > 0 && s.etag <= 1)) R.errors.push('Les rendements doivent être compris entre 0 et 100 %.');
+    if (!(s.i > 0)) R.errors.push('Le rapport de réduction doit être positif.');
+    if (!(s.sf > 0 && s.jr > 0)) R.errors.push('Le facteur de sécurité et le rapport d\'inertie maximal doivent être positifs.');
+    if (lin(s)) {
+      if (!(s.m >= 0 && s.S > 0)) R.errors.push('La masse doit être ≥ 0 et la course positive.');
+      if (s.mech === 'screw' && !(s.Pb > 0 && s.Db > 0 && s.Lb >= 0)) R.errors.push('Le pas, le diamètre et la longueur de la vis doivent être positifs.');
+      if (s.mech === 'belt' && !(s.Dp > 0 && s.Jp >= 0)) R.errors.push('Le diamètre de poulie doit être positif.');
+    } else if (!(s.Dd > 0 && s.md >= 0 && s.Sa > 0 && s.Jadd >= 0)) R.errors.push('Diamètre, masse et angle de rotation doivent être positifs.');
+    if (ac && !(s.fmax > 0 && s.ovl >= 1)) R.errors.push('La fréquence maximale doit être positive et la surcharge ≥ 100 %.');
+    if (s.motor === 'custom' && !(s.cTr > 0 && s.cTmax >= s.cTr && s.cJ > 0 && s.cNr > 0 && s.cNmax >= s.cNr)) R.errors.push('Moteur personnalisé : vérifier T_max ≥ T_n > 0, J_M > 0 et N_max ≥ N_n > 0.');
+    if (R.errors.length) return R;
+
+    const L = loadCalc(s), cat = motorCatalog(s), evals = cat.map(m => evalMotor(m, L, s, ac));
+    let E, auto = s.motor === 'auto';
+    if (s.motor === 'custom') E = evalMotor({ id: 'custom', n: 'Moteur personnalisé', P: s.cTr * 2 * PI * s.cNr / 60, Tr: s.cTr, Tmax: s.cTmax, J: s.cJ, Nr: s.cNr, Nmax: s.cNmax }, L, s, ac);
+    else if (auto) E = evals.find(e => e.ok) || evals[evals.length - 1];
+    else E = evals.find(e => e.m.id === s.motor) || evals[0];
+    const m = E.m, none = auto && !E.ok;
+    const Navg = L.N * (L.ta + L.tc) / L.tcyc, Prun = Math.abs(E.T2) * L.w, Ppk = Math.abs(E.T1) * L.w;
+
+    R.kpis = [
+      { label: auto ? 'Moteur proposé' : 'Moteur évalué', text: none ? 'Aucun' : m.n, tone: E.ok ? 'ok' : 'bad', sub: none ? 'aucun moteur du catalogue ne convient' : `T_n ${valTxt(m.Tr, 'mtorque')} · J_M ${valTxt(m.J, 'minertia')}` },
+      { label: 'Couple crête requis', v: E.Tpk, q: 'mtorque', tone: tone(E.c.pk), sub: `disponible à ${fmtNum(L.N, 4)} tr/min : ${valTxt(E.Tpa, 'mtorque')}` },
+      { label: 'Couple efficace (RMS)', v: E.Trms, q: 'mtorque', tone: tone(E.c.rms), sub: `nominal : ${valTxt(m.Tr, 'mtorque')} (${fmtNum(E.c.rms * 100, 3)} %)` },
+      { label: 'Rapport d\'inertie', v: E.ratio, q: 'none', tone: tone(E.c.jr), sub: `J_L/J_M, limite ${fmtNum(s.jr, 3)} : 1` }
+    ];
+    if (none) R.checks.push({ s: 'bad', t: 'Aucun moteur du catalogue ne satisfait tous les critères : le plus gros est affiché. Ajouter un réducteur, allonger t_a ou choisir un moteur personnalisé.' });
+    R.checks.push({ s: tone(E.c.pk), t: `Couple crête ${valTxt(E.Tpk, 'mtorque')} ${E.c.pk <= 1 ? '≤' : '>'} couple max. disponible ${valTxt(E.Tpa, 'mtorque')}` });
+    R.checks.push({ s: tone(E.c.rms), t: `Couple efficace ${valTxt(E.Trms, 'mtorque')} ${E.c.rms <= 1 ? '≤' : '>'} couple nominal ${valTxt(m.Tr, 'mtorque')}` });
+    R.checks.push({ s: tone(E.c.run), t: `Couple à vitesse constante ${valTxt(Math.abs(E.T2), 'mtorque')} ${E.c.run <= 1 ? '≤' : '>'} couple continu à ${fmtNum(L.N, 4)} tr/min (${valTxt(E.Tca, 'mtorque')})` });
+    R.checks.push({ s: tone(E.c.spd), t: `Vitesse moteur ${fmtNum(L.N, 4)} tr/min ${E.c.spd <= 1 ? '≤' : '>'} vitesse max. ${fmtNum(m.Nmax, 4)} tr/min` });
+    R.checks.push({ s: tone(E.c.jr), t: `Rapport d'inertie ${fmtNum(E.ratio, 3)} ${E.c.jr <= 1 ? '≤' : '>'} ${fmtNum(s.jr, 3)}` });
+    if (lin(s) && s.theta > 5) R.checks.push({ s: 'info', t: 'Axe incliné ou vertical : prévoir un moteur avec frein et vérifier l\'énergie régénérée en descente.' });
+    if (E.T3 < 0) R.checks.push({ s: 'info', t: `Couple de freinage ${valTxt(E.T3, 'mtorque')} : le moteur régénère en décélération (énergie ≈ ${fmtNum(.5 * (m.J + L.Jm) * L.w * L.w, 3)} J par arrêt).` });
+    R.util = [{ label: 'Couple crête', r: E.c.pk }, { label: 'Couple efficace', r: E.c.rms }, { label: 'Couple en régime', r: E.c.run }, { label: 'Vitesse', r: E.c.spd }, { label: 'Rapport d\'inertie', r: E.c.jr }];
+
+    const pc = r => `<td class="${tone(r)}">${isFinite(r) ? fmtNum(r * 100, 3) + ' %' : '∞'}</td>`;
+    R.custom = [{ title: `Catalogue ${ac ? 'moteurs asynchrones (IE3, 4 pôles)' : 'servomoteurs (200 V, 3000 tr/min)'}`, note: 'Cliquez sur une ligne pour évaluer ce moteur', html:
+      `<table class="cand"><thead><tr><th>Moteur</th><th>T nominal</th><th>T max</th><th>J rotor</th><th>Crête</th><th>Efficace</th><th>Régime</th><th>Vitesse</th><th>Inertie</th><th></th></tr></thead><tbody>` +
+      evals.map(e => `<tr data-pick="${e.m.id}" class="${e.m.id === m.id ? 'sel' : ''}" tabindex="0"><td>${esc(e.m.n)}</td><td>${valTxt(e.m.Tr, 'mtorque')}</td><td>${valTxt(e.m.Tmax, 'mtorque')}</td><td>${valTxt(e.m.J, 'minertia')}</td>${pc(e.c.pk)}${pc(e.c.rms)}${pc(e.c.run)}${pc(e.c.spd)}${pc(e.c.jr)}<td>${e.ok ? '<span class="pill ok">OK</span>' : '<span class="pill bad">NON</span>'}</td></tr>`).join('') +
+      `</tbody></table>` }];
+
+    R.tables = [
+      { title: 'Charge (côté mécanisme)', rows: lin(s) ? [['Vitesse linéaire max.', L.v, 'lspeed'], ['Accélération', L.v / L.ta, 'accel'], ['Force de poussée F', L.F, 'nforce'], ['Vitesse de rotation de la charge', `${fmtNum(L.Nload, 4)}<span class="u">tr/min</span>`, null], ['Inertie de la charge J_L', L.J, 'minertia']]
+        : [['Vitesse de la table', `${fmtNum(L.Nload, 4)}<span class="u">tr/min</span>`, null], ['Accélération angulaire', `${fmtNum(L.alpha / s.i, 4)}<span class="u">rad/s²</span>`, null], ['Inertie de la charge J_L', L.J, 'minertia']] },
+      { title: 'Ramené à l\'arbre moteur', rows: [['Vitesse moteur', `${fmtNum(L.N, 4)}<span class="u">tr/min</span>`, null], ['Inertie de charge J_L (moteur)', L.Jm, 'minertia'], ['Couple de charge T_L', L.TL, 'mtorque'],
+        ['Couple d\'accélération T_a', E.Ta, 'mtorque'], ['T₁ accélération (× k)', E.T1, 'mtorque'], ['T₂ vitesse constante (× k)', E.T2, 'mtorque'], ['T₃ décélération (× k)', E.T3, 'mtorque'], ['T₄ arrêt (× k)', E.T4, 'mtorque'],
+        ['Couple efficace T_rms', E.Trms, 'mtorque'], ['Puissance en régime', Prun, 'power'], ['Puissance crête', Ppk, 'power']] },
+      { title: 'Moteur', rows: [['Puissance nominale', m.P, 'power'], ['Couple nominal', m.Tr, 'mtorque'], ['Couple maximal', m.Tmax, 'mtorque'], ['Inertie du rotor J_M', m.J, 'minertia'],
+        ['Vitesse nominale', `${fmtNum(m.Nr, 4)}<span class="u">tr/min</span>`, null], ['Vitesse maximale', `${fmtNum(m.Nmax, 4)}<span class="u">tr/min</span>`, null], ['Temps de cycle', L.tcyc, 'time']] }
+    ];
+    R.formulas = ['J_L,M = J_L/i² + J_G', 'T_a = (J_M + J_L/η)·ω/t_a', 'T_L = F·r/(η·i·η_G)', 'T_rms = √(ΣT²·t / t_cycle)', 'N = v/(2π·r)·60·i'];
+    R.schematic = motorSVG(s, s.i !== 1 || s.JG > 0);
+
+    const t1 = L.ta, t2 = L.ta + L.tc, t3 = t2 + L.ta, t4 = L.tcyc, cT = v => conv(v, 'mtorque');
+    const tu = unit('mtorque');
+    R.charts = [
+      { title: 'Profil de vitesse du moteur', sub: `N_max = ${fmtNum(L.N, 4)} tr/min`, o: { height: 180, xLabel: 'Temps (s)', xName: 't', xUnit: 's', yLabel: 'Vitesse (tr/min)', yZero: true,
+        series: [{ name: 'Vitesse', unit: 'tr/min', color: 'var(--c1)', area: true, x: [0, t1, t2, t3, t4], y: [0, L.N, L.N, 0, 0] }] } },
+      { title: 'Profil de couple du moteur', sub: `T_rms = ${valTxt(E.Trms, 'mtorque')}`, o: { height: 220, xLabel: 'Temps (s)', xName: 't', xUnit: 's', yLabel: `Couple (${tu})`, yZero: true,
+        series: [{ name: 'Couple', unit: tu, color: 'var(--c2)', area: true, x: [0, 0, t1, t1, t2, t2, t3, t3, t4], y: [0, E.T1, E.T1, E.T2, E.T2, E.T3, E.T3, E.T4, E.T4].map(cT) }],
+        hlines: [{ y: cT(E.Tpa), label: 'Couple max. disponible', color: 'var(--bad)' }, { y: cT(m.Tr), label: 'Couple nominal', color: 'var(--c3)' }] } },
+      { title: 'Courbe couple-vitesse', sub: `${m.n} (courbe idéalisée)`, o: (() => {
+        const Ns = linspace(0, m.Nmax, 160);
+        return { height: 260, xLabel: 'Vitesse moteur (tr/min)', xName: 'N', xUnit: 'tr/min', yLabel: `Couple (${tu})`, yMin: 0, xMin: 0, xMax: Math.max(m.Nmax, L.N) * 1.05,
+          series: [{ name: 'Zone intermittente (crête)', unit: tu, color: 'var(--c2)', area: true, x: Ns, y: Ns.map(N => cT(tPeak(m, N, ac))) },
+                   { name: 'Zone continue', unit: tu, color: 'var(--c1)', area: true, x: Ns, y: Ns.map(N => cT(tCont(m, N, ac))) }],
+          markers: [{ x: L.N, y: cT(E.Tpk), color: E.c.pk <= 1 ? 'var(--ok)' : 'var(--bad)', label: 'Crête' }, { x: Navg, y: cT(E.Trms), color: E.c.rms <= 1 ? 'var(--ok)' : 'var(--bad)', label: 'Efficace (vitesse moy.)', below: true }] };
+      })() }
+    ];
+    R.summary = [{ l: 'Mécanisme', t: MECHS.find(x => x[0] === s.mech)[1] }, { l: 'Moteur', t: none ? 'aucun' : m.n }, { l: 'N', t: `${fmtNum(L.N, 4)} tr/min` },
+      { l: 'T crête', v: E.Tpk, q: 'mtorque' }, { l: 'T rms', v: E.Trms, q: 'mtorque' }, { l: 'J_L/J_M', v: E.ratio, q: 'none' }];
+    return R;
+  }
+};
+
+/* =========================================================================
    Application
    ========================================================================= */
-const MODS = [MOD_BEAM, MOD_BOLT, MOD_COL, MOD_HYD, MOD_WELD];
+const MODS = [MOD_BEAM, MOD_BOLT, MOD_COL, MOD_HYD, MOD_WELD, MOD_MOTOR];
 const MOD = Object.fromEntries(MODS.map(m => [m.id, m]));
 const allFields = m => m.groups.flatMap(g => g.fields);
 const defaults = m => Object.fromEntries(allFields(m).map(f => [f.id, f.def]));
-function newRes() { return { errors: [], kpis: [], checks: [], util: [], tables: [], charts: [], formulas: [], summary: [], schematic: '' }; }
+function newRes() { return { errors: [], kpis: [], checks: [], util: [], tables: [], charts: [], formulas: [], summary: [], custom: [], schematic: '' }; }
 
 const saved = store.get('mc.state', {});
 const S = {};
@@ -1290,7 +1546,7 @@ function renderResults(R) {
     $('#save').disabled = true; return;
   }
   $('#save').disabled = false;
-  const kpis = `<div class="kpis">${R.kpis.map(k => `<div class="kpi ${k.tone || ''}"><div class="kl">${esc(k.label)}</div><div class="kv">${isFinite(k.v) ? fmtNum(conv(k.v, k.q)) : '∞'}${unit(k.q) ? `<span class="ku">${unit(k.q)}</span>` : ''}</div><div class="ks">${k.sub || ''}</div></div>`).join('')}</div>`;
+  const kpis = `<div class="kpis">${R.kpis.map(k => `<div class="kpi ${k.tone || ''}"><div class="kl">${esc(k.label)}</div><div class="kv${k.text != null ? ' txt' : ''}">${k.text != null ? esc(k.text) : (isFinite(k.v) ? fmtNum(conv(k.v, k.q)) : '∞') + (unit(k.q) ? `<span class="ku">${unit(k.q)}</span>` : '')}</div><div class="ks">${k.sub || ''}</div></div>`).join('')}</div>`;
   const icon = { ok: '✓', warn: '!', bad: '✕', info: 'i' };
   const checks = `<div class="checks">${R.checks.map(c => `<div class="chk ${c.s}"><span class="dot">${icon[c.s]}</span><span>${c.t}</span></div>`).join('')}</div>`;
   const util = R.util.length ? `<div class="util" style="margin-top:16px">${R.util.map(u => { const r = isFinite(u.r) ? u.r : 9.99; return `<div class="ut-row"><span class="ul">${esc(u.label)}</span><div class="ut-bar"><i class="${tone(r)}" style="width:${Math.min(r, 1) * 100}%"></i></div><span class="uv">${isFinite(u.r) ? fmtNum(u.r * 100, 3) + ' %' : '∞'}</span></div>`; }).join('')}</div>` : '';
@@ -1298,6 +1554,7 @@ function renderResults(R) {
   out.innerHTML = kpis +
     `<div class="grid2"><div class="card"><div class="card-h"><h3>Schéma</h3></div><div class="card-b schem">${R.schematic}</div></div>
      <div class="card"><div class="card-h"><h3>Vérifications</h3></div><div class="card-b">${checks}${util}</div></div></div>` +
+    R.custom.map(c => `<div class="card"><div class="card-h"><h3>${esc(c.title)}</h3>${c.note ? `<span style="font-size:12px;color:var(--faint)">${esc(c.note)}</span>` : ''}</div><div class="card-b scroll-x">${c.html}</div></div>`).join('') +
     (R.charts.length ? `<div class="card"><div class="card-h"><h3>Graphiques</h3><span style="font-size:12px;color:var(--faint)">Survolez pour lire les valeurs</span></div><div class="card-b charts">${R.charts.map((c, i) => `<div><div class="chart-t">${esc(c.title)}<span>${c.sub || ''}</span></div><div class="chart" id="ch${i}"></div></div>`).join('')}</div></div>` : '') +
     `<div class="card"><div class="card-h"><h3>Résultats détaillés</h3></div><div class="card-b">${tables}</div></div>` + notes;
   R.charts.forEach((c, i) => chart($('#ch' + i), c.o));
@@ -1342,6 +1599,11 @@ function exportCSV() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+$('#view').addEventListener('click', e => {
+  const r = e.target.closest('[data-pick]'); if (!r || !MOD[cur]) return;
+  S[cur].motor = r.dataset.pick; renderInputs(); compute();
+});
+$('#view').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-pick]')) e.target.click(); });
 renderNav(); renderUnits(); renderView();
 </script>
 </body>

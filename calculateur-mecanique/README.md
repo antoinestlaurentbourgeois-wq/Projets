@@ -1,6 +1,6 @@
 # MécaCalc — Calculateur d'ingénierie mécanique
 
-Application web autonome (un seul fichier `index.html`, aucune dépendance ni compilation) qui regroupe cinq calculateurs :
+Application web autonome (un seul fichier `index.html`, aucune dépendance ni compilation) qui regroupe six calculateurs :
 
 | Module | Contenu |
 |---|---|
@@ -8,6 +8,7 @@ Application web autonome (un seul fichier `index.html`, aucune dépendance ni co
 | **Assemblages boulonnés** | ISO métrique et UNC, classes 4.6–12.9 / SAE 2-5-8, précharge, couple, rigidités (Wileman), constante C, séparation, glissement, von Mises, diagramme du joint |
 | **Colonnes / flambage** | Euler + Johnson, conditions d'appui (K théorique ou recommandé AISC), élancement, facteur de sécurité, courbe σcr–λ |
 | **Hydraulique** | Force de vérin (sortie/rentrée), pression requise, débit, puissance, volumes, diamètres de conduites, graphique F–p |
+| **Sélection de moteur** | Servomoteur ou moteur asynchrone + variateur ; vis à billes, courroie/pignon-crémaillère, table rotative ; réducteur ; profil trapézoïdal ; inertie ramenée, couples crête et efficace, rapport d'inertie ; catalogue générique avec sélection automatique, profils vitesse/couple et courbe couple-vitesse |
 | **Soudures** | Bout à bout (pénétration complète) et cordon d'angle, admissibles AISC/AWS, taille min. AWS D1.1, longueur et taille requises |
 
 Fonctionnalités : unités métriques / impériales (bascule globale), calcul instantané, vérifications colorées et taux d'utilisation, graphiques interactifs, hypothèses et formules affichées dans chaque module, historique local (localStorage) avec rechargement et export CSV, thème clair/sombre, mise en page adaptée au mobile.
