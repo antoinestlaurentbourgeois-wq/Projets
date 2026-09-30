@@ -31,6 +31,8 @@ def _reponse(question, qui):
 
 
 class ReseauDemo:
+    comfy = False            # le faux ComfyUI est-il lancé ? (les faux scripts demarrer / arreter le basculent : voir __main__.demo)
+
     def flux_post(self, url, entetes, corps, delai=600, annulation=None):
         if isinstance(corps.get("table_ronde"), dict):
             return 200, self._table_ronde(corps)
@@ -114,8 +116,7 @@ class ReseauDemo:
             return image
         return 404, "{}"
 
-    @staticmethod
-    def _images(methode, url, corps, octets):
+    def _images(self, methode, url, corps, octets):
         """Faux moteurs d'images (démo) : OpenAI, xAI, Gemini et ComfyUI répondent avec un petit dégradé PNG dont la couleur dépend de la demande."""
         import base64
         graine = len(json.dumps(corps or {}, sort_keys=True)) * 7
@@ -126,6 +127,10 @@ class ReseauDemo:
         if ":generateContent" in url:
             return 200, json.dumps({"candidates": [{"content": {"parts": [{"text": "Voici."}, {"inlineData": {"mimeType": "image/png", "data": base64.b64encode(_png_demo(graine)).decode()}}]}}]})
         if url.startswith("http://127.0.0.1:8188"):
+            if not self.comfy:
+                return None, "connexion refusée"
+            if url.endswith("/queue"):
+                return 200, json.dumps({"queue_running": [], "queue_pending": []})
             if url.endswith("/system_stats"):
                 return 200, "{}"
             if url.endswith("/object_info/CheckpointLoaderSimple"):

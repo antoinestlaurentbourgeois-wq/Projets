@@ -48,11 +48,11 @@ def commandes(sim, *debut):
 class TestOrdre(unittest.TestCase):
     def test_ordre_demarrage_exact(self):
         self.assertEqual(L.ordre_demarrage(),
-                         ["docker", "openwebui", "kokoro", "lmstudio", "gemma", "embeddings", "crew"])
+                         ["docker", "openwebui", "kokoro", "lmstudio", "gemma", "embeddings", "crew", "comfyui"])
 
     def test_ordre_arret_exact(self):
         self.assertEqual(L.ordre_arret(),
-                         ["crew", "embeddings", "gemma", "lmstudio", "kokoro", "openwebui", "docker"])
+                         ["comfyui", "crew", "embeddings", "gemma", "lmstudio", "kokoro", "openwebui", "docker"])
 
     def test_chaque_composant_apres_ses_dependances(self):
         ordre = L.ordre_demarrage()
@@ -222,7 +222,8 @@ class TestVoyants(unittest.TestCase):
     def test_tout_allume(self):
         self.sim.tout_allumer()
         e = self.ctrl.verifier_tout()
-        self.assertEqual({k: v.code for k, v in e.items()}, {k: ACTIF for k in e})
+        # ComfyUI n'est jamais allumé par « tout allumer » : il occupe la carte graphique du chef de Crew
+        self.assertEqual({k: v.code for k, v in e.items()}, {k: (ARRETE if k == "comfyui" else ACTIF) for k in e})
 
     def test_docker_en_cours_de_demarrage_est_orange(self):
         self.sim.ouvrir_programme(R.DOCKER_DESKTOP_CANDIDATS[0])
@@ -302,11 +303,13 @@ class TestActions(unittest.TestCase):
         prog = Enregistreur()
         res = self.ctrl.tout_demarrer(prog)
         self.assertEqual({k: v.code for k, v in res.items()}, {k: ACTIF for k in res})
-        self.assertEqual([i for i, _ in prog.finaux()], L.ordre_demarrage())
+        self.assertEqual([i for i, _ in prog.finaux()], L.ordre_tout_demarrer())
+        self.assertNotIn("comfyui", res)                       # « Tout démarrer » ne lance JAMAIS ComfyUI
+        self.assertEqual(self.sim.comfy_scripts, [])
         # le voyant passe à l'orange pendant l'action
         self.assertIn(("docker", TRANSITION), [(i, c) for i, c, _, f in prog.evenements if not f])
         self.assertEqual({k: v.code for k, v in self.ctrl.verifier_tout().items()},
-                         {k: ACTIF for k in L.PAR_ID})
+                         {k: (ARRETE if k == "comfyui" else ACTIF) for k in L.PAR_ID})
 
     def test_mode_jeu_dans_le_bon_ordre(self):
         self.sim.tout_allumer()

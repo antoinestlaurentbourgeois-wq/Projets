@@ -49,6 +49,8 @@ class Centre:
         self.L, self.C, self.O = charger_panneau(self.config.dossier_panneau)
         self.sys = systeme or self.L.SystemeWindows()
         self.ctrl = self.L.Controleur(self.sys)
+        if self.config.dossier_comfyui:
+            self.ctrl.dossier_comfyui = self.config.dossier_comfyui      # validé (chemin sûr, deux scripts présents) à chaque emploi
         self.crew = self.C.CrewDistant(self.sys)
         self.ouvreur = self.O.Ouvreur(self.sys, self.ctrl)
         self.recus = Recus(self.config.chemin("recus.jsonl"))
@@ -68,11 +70,14 @@ class Centre:
         self._derniere_demande = 0.0
         self._job = None
         self._job_compteur = 0
+        self._mode_jeu_vigueur = False    # « Mode jeu » lancé et rien n'a été rallumé depuis : on ne recharge ni ne démarre rien derrière lui
         self._rafraichissement = threading.Lock()
         self._arret = threading.Event()
         self._fil = None
         from .salles import Salles          # après tout le reste : Salles s'appuie sur ce Centre
         self.salles = Salles(self, reseau=reseau, processus=processus)
+        from .comfyui import ComfyUI
+        self.comfyui = ComfyUI(self)
         from .images import Images
         self.images = Images(self)
         from .rappels import Rappels
@@ -103,6 +108,10 @@ class Centre:
                     self.rafraichir()
                 except Exception:
                     journal.exception("vérification impossible")
+            try:
+                self.comfyui.surveiller()                   # ComfyUI lancé par le Centre et inutilisé depuis 10 minutes : arrêt
+            except Exception:
+                journal.exception("surveillance de ComfyUI impossible")
             self._arret.wait(DELAI_RAFRAICHISSEMENT)
 
     def rafraichir(self):
@@ -119,6 +128,8 @@ class Centre:
             with self._verrou:
                 if not self.action_en_cours():
                     self.etats = etats
+                    if self._mode_jeu_vigueur and (etats["lmstudio"].code == self.L.ACTIF or etats["crew"].code == self.L.ACTIF):
+                        self._mode_jeu_vigueur = False       # quelqu'un a rallumé LM Studio ou Crew : ce n'est plus le Mode jeu
                 self.cles = cles
                 self.info_mode = info
                 self.maj = time.time()
@@ -230,6 +241,61 @@ class Centre:
         self.recus.ajouter("chef_crew", "ok", modele=modele, session=session)
         return {"changement": changement}
 
+    # ----- ComfyUI : état, réconciliation au démarrage, actions à la main ---------------------------------------------
+
+    def comfyui_etat(self):
+        """Ce que l'écran affiche : ComfyUI répond-il, la carte graphique est-elle encore libérée ? (rien n'est jamais fait tout seul ici)"""
+        self.noter_demande()
+        crew_actif = self.etats["crew"].code == self.L.ACTIF
+        info = self.actualiser_chef() if crew_actif else None
+        repond = self.comfyui.repond()
+        if not repond:
+            self.comfyui.demarre_par_le_centre = False
+        installe, raison = self.comfyui.installe()
+        en_cours = self.images.local_en_cours()
+        jeu = self.mode_jeu_actif()
+        libere = bool(info is not None and info.libere)
+        return {"installe": installe, "raison": raison, "repond": repond, "demarre_par_le_centre": bool(repond and self.comfyui.demarre_par_le_centre),
+                "creation_en_cours": en_cours, "mode_jeu": jeu, "crew_actif": crew_actif, "chef_libere": libere,
+                "bandeau_chef": bool(libere and not en_cours and not jeu and not repond),         # « La carte graphique est encore libérée. Recharger le chef ? »
+                "bandeau_comfyui": bool(repond and not en_cours),                                 # « ComfyUI tourne et occupe la carte graphique [Arrêter] »
+                "journal": self.comfyui.journal_comfyui()}
+
+    def arreter_comfyui(self, session=""):
+        """Bouton « Arrêter » : le même script que le panneau. Jamais pendant une création."""
+        if self.images.local_en_cours():
+            raise ErreurService("Une création d'image locale est en cours : attendez la fin (ou annulez-la) avant d'arrêter ComfyUI.", 409)
+        try:
+            ferme = self.comfyui.arreter()
+        except Exception as e:
+            journal.exception("Arrêt de ComfyUI impossible")
+            raise ErreurService(f"Arrêt de ComfyUI impossible : {e}", 500)
+        self.recus.ajouter("comfyui", "arret_manuel" if ferme else "arret_echec", session=session)
+        if not ferme:
+            raise ErreurService("ComfyUI répond encore après la demande d'arrêt.", 502)
+        return self.comfyui_etat()
+
+    def reprendre_chef(self, session=""):
+        """Bouton « Recharger le chef » : POST /chef/reprendre de Crew (idempotent). Jamais en Mode jeu, ni pendant une création, ni tant que ComfyUI occupe la carte."""
+        if self.mode_jeu_actif():
+            raise ErreurService("Le Mode jeu est actif : la carte graphique reste libre pour le jeu. Rien n'est rechargé.", 409)
+        if self.etats["crew"].code != self.L.ACTIF:
+            raise ErreurService("Le serveur Crew est éteint : allumez-le pour recharger le chef.", 422)
+        if self.images.local_en_cours():
+            raise ErreurService("Une création d'image locale est en cours : le chef sera rechargé à la fin.", 409)
+        if self.comfyui.repond():
+            raise ErreurService("ComfyUI occupe encore la carte graphique : arrêtez-le d'abord, puis rechargez le chef.", 409)
+        try:
+            changement = self.crew.reprendre_chef()
+        except self.C.ErreurDemande as e:
+            self.recus.ajouter("chef_crew", "reprise_refusee", code=e.code, session=session)
+            raise ErreurService(str(e), e.code)
+        except self.C.ErreurCrew as e:
+            self.recus.ajouter("chef_crew", "reprise_erreur", session=session)
+            raise ErreurService(str(e), 422)
+        self.recus.ajouter("chef_crew", "reprise", session=session)
+        return {"changement": changement}
+
     def noter_demande(self):
         self._derniere_demande = time.monotonic()
 
@@ -298,14 +364,14 @@ class Centre:
                     "resultats": dict(j["resultats"]), "erreur": j["erreur"]}
 
     def mode_jeu_actif(self):
-        """Le Mode jeu est-il en train de libérer la carte graphique ? (alors on ne recharge rien derrière lui)"""
+        """Le Mode jeu est-il en train de libérer la carte graphique, ou en vigueur depuis ? (alors on ne recharge ni ne démarre rien derrière lui)"""
         with self._verrou:
-            return bool(self._job and self._job["type"] == "mode_jeu" and self._job["statut"] == "en_cours")
+            return bool(self._mode_jeu_vigueur or (self._job and self._job["type"] == "mode_jeu" and self._job["statut"] == "en_cours"))
 
     def lancer_action(self, sens, ident=None, avec_liees=False, session=""):
         L = self.L
         if sens in SEQUENCES:
-            etapes = ([("demarrer", i) for i in L.ordre_demarrage()] if sens == "tout_demarrer"
+            etapes = ([("demarrer", i) for i in L.ordre_tout_demarrer()] if sens == "tout_demarrer"
                       else [("arreter", i) for i in L.ordre_arret()])
             libelle = SEQUENCES[sens]
         elif sens in SENS_SIMPLES:
@@ -323,6 +389,10 @@ class Centre:
             if self._job and self._job["statut"] == "en_cours":
                 raise ErreurService("Une autre action est déjà en cours : attendez qu'elle finisse.", 409)
             self._job_compteur += 1
+            if sens == "mode_jeu":
+                self._mode_jeu_vigueur = True
+            elif sens == "tout_demarrer" or (sens == "demarrer" and ident != "comfyui"):
+                self._mode_jeu_vigueur = False
             self._job = {"id": self._job_compteur, "type": sens, "libelle": libelle, "statut": "en_cours",
                          "etapes": [{"sens": s, "ident": i} for s, i in etapes],
                          "progres": {}, "resultats": {}, "erreur": ""}
@@ -338,8 +408,11 @@ class Centre:
             with self._verrou:
                 job["progres"][ident] = {"code": etat.code, "message": etat.message, "final": bool(final)}
                 self.etats[ident] = etat
+        comfy_avant = any(i == "comfyui" for s, i in etapes if s == "demarrer") and self.comfyui.repond()
         try:
             resultats = self.ctrl.executer_sequence(etapes, progres)
+            if ("demarrer", "comfyui") in etapes and not comfy_avant and resultats.get("comfyui") and resultats["comfyui"].code == self.L.ACTIF:
+                self.comfyui.noter_demarrage_manuel()        # lancé par le bouton : le Centre l'arrêtera après 10 minutes d'inactivité
             with self._verrou:
                 job["resultats"] = {i: {"code": e.code, "message": e.message} for i, e in resultats.items()}
                 job["statut"] = "termine"

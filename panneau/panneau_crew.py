@@ -89,6 +89,7 @@ class InfoChef:
     modeles: list = field(default_factory=list)
     dernier_test: object = None     # None ou {"modele", "ok", "json_valides", "sur", "duree_moy_s"}
     message: str = ""
+    libere: bool = False            # la carte graphique a été libérée (le chef est déchargé exprès : POST /chef/liberer, pas encore /chef/reprendre)
 
 
 @dataclass
@@ -224,7 +225,8 @@ def analyser_chef(corps):
     else:
         t = None
     chef = d.get("chef") if identifiant_modele_valide(d.get("chef")) else ""
-    return InfoChef(d.get("lmstudio") is not False, chef, d.get("chef_charge") is True, ch, modeles, t, _texte(d.get("message"), 500))
+    return InfoChef(d.get("lmstudio") is not False, chef, d.get("chef_charge") is True, ch, modeles, t, _texte(d.get("message"), 500),
+                    d.get("libere") is True)
 
 
 def _entier(v, defaut=0):

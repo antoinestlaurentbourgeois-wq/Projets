@@ -37,10 +37,15 @@
     var raisons = h("div", { class: "doux", id: "img-raisons" });
     var cout = h("p", { class: "doux", id: "img-cout", role: "status" });
     var gpu = h("div", { class: "note-gpu", id: "img-gpu", hidden: true },
-      h("p", { class: "doux", texte: "ComfyUI utilise la carte graphique, que le chef d'équipe de Crew occupe : Crew sera indisponible pendant la création (il sera rechargé ensuite)." }));
+      h("p", { class: "doux", id: "img-gpu-texte", texte: "ComfyUI utilise la carte graphique, que le chef d'équipe de Crew occupe : Crew la libère, ComfyUI démarre tout seul (environ 20 à 40 s), crée l'image puis s'arrête, et Crew recharge son chef (environ 10 s). Pendant ce temps Crew continue par un modèle de nuage en mode normal et reste indisponible en mode confidentiel." }));
     var libre = h("input", { type: "checkbox", id: "img-libre", checked: !!etat.laisser_libre });
     libre.addEventListener("change", function () { etat.laisser_libre = libre.checked; });
     gpu.appendChild(h("label", { class: "case-prive" }, libre, " Laisser la carte graphique libre ensuite (ne pas recharger le chef)"));
+    var manuel = h("input", { type: "checkbox", id: "img-arreter-comfyui", checked: !!etat.arreter_comfyui });
+    manuel.addEventListener("change", function () { etat.arreter_comfyui = manuel.checked; });
+    var blocManuel = h("div", { class: "note-gpu", id: "img-comfy-manuel", hidden: true },
+      h("label", { class: "case-prive" }, manuel, " ComfyUI tourne déjà (lancé à la main) : l'arrêter ensuite"));
+    var autoComfy = h("p", { class: "doux", id: "img-comfy-auto", hidden: true, texte: "ComfyUI n'est pas lancé : le Centre le démarre tout seul (environ 20 à 40 s), crée l'image puis l'arrête." });
 
     function remplirMoteurs() {
       vider(sel);
@@ -71,12 +76,15 @@
     }
     function majCout() {
       var m = moteurDe(o, etat.moteur);
-      if (!m) { cout.textContent = "Aucun moteur disponible."; gpu.hidden = true; return; }
+      if (!m) { cout.textContent = "Aucun moteur disponible."; gpu.hidden = true; blocManuel.hidden = true; autoComfy.hidden = true; return; }
       var usd = m.usd_image * etat.n;
       cout.textContent = usd === 0 ? "Gratuit (moteur local, rien ne quitte le PC)." :
         "Coût estimé : ≈ " + dollars(usd) + " pour " + etat.n + " image" + (etat.n > 1 ? "s" : "") + (m.tarif_verifie ? "" : " (estimation indicative)") +
         " ; seuil de confirmation " + dollars(o.seuil_usd) + ".";
       gpu.hidden = !(m.id === "local" && o.chef_a_liberer);
+      var comfy = o.comfy || {};
+      blocManuel.hidden = !(m.id === "local" && comfy.repond && comfy.manuel);
+      autoComfy.hidden = !(m.id === "local" && !comfy.repond && !o.chef_a_liberer);
     }
     function tout() { remplirMoteurs(); remplirModeles(); majCout(); if (surChangement) surChangement(); }
     sel.addEventListener("change", function () { etat.moteur = sel.value; var m = moteurDe(o, etat.moteur); etat.modele = m && m.modeles[0] || ""; tout(); });
@@ -101,7 +109,7 @@
       cp.addEventListener("change", function () { etat.prive = cp.checked; initEtat(o, etat, etat.prive); tout(); });
       corps.appendChild(h("label", { class: "case-prive" }, cp, " Contenu confidentiel : moteur local seulement (jamais le nuage)"));
     }
-    corps.appendChild(cout); corps.appendChild(gpu);
+    corps.appendChild(cout); corps.appendChild(gpu); corps.appendChild(autoComfy); corps.appendChild(blocManuel);
     tout();
     return { el: corps, prompt: prompt };
   }
@@ -109,7 +117,7 @@
   // Demande au serveur ; s'il réclame une confirmation (seuil de coût, libération de la carte graphique), on la demande puis on recommence.
   function poster(url, etat, extra, drapeaux) {
     drapeaux = drapeaux || {};
-    var corps = { moteur: etat.moteur, modele: etat.modele, prompt: etat.prompt, taille: etat.taille, n: etat.n, prive: !!etat.prive, laisser_libre: !!etat.laisser_libre,
+    var corps = { moteur: etat.moteur, modele: etat.modele, prompt: etat.prompt, taille: etat.taille, n: etat.n, prive: !!etat.prive, laisser_libre: !!etat.laisser_libre, arreter_comfyui: !!etat.arreter_comfyui,
                   confirme_depassement: !!drapeaux.depassement, confirme_liberation: !!drapeaux.liberation };
     Object.keys(extra || {}).forEach(function (k) { corps[k] = extra[k]; });
     return api("POST", url, corps).catch(function (e) {
@@ -119,7 +127,7 @@
           return ok ? poster(url, etat, extra, { depassement: true, liberation: drapeaux.liberation }) : null; });
       }
       if (d.liberation && !drapeaux.liberation) {
-        return C.confirmer("Libérer la carte graphique ?", e.message, "Continuer").then(function (ok) {
+        return C.confirmer("Créer cette image en local ?", e.message, "Continuer").then(function (ok) {
           return ok ? poster(url, etat, extra, { depassement: drapeaux.depassement, liberation: true }) : null; });
       }
       throw e;
@@ -159,6 +167,34 @@
     });
   };
 
+  // ---------------------------------------------------------------- bandeaux ComfyUI (réconciliation : un bouton, JAMAIS d'action automatique)
+  // d : réponse de GET /api/comfyui ; apres : fonction appelée après l'action pour rafraîchir l'écran.
+  C.bandeauxComfyUI = function (d, apres) {
+    var sortie = [];
+    if (!d) return sortie;
+    if (d.bandeau_chef) {
+      sortie.push(h("div", { class: "bandeau", role: "status", id: "bandeau-chef-libre" },
+        h("strong", { texte: "La carte graphique est encore libérée. Recharger le chef ?" }), " ",
+        h("button", { class: "petit", type: "button", id: "bouton-recharger-chef", texte: "Recharger le chef", onclick: function () {
+          api("POST", "/api/comfyui/reprendre-chef").then(function () {
+            return C.informer("Chef en cours de rechargement", "Crew recharge son chef (environ 10 s). Crew sera de nouveau disponible ensuite.");
+          }).then(function () { if (apres) apres(); })
+            .catch(function (e) { if (e.message !== "session") C.informer("Rechargement impossible", e.message); });
+        } })));
+    }
+    if (d.bandeau_comfyui) {
+      sortie.push(h("div", { class: "bandeau", role: "status", id: "bandeau-comfyui" },
+        h("strong", { texte: "ComfyUI tourne et occupe la carte graphique." }), " ",
+        h("button", { class: "petit", type: "button", id: "bouton-arreter-comfyui", texte: "Arrêter", onclick: function () {
+          C.confirmer("Arrêter ComfyUI ?", "ComfyUI sera arrêté et la carte graphique rendue. Le chef de Crew ne sera rechargé que si vous le demandez.", "Arrêter").then(function (ok) {
+            if (!ok) return;
+            return api("POST", "/api/comfyui/arreter").then(function () { if (apres) apres(); });
+          }).catch(function (e) { if (e.message !== "session") C.informer("Arrêt impossible", e.message); });
+        } })));
+    }
+    return sortie;
+  };
+
   // ---------------------------------------------------------------- page « Images »
   function coutPage() { var e = document.getElementById("img-cout"); return e; }
   function dessinerPage() {
@@ -166,6 +202,7 @@
     vider(r);
     r.appendChild(h("h2", { texte: "🎨 Images" }));
     r.appendChild(h("p", { class: "doux", texte: "Créez des images avec l'IA, ici ou depuis n'importe quelle salle (bouton 🎨 ou commande /image). Les images restent sur ce PC. Un moteur du nuage reçoit votre description ; avec la case « confidentiel », ou en mode Confidentiel / Ultra-confidentiel, seul ComfyUI (local) est utilisé." }));
+    C.bandeauxComfyUI(S.comfy, charger).forEach(function (b) { r.appendChild(b); });
     if (S.resultat && S.resultat.etat === "erreur") r.appendChild(h("div", { class: "bandeau erreur", role: "alert", texte: S.resultat.message || "La création a échoué." }));
     if (S.resultat && S.resultat.etat === "annule") r.appendChild(h("div", { class: "bandeau", role: "status", texte: "Création annulée." }));
     if (S.resultat && S.resultat.etat === "termine") r.appendChild(h("div", { class: "bandeau ok", role: "status", texte: S.resultat.images.length + " image" + (S.resultat.images.length > 1 ? "s créées" : " créée") + " : elles sont en haut de la galerie." + (S.resultat.message ? " " + S.resultat.message : "") }));
@@ -221,8 +258,8 @@
             }); } }))));
   }
   function charger() {
-    Promise.all([api("GET", "/api/images/options"), api("GET", "/api/images")]).then(function (res) {
-      S.opts = res[0]; S.images = res[1].images;
+    Promise.all([api("GET", "/api/images/options"), api("GET", "/api/images"), api("GET", "/api/comfyui").catch(function () { return null; })]).then(function (res) {
+      S.opts = res[0]; S.images = res[1].images; S.comfy = res[2];
       initEtat(S.opts, S.etat, S.etat.prive);
       dessinerPage();
     }).catch(function (e) { if (e.message !== "session" && S.racine) { vider(S.racine); S.racine.appendChild(h("div", { class: "bandeau erreur", texte: e.message })); } });

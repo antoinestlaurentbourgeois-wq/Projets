@@ -69,6 +69,16 @@ URL_LMSTUDIO = "http://127.0.0.1:1234/v1/models"
 URL_LMSTUDIO_MODELES = "http://127.0.0.1:1234/api/v0/models"
 URL_CREW_SANTE = "http://127.0.0.1:8765/sante"
 
+# ComfyUI (images locales) : lancé et arrêté SEULEMENT par ces deux scripts (aucun argument, aucun texte d'utilisateur ou d'IA dans la commande).
+# Jamais au démarrage de Windows, jamais par « Tout démarrer ». Le dossier peut être changé par la clé « dossier_comfyui » de reglages.json du Centre.
+DOSSIER_COMFYUI = r"I:\IA\ComfyUI"
+SCRIPT_COMFYUI_DEMARRER = "demarrer_comfyui.ps1"
+SCRIPT_COMFYUI_ARRETER = "arreter_comfyui.ps1"
+JOURNAL_COMFYUI = "comfyui.log"
+URL_COMFYUI = "http://127.0.0.1:8188/system_stats"
+DELAI_DEMARRAGE_COMFYUI = 120     # le script attend lui-même jusqu'à 90 s que ComfyUI réponde
+DELAI_ARRET_COMFYUI = 60
+
 # ---------------------------------------------------------------------------
 # Clés API (on affiche seulement « présente » / « absente », jamais la valeur)
 # ---------------------------------------------------------------------------

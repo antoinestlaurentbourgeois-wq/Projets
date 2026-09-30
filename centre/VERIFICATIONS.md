@@ -84,3 +84,15 @@
 - [ ] Demander « fais-moi une image de… » à une IA de chaque type de salle : une carte apparaît avec la description complète, RIEN n'est créé avant le clic sur Générer.
 - [ ] Conversation privée / mode Confidentiel : seul ComfyUI est proposé.
 - [ ] ComfyUI avec le chef chargé : confirmation, Crew libère la carte, l'image se crée, Crew recharge le chef (sauf Mode jeu ou « laisser la carte libre »).
+
+## K. ComfyUI automatique (vrais scripts, vrai Crew, vrai LM Studio, vraie carte graphique requis)
+- [ ] Les deux scripts sont dans `I:\IA\ComfyUI` (`demarrer_comfyui.ps1`, `arreter_comfyui.ps1`) ; ComfyUI est ARRÊTÉ au départ ; le chef de Crew est chargé.
+- [ ] Page Images, moteur « ComfyUI (local) », créer une image : la fenêtre de confirmation affiche le texte « Crew libère la carte graphique, ComfyUI démarre (environ 20 à 40 s)… » ; rien ne part avant « Continuer ».
+- [ ] Étapes affichées dans l'ordre : Libération de la carte → Démarrage de ComfyUI → Création de l'image → Arrêt de ComfyUI → Rechargement du chef ; puis « Chef rechargé : Crew est de nouveau disponible ». Dans le Gestionnaire des tâches : ComfyUI a disparu et le chef est de nouveau en mémoire vidéo.
+- [ ] Trois demandes à la suite : UN seul cycle (une libération, un démarrage, trois images, un arrêt, une reprise).
+- [ ] ComfyUI lancé à la main (`demarrer_comfyui.bat`) avant une création : le Centre ne le relance pas et ne l'arrête pas (sauf case « l'arrêter ensuite »).
+- [ ] Page Centre : composant « ComfyUI » avec voyant ; Démarrer puis attendre 10 minutes sans rien faire : il s'arrête tout seul.
+- [ ] « Tout démarrer » ne lance PAS ComfyUI ; « Mode jeu » l'arrête ; en Mode jeu une création locale est refusée avec une explication.
+- [ ] Fermer le Centre pendant que la carte est libérée, puis le rouvrir : bandeau « La carte graphique est encore libérée. Recharger le chef ? » (aucune action automatique) ; lancer ComfyUI à la main : bandeau « ComfyUI tourne et occupe la carte graphique [Arrêter] ».
+- [ ] Mettre un mauvais dossier dans `dossier_comfyui` (reglages.json) : refus clair, rien n'est lancé.
+

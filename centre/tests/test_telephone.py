@@ -109,6 +109,7 @@ SENSIBLES = [("POST", "/api/action", {"sens": "mode_jeu"}), ("PUT", "/api/crew/m
              ("PUT", "/api/salles/deepseek/reglage", {"modele": "x"}),
              ("PUT", "/api/crew/autorisations", {"nom": "claude", "autorise": True}),
              ("PUT", "/api/crew/chef", {"modele": "qwen/qwen3-14b"}),
+             ("POST", "/api/comfyui/arreter", {}), ("POST", "/api/comfyui/reprendre-chef", {}),
              ("POST", "/api/images", {"moteur": "openai", "prompt": "x"}), ("DELETE", "/api/images/0123456789abcdef", None), ("PUT", "/api/tiroir/abc", {"zone": "partageable"}),
              ("DELETE", "/api/conversations/0123456789abcdef", None), ("POST", "/api/securite/deconnecter-autres", {})]
 

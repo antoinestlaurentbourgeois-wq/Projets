@@ -200,9 +200,10 @@
 
   function tick(conteneur) {
     if (pageCourante !== "centre") return;
-    api("GET", "/api/etat").then(function (d) {
-      etat.centre = d;
-      var signature = JSON.stringify([d, etat.ouvert, etat.moteurs]);
+    Promise.all([api("GET", "/api/etat"), api("GET", "/api/comfyui").catch(function () { return null; })]).then(function (r) {
+      var d = r[0];
+      etat.centre = d; etat.comfyui = r[1];
+      var signature = JSON.stringify([d, etat.ouvert, etat.moteurs, r[1]]);
       if (signature !== etat.derniereSignature) { etat.derniereSignature = signature; dessinerCentre(conteneur, d); }
     }).catch(function (e) {
       if (e.message === "session") return;
@@ -225,6 +226,7 @@
       h("button", { class: "bouton danger", type: "button", disabled: enCours, texte: "Mode jeu (tout éteindre)", onclick: modeJeu }),
       h("button", { class: "bouton principal", type: "button", disabled: enCours, texte: "Tout démarrer", onclick: toutDemarrer })));
 
+    if (Centre.bandeauxComfyUI) Centre.bandeauxComfyUI(etat.comfyui, function () { etat.derniereSignature = ""; tick(conteneur); }).forEach(function (b) { conteneur.appendChild(b); });
     if (action) conteneur.appendChild(bandeauAction(action));
 
     d.composants.forEach(function (c) { conteneur.appendChild(carteComposant(c, d, enCours)); });
@@ -354,6 +356,11 @@
   }
 
   function basculer(c, sens) {
+    if (c.ident === "comfyui" && sens === "demarrer") {
+      return confirmer("Démarrer ComfyUI ?", "ComfyUI utilise la carte graphique, que le chef de Crew occupe aussi : les deux ne tiennent pas ensemble. Si le chef est chargé, libérez d'abord la carte (page Chef d'équipe ou Mode jeu).\n\nPour créer une image, inutile de le démarrer ici : le Centre libère la carte, démarre ComfyUI, crée l'image, l'arrête, puis Crew recharge son chef.\n\nDémarrer quand même ?", "Démarrer")
+        .then(function (ok) { return ok && lancer("demarrer", c.ident, false); })
+        .catch(function (e) { if (e.message !== "session") informer("Action impossible", e.message); });
+    }
     api("GET", "/api/plan?sens=" + sens + "&ident=" + encodeURIComponent(c.ident)).then(function (p) {
       if (!p.liees.length) return lancer(sens, c.ident, false);
       var q = sens === "demarrer"
@@ -365,7 +372,7 @@
     }).catch(function (e) { if (e.message !== "session") informer("Action impossible", e.message); });
   }
   function modeJeu() {
-    confirmer("Mode jeu", "Tout va être éteint (Crew, modèles, LM Studio, Open WebUI, Kokoro, Docker) pour libérer la carte graphique.\n\nContinuer ?", "Tout éteindre", "danger")
+    confirmer("Mode jeu", "Tout va être éteint (ComfyUI, Crew, modèles, LM Studio, Open WebUI, Kokoro, Docker) pour libérer la carte graphique.\n\nContinuer ?", "Tout éteindre", "danger")
       .then(function (ok) { return ok && lancer("mode_jeu"); })
       .catch(function (e) { informer("Action impossible", e.message); });
   }

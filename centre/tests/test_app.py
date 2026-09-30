@@ -155,7 +155,7 @@ def attendre(client, centre):
 
 def test_etat_initial(client):
     d = client.get("/api/etat").json()
-    assert [c["ident"] for c in d["composants"]] == ["docker", "openwebui", "kokoro", "lmstudio", "gemma", "embeddings", "crew"]
+    assert [c["ident"] for c in d["composants"]] == ["docker", "openwebui", "kokoro", "lmstudio", "gemma", "embeddings", "crew", "comfyui"]
     assert all(c["etat"]["code"] in ("arrete", "inconnu") for c in d["composants"])
     assert d["cles"]["DEEPSEEK_API_KEY"] is True and d["cles"]["GEMINI_API_KEY"] is False
 
@@ -194,7 +194,8 @@ def test_arret_avec_dependants(client, centre, simulateur):
 def test_mode_jeu_et_tout_demarrer(client, centre, simulateur):
     assert client.post("/api/action", json={"sens": "tout_demarrer"}).status_code == 202
     attendre(client, centre)
-    assert all(v["code"] == "actif" for v in etat(client).values())
+    assert all(v["code"] == "actif" for i, v in etat(client).items() if i != "comfyui")
+    assert etat(client)["comfyui"]["code"] == "arrete" and simulateur.comfy_scripts == []          # « Tout démarrer » ne lance JAMAIS ComfyUI
     assert client.post("/api/action", json={"sens": "mode_jeu"}).status_code == 202
     attendre(client, centre)
     assert all(v["code"] == "arrete" for v in etat(client).values())

@@ -57,6 +57,7 @@ class Composant:
     nom: str
     description: str
     dependances: tuple = ()
+    tout_demarrer: bool = True      # False : « Tout démarrer » ne le lance JAMAIS (ComfyUI), mais « Mode jeu » l'arrête
 
 
 # L'ordre de cette liste sert aussi à départager les ex æquo dans le tri.
@@ -68,6 +69,10 @@ COMPOSANTS = [
     Composant("gemma", "Chef local", "Modèle chef de Crew (à changer dans la page « Chef d'équipe » du Centre)", ("lmstudio",)),
     Composant("embeddings", "Modèle d'embeddings", "nomic-embed-text v1.5 — 84 Mo", ("lmstudio",)),
     Composant("crew", "Serveur Crew", "Équipe d'agents CrewAI — port 8765", ("gemma",)),
+    Composant("comfyui", "ComfyUI (images locales)",
+              "Création d'images sur ce PC — port 8188. Partage la carte graphique avec le chef de Crew : les deux ne tiennent pas ensemble. "
+              "Le Centre le démarre et l'arrête tout seul pour chaque création locale ; jamais au démarrage de Windows.",
+              (), False),
 ]
 PAR_ID = {c.ident: c for c in COMPOSANTS}
 
@@ -116,6 +121,30 @@ def lire_chef_fichier(texte):
         return Chef()
 
 
+def joindre_chemin(dossier, nom_fichier):
+    """Colle un nom de fichier au dossier avec le séparateur du dossier (\\ pour un chemin Windows)."""
+    sep = "\\" if "\\" in dossier or re.match(r"^[A-Za-z]:", dossier) else "/"
+    return dossier.rstrip("\\/") + sep + nom_fichier
+
+
+_DOSSIER_SUR = re.compile(r"^(?:[A-Za-z]:[\\/]|/)[^\x00-\x1f\"<>|*?]{1,240}$")
+
+
+def scripts_comfyui(systeme, dossier):
+    """Valide le dossier de ComfyUI et renvoie (script de démarrage, script d'arrêt).
+
+    Le dossier doit être un chemin absolu sans caractère étrange ni « .. », et contenir les DEUX scripts attendus ; sinon refus.
+    Aucun texte venant d'un utilisateur, d'une IA ou d'une image ne doit jamais arriver ici (seulement R ou reglages.json).
+    """
+    if not isinstance(dossier, str) or not _DOSSIER_SUR.match(dossier) or ".." in re.split(r"[\\/]", dossier):
+        raise ErreurAction("Dossier de ComfyUI invalide : corrigez « dossier_comfyui » dans reglages.json du Centre.")
+    demarrer, arreter = joindre_chemin(dossier, R.SCRIPT_COMFYUI_DEMARRER), joindre_chemin(dossier, R.SCRIPT_COMFYUI_ARRETER)
+    for script in (demarrer, arreter):
+        if not systeme.fichier_existe(script):
+            raise ErreurAction(f"ComfyUI n'est pas installé ici : fichier introuvable : {script}")
+    return demarrer, arreter
+
+
 # ---------------------------------------------------------------------------
 # Ordre des dépendances
 # ---------------------------------------------------------------------------
@@ -143,6 +172,11 @@ def ordre_demarrage(composants=COMPOSANTS):
         for deps in restants.values():
             deps.discard(choisi)
     return ordre
+
+
+def ordre_tout_demarrer(composants=COMPOSANTS):
+    """Ordre de « Tout démarrer » : sans les composants qui ne démarrent jamais tout seuls (ComfyUI)."""
+    return [i for i in ordre_demarrage(composants) if next(c for c in composants if c.ident == i).tout_demarrer]
 
 
 def ordre_arret(composants=COMPOSANTS):
@@ -502,6 +536,7 @@ class Controleur:
         self._modeles_connus = {}
         self._verrou = threading.Lock()
         self._chef_fourni = None      # réglages du chef donnés par le Centre (GET /chef) ; sinon fichier de secours, sinon gemma
+        self.dossier_comfyui = R.DOSSIER_COMFYUI     # le Centre peut le remplacer (clé « dossier_comfyui » de reglages.json), après validation
 
     # ----- le chef local (modèle « gemma » des anciennes versions) -------------
 
@@ -516,6 +551,47 @@ class Controleur:
 
     def _cle_modele(self, ident):
         return self.chef_actuel().modele if ident == "gemma" else R.MODELE_EMBEDDINGS
+
+    # ----- ComfyUI : deux scripts fixes, rien d'autre ----------------------------------
+
+    def scripts_comfyui(self):
+        """(script de démarrage, script d'arrêt) dans le dossier de ComfyUI ; ErreurAction si le dossier n'est pas valide."""
+        return scripts_comfyui(self.sys, self.dossier_comfyui)
+
+    def journal_comfyui(self):
+        return joindre_chemin(self.dossier_comfyui, R.JOURNAL_COMFYUI)
+
+    def lancer_script_comfyui(self, sens):
+        """Lance demarrer_comfyui.ps1 ou arreter_comfyui.ps1 tels quels (liste d'arguments, aucun texte extérieur, avec un délai). Renvoie le Resultat."""
+        demarrer, arreter = self.scripts_comfyui()
+        script, delai = (demarrer, R.DELAI_DEMARRAGE_COMFYUI) if sens == "demarrer" else (arreter, R.DELAI_ARRET_COMFYUI)
+        return self._cmd([POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script], delai)
+
+    def comfyui_repond(self):
+        return self._http_ok(R.URL_COMFYUI)
+
+    def verifier_comfyui(self):
+        if self.comfyui_repond():
+            return Etat(ACTIF, "Occupe la carte graphique : le chef de Crew ne peut pas rester chargé en même temps")
+        return Etat(ARRETE, "Arrêté (le Centre le démarre tout seul quand une image locale est demandée)")
+
+    def _demarrer_comfyui(self, progres):
+        if self.comfyui_repond():
+            return Etat(ACTIF, "Tourne déjà")
+        self.scripts_comfyui()
+        res = self.lancer_script_comfyui("demarrer")
+        if not res.ok or not self._attendre(self.comfyui_repond, 30, "comfyui", "ComfyUI démarre…", progres, 2):
+            raise ErreurAction(f"ComfyUI n'a pas démarré. Journal : {self.journal_comfyui()}")
+        return Etat(ACTIF, "Occupe la carte graphique : arrêtez-le pour recharger le chef de Crew")
+
+    def _arreter_comfyui(self, progres):
+        if not self.comfyui_repond():
+            self.lancer_script_comfyui("arreter")          # au cas où il démarrerait encore
+            return Etat(ARRETE, "Arrêté")
+        self.lancer_script_comfyui("arreter")
+        if not self._attendre(lambda: not self.comfyui_repond(), 30, "comfyui", "Arrêt de ComfyUI…", progres, 2):
+            raise ErreurAction("ComfyUI répond encore après la demande d'arrêt")
+        return Etat(ARRETE, "Arrêté")
 
     # ----- petits outils --------------------------------------------------
 
@@ -677,6 +753,7 @@ class Controleur:
             "gemma": lambda: self.verifier_modele("gemma"),
             "embeddings": lambda: self.verifier_modele("embeddings"),
             "crew": self.verifier_crew,
+            "comfyui": self.verifier_comfyui,
         }[ident]()
 
     def verifier_cles(self):
@@ -700,11 +777,13 @@ class Controleur:
             f_webui = ex.submit(sur, self.verifier_openwebui, docker)
             f_kokoro = ex.submit(sur, self.verifier_kokoro, docker)
             f_emb = ex.submit(sur, self.verifier_modele, "embeddings", lms)
+            f_comfy = ex.submit(sur, self.verifier_comfyui)
             gemma = sur(self.verifier_modele, "gemma", lms)
             repond = f_crew.result()
             crew = sur(self.verifier_crew, gemma, repond if isinstance(repond, bool) else False)
             etats = {"docker": docker, "openwebui": f_webui.result(), "kokoro": f_kokoro.result(),
-                     "lmstudio": lms, "gemma": gemma, "embeddings": f_emb.result(), "crew": crew}
+                     "lmstudio": lms, "gemma": gemma, "embeddings": f_emb.result(), "crew": crew,
+                     "comfyui": f_comfy.result()}
         return etats
 
     # ----- actions ---------------------------------------------------------
@@ -959,7 +1038,7 @@ class Controleur:
 
     def tout_demarrer(self, progres):
         journal.info("=== Tout démarrer ===")
-        return self.executer_sequence([("demarrer", i) for i in ordre_demarrage()], progres)
+        return self.executer_sequence([("demarrer", i) for i in ordre_tout_demarrer()], progres)
 
     def mode_jeu(self, progres):
         journal.info("=== Mode jeu ===")

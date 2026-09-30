@@ -360,6 +360,27 @@ def creer_app(centre=None, verrou=None, config=None):
         except ErreurService as e:
             return _erreur(str(e), e.code)
 
+    async def api_comfyui(request):
+        return _json(await run_in_threadpool(centre.comfyui_etat))
+
+    async def api_comfyui_arreter(request):
+        refus = sensible(request)
+        if refus:
+            return refus
+        try:
+            return _json(await run_in_threadpool(centre.arreter_comfyui, session_courte(request)))
+        except ErreurService as e:
+            return _erreur(str(e), e.code)
+
+    async def api_comfyui_reprendre_chef(request):
+        refus = sensible(request)
+        if refus:
+            return refus
+        try:
+            return _json(await run_in_threadpool(centre.reprendre_chef, session_courte(request)), 202)
+        except ErreurService as e:
+            return _erreur(str(e), e.code)
+
     async def api_ouvrir(request):
         refus = sensible(request)
         if refus:
@@ -602,7 +623,8 @@ def creer_app(centre=None, verrou=None, config=None):
     def parametres_image(d):
         return dict(moteur=str(d.get("moteur", "")), prompt=d.get("prompt", ""), taille=str(d.get("taille", "carre")), n=d.get("n", 1),
                     modele=str(d.get("modele") or d.get("checkpoint") or "")[:200], confirme_depassement=bool(d.get("confirme_depassement")),
-                    confirme_liberation=bool(d.get("confirme_liberation")), laisser_libre=bool(d.get("laisser_libre")))
+                    confirme_liberation=bool(d.get("confirme_liberation")), laisser_libre=bool(d.get("laisser_libre")),
+                    arreter_comfyui=bool(d.get("arreter_comfyui")))
 
     async def api_images_options(request):
         return _json(await run_in_threadpool(centre.images.options, utilisateur(request)))
@@ -979,6 +1001,8 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/crew/mode", api_mode_lire), Route("/api/crew/mode", api_mode_changer, methods=["PUT"]),
         Route("/api/crew/moteurs", api_moteurs), Route("/api/crew/autorisations", api_autorisations), Route("/api/crew/chef", api_chef),
         Route("/api/crew/chef", api_chef_definir, methods=["PUT"]),
+        Route("/api/comfyui", api_comfyui), Route("/api/comfyui/arreter", api_comfyui_arreter, methods=["POST"]),
+        Route("/api/comfyui/reprendre-chef", api_comfyui_reprendre_chef, methods=["POST"]),
         Route("/api/images/options", api_images_options), Route("/api/images/estimation", api_images_estimation, methods=["POST"]),
         Route("/api/images/jobs/{ident}", api_images_job), Route("/api/images/jobs/{ident}/annuler", api_image_annuler, methods=["POST"]),
         Route("/api/conversations/{cid}/image", api_conv_image, methods=["POST"]), Route("/api/conversations/{cid}/images/jobs", api_conv_image_jobs),

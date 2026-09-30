@@ -593,7 +593,7 @@ class Salles:
     # ----- images dans une conversation (demande explicite ou proposition de l'IA) ------------------------------------------------
 
     def lancer_image(self, cid, moteur, prompt, taille="carre", n=1, modele="", confirme_depassement=False, confirme_liberation=False, laisser_libre=False,
-                     proposition=None, session="", utilisateur="local", prive=False):
+                     proposition=None, session="", utilisateur="local", prive=False, arreter_comfyui=False):
         """B1 / B2 : crée l'image demandée par l'utilisateur (bouton, /image, ou clic sur la carte d'une proposition). L'IA de la salle n'est PAS appelée.
         Une conversation privée, ou marquée « confidentiel », n'accepte que le moteur local : le refus du nuage est fait par images.lancer (serveur)."""
         conv = self.conversation(cid)
@@ -604,7 +604,7 @@ class Salles:
                 raise ErreurSalle("Cette proposition d'image n'existe plus.", 404)
         job = self.centre.images.lancer(moteur, prompt, taille, n, prive=bool(prive) or bool(conv.get("prive")), modele=modele, confirme_depassement=confirme_depassement,
                                         confirme_liberation=confirme_liberation, laisser_libre=laisser_libre, session=session, conversation=cid, salle=salle,
-                                        utilisateur=utilisateur, proposition=proposition)
+                                        utilisateur=utilisateur, proposition=proposition, arreter_comfyui=arreter_comfyui)
         return job
 
     def ignorer_proposition(self, cid, proposition):

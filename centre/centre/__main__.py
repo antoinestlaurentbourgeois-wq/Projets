@@ -79,7 +79,10 @@ def demo():
     sim.chef_test_mauvais_pour = {"google/gemma-3-27b"}
     sim.chef_echec_pour = {"demo/modele-trop-gros": "Mémoire vidéo insuffisante pour charger ce modèle"}
     sim.cles.update({"GEMINI_API_KEY": "cle-demo", "XAI_API_KEY": "cle-demo", "OPENAI_API_KEY": "cle-demo"})
-    demarrer(config, sim, ReseauDemo(), ProcessusDemo(), AmontDemo())
+    reseau = ReseauDemo()
+    sim.comfy_actif = False                          # démo : ComfyUI arrêté, les deux faux scripts le démarrent et l'arrêtent (le Centre fait tout seul le cycle)
+    sim.comfy_crochet = lambda sens: setattr(reseau, "comfy", sens == "demarrer")
+    demarrer(config, sim, reseau, ProcessusDemo(), AmontDemo())
 
 
 def tests_panneau():

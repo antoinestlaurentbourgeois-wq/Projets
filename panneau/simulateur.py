@@ -94,6 +94,7 @@ class Simulateur:
         self.chef_dernier_test = None
         self.chef_liberer_disponible = True    # False : /chef/liberer et /chef/reprendre n'existent pas encore (404)
         self.chef_operations = []              # historique : "liberer" / "reprendre"
+        self.chef_libere = False               # « libere » de GET /chef : après /chef/liberer, jusqu'à /chef/reprendre
         self.lms_parallel_supporte = True  # False : « lms load --parallel » est refusé (ancienne version)
         self.programmes_abonnement_absents = set()   # ex. {"claude"} -> « Programme « claude » introuvable »
         self.conversations = []   # [{"id", "updated_at", "models": [...]}] pour Open WebUI
@@ -113,6 +114,12 @@ class Simulateur:
              "texte": "Le contrat du client Durand prévoit un prix secret de 12000 euros"},
         ]
         self.ouvertures = []                     # adresses et programmes ouverts
+        # ComfyUI (images locales) : lancé et arrêté par deux scripts PowerShell (appelés en liste d'arguments)
+        self.comfy_actif = False                 # répond sur 127.0.0.1:8188 ?
+        self.comfy_installe = True               # les deux scripts existent-ils dans le dossier ?
+        self.comfy_echec_demarrage = False       # demarrer_comfyui.ps1 sort avec 1 (ComfyUI ne démarre pas)
+        self.comfy_scripts = []                  # historique : ("demarrer" | "arreter", chemin du script, arguments)
+        self.comfy_crochet = None                # fonction(sens) appelée quand un script tourne (les tests du Centre y branchent leur faux ComfyUI)
         self.requetes = []                       # (méthode, url, a_une_cle) pour les tests
 
     # ----- temps -----------------------------------------------------------
@@ -151,6 +158,8 @@ class Simulateur:
             return self.docker_desktop_installe and chemin == R.DOCKER_DESKTOP_CANDIDATS[0]
         if chemin in R.LMSTUDIO_EXE_CANDIDATS:
             return self.lmstudio_installe and chemin == R.LMSTUDIO_EXE_CANDIDATS[0]
+        if chemin.endswith((R.SCRIPT_COMFYUI_DEMARRER, R.SCRIPT_COMFYUI_ARRETER)):
+            return self.comfy_installe
         return True
 
     def ouvrir_programme(self, chemin):
@@ -196,6 +205,8 @@ class Simulateur:
                 return Resultat(0, "INFORMATIONS : aucune tâche en service ne correspond aux critères.\r\n")
             if prog == "taskkill":
                 return self._taskkill(args[1:])
+            if prog == "powershell" and "-File" in args:
+                return self._script_comfyui(args)
             if prog == "powershell":
                 return self._powershell(args[-1])
             return Resultat(None, "", f"programme introuvable : {args[0]}")
@@ -233,6 +244,8 @@ class Simulateur:
                 if not self.api_v0_existe:
                     return 404, "Not Found"
                 return 200, json.dumps({"object": "list", "data": self._liste_api()})
+            if url == R.URL_COMFYUI:
+                return (200, "{}") if self.comfy_actif else (None, "connexion refusée")
             if url == R.URL_CREW_SANTE:
                 if self.crew_pids and maintenant >= self.crew_pret_a:
                     return 200, '{"ok": true}'
@@ -240,6 +253,21 @@ class Simulateur:
             return None, "adresse inconnue du simulateur"
 
     # ----- détails de la simulation -----------------------------------------
+
+    def _script_comfyui(self, args):
+        """powershell.exe -NoProfile -ExecutionPolicy Bypass -File <script> : demarrer_comfyui.ps1 (0 = démarré ou déjà là, 1 = échec) / arreter_comfyui.ps1 (toujours 0)."""
+        script = args[args.index("-File") + 1]
+        sens = "demarrer" if script.endswith(R.SCRIPT_COMFYUI_DEMARRER) else "arreter"
+        self.comfy_scripts.append((sens, script, list(args)))
+        if sens == "demarrer":
+            if self.comfy_echec_demarrage:
+                return Resultat(1, "", "ComfyUI ne repond pas apres 90 s")
+            self.comfy_actif = True
+        else:
+            self.comfy_actif = False
+        if self.comfy_crochet:
+            self.comfy_crochet(sens)
+        return Resultat(0, "ComfyUI est demarre" if sens == "demarrer" else "ComfyUI est arrete", "")
 
     def _liste_api(self):
         donnees = [{"id": "qwen2.5-7b-instruct", "state": "not-loaded", "type": "llm"}]
@@ -444,6 +472,7 @@ class Simulateur:
                 self.chef_pas += 1
                 return
             self.modeles[self.chef_id] = 0 if ch["operation"] == "liberer" else 1
+            self.chef_libere = ch["operation"] == "liberer"
             ch.update(etat="termine", etape="Terminé")
             return
         etapes = self._etapes_chef(ch["cible"])
@@ -461,6 +490,7 @@ class Simulateur:
             self.modeles[ancien] = 0
         self.modeles[ch["cible"]] = 1
         self.chef_id = ch["cible"]
+        self.chef_libere = False               # un nouveau chef est chargé : la carte n'est plus « libérée »
         info = next((m for m in self.chef_modeles_lm if m["id"] == ch["cible"]), {})
         self.fichiers[R.FICHIER_CHEF] = json.dumps({"modele": self.chef_id, "contexte": info.get("contexte", 32000), "parallele": info.get("parallele", 4)})
         mauvais = self.chef_test_mauvais or self.chef_id in self.chef_test_mauvais_pour
@@ -471,10 +501,10 @@ class Simulateur:
         if methode == "GET":
             self._chef_avancer()
             if not self.lms_serveur:
-                return 200, json.dumps({"lmstudio": False, "chef": self.chef_id, "chef_charge": False, "changement": self.chef_changement, "modeles": [],
+                return 200, json.dumps({"lmstudio": False, "chef": self.chef_id, "chef_charge": False, "libere": self.chef_libere, "changement": self.chef_changement, "modeles": [],
                                         "dernier_test": self.chef_dernier_test, "message": "LM Studio est arrêté : allumez-le pour changer de chef."})
             modeles = [dict(m, charge=self.modeles.get(m["id"], 0) > 0, chef=m["id"] == self.chef_id) for m in self.chef_modeles_lm]
-            return 200, json.dumps({"lmstudio": True, "chef": self.chef_id, "chef_charge": self.modeles.get(self.chef_id, 0) > 0,
+            return 200, json.dumps({"lmstudio": True, "chef": self.chef_id, "chef_charge": self.modeles.get(self.chef_id, 0) > 0, "libere": self.chef_libere,
                                     "changement": self.chef_changement, "modeles": modeles, "dernier_test": self.chef_dernier_test, "message": ""}, ensure_ascii=False)
         if methode != "PUT" or not isinstance(corps, dict):
             return 400, '{"error": {"message": "corps invalide"}}'

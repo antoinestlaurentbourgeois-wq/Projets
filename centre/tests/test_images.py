@@ -83,6 +83,13 @@ def moteurs(reseau, centre, simulateur):
     allumer(centre, simulateur)
     centre.images.pauses = 0.0
     centre.images.dormir = lambda s: None
+    centre.comfyui.dormir = lambda s: None
+    centre.comfyui.pause_memoire = 0.0
+    def scripts(sens):                                              # les deux scripts fournis : ils démarrent / arrêtent le faux ComfyUI
+        m.comfy = sens == "demarrer"
+        m.ordre.append("comfy_demarre" if sens == "demarrer" else "comfy_arrete")
+    simulateur.comfy_crochet = scripts
+    simulateur.comfy_actif = True                                   # par défaut : ComfyUI lancé À LA MAIN par l'utilisateur (voir « auto » pour le cas normal)
     simulateur.cles.update({"OPENAI_API_KEY": SECRET, "GEMINI_API_KEY": SECRET + "g", "XAI_API_KEY": SECRET + "x"})
     vrai = simulateur._crew_chef_operation
     def operation(op):
@@ -92,6 +99,12 @@ def moteurs(reseau, centre, simulateur):
         return rep
     simulateur._crew_chef_operation = operation
     return m
+
+
+def auto(moteurs, simulateur):
+    """Le cas normal : ComfyUI est arrêté, c'est le Centre qui le démarre (par le script) puis l'arrête."""
+    moteurs.comfy = False
+    simulateur.comfy_actif = False
 
 
 def suivre_chef(centre):
@@ -128,7 +141,11 @@ def test_options_groupes_prix_modeles_et_raisons(centre, simulateur, reseau):
     assert mo["openai"]["modeles"] == ["gpt-image-1"] and mo["gemini"]["modeles"] == ["gemini-2.5-flash-image"]
     m.comfy = False
     mo = {x["id"]: x for x in centre.images.options()["moteurs"]}
-    assert "ComfyUI ne répond pas" in mo["local"]["raison"] and mo["local"]["modeles"] == []
+    assert mo["local"]["disponible"] and mo["local"]["demarrage_auto"] and not mo["local"]["raison"]      # il démarrera tout seul, à la demande
+    assert mo["local"]["modeles"] == ["sdxl_base.safetensors", "sd15_dream.safetensors", "flux1-dev-fp8.safetensors"]   # derniers modèles vus (mémorisés)
+    simulateur.comfy_installe = False
+    mo = {x["id"]: x for x in centre.images.options()["moteurs"]}
+    assert not mo["local"]["disponible"] and "introuvable" in mo["local"]["raison"]
 
 
 def test_choix_par_defaut_et_dernier_choix_par_utilisateur(centre, simulateur, reseau, moteurs):
@@ -324,15 +341,14 @@ def test_chef_charge_demande_confirmation_puis_liberer_creer_free_reprendre(cent
     R = centre.L.R
     with pytest.raises(ErreurImage) as e:
         centre.images.lancer("local", "un chat")
-    assert e.value.code == 409 and e.value.extra == {"liberation": True} and "Crew sera indisponible" in str(e.value)
+    assert e.value.code == 409 and e.value.extra == {"liberation": True} and "Crew libère la carte graphique" in str(e.value) and "environ 20 à 40 s" in str(e.value) and "environ 10 s" in str(e.value)
     assert moteurs.ordre == [] and simulateur.chef_operations == []                                  # rien n'a bougé sans confirmation
     assert centre.images.estimer("local")["chef_a_liberer"] is True
     j = creer(centre, "local")
     assert j["etat"] == "termine"
     assert moteurs.ordre == ["liberer", "creation", "free", "reprendre"]                               # l'ordre voulu
-    assert simulateur.modeles[R.MODELE_GEMMA] == 0                                                   # déchargé par Crew (suivi en arrière-plan)
-    suivre_chef(centre)
-    assert simulateur.modeles[R.MODELE_GEMMA] == 1                                                   # …puis rechargé par Crew : le chef est revenu
+    assert simulateur.modeles[R.MODELE_GEMMA] == 1                                                   # déchargé puis rechargé par Crew : le chef est déjà revenu à « terminé »
+    assert "Chef rechargé : Crew est de nouveau disponible." in j["message"]
     assert centre.images.lister()[0]["moteur"] == "local"
 
 
@@ -342,10 +358,13 @@ def test_le_centre_ne_touche_jamais_lm_studio(centre, simulateur, moteurs):
     assert [c for c in simulateur.commandes[avant:] if "lms" in c[0].lower() or c[1:2] in (["load"], ["unload"])] == []
 
 
-def test_mode_jeu_pas_de_liberation_ni_de_reprise(centre, simulateur, moteurs, monkeypatch):
+def test_mode_jeu_refuse_la_creation_locale_avec_une_explication(centre, simulateur, moteurs, monkeypatch):
     monkeypatch.setattr(centre, "mode_jeu_actif", lambda: True)
-    j = creer(centre, "local", confirme_liberation=False)
-    assert j["etat"] == "termine" and moteurs.ordre == ["creation"] and simulateur.chef_operations == []
+    with pytest.raises(ErreurImage) as e:
+        creer(centre, "local", confirme_liberation=False)
+    assert e.value.code == 403 and "Mode jeu" in str(e.value) and moteurs.ordre == [] and simulateur.chef_operations == []
+    mo = {x["id"]: x for x in centre.images.options()["moteurs"]}
+    assert not mo["local"]["disponible"] and "Mode jeu" in mo["local"]["raison"]
 
 
 def test_laisser_la_carte_libre_pas_de_reprise(centre, simulateur, moteurs):
