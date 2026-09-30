@@ -1,110 +1,214 @@
 "use strict";
-/* Page « Images » : création d'images par IA (OpenAI, Gemini, Grok, ComfyUI local) et galerie rangée sur ce PC. Texte affiché comme texte. */
+/* Images : page « 🎨 Images » (création + galerie) ET fenêtre de création utilisable depuis toutes les salles (Centre.dialogueImage).
+   Un seul menu de moteur (groupes « Nuage » / « Local »), un menu de modèle selon le moteur. Le serveur décide (confidentialité, coûts, carte
+   graphique) : l'écran ne fait que demander confirmation quand le serveur le demande. Texte affiché comme texte. */
 (function () {
   var C = window.Centre, h = C.h, vider = C.vider, api = C.api;
-  var S = { opts: null, racine: null, galerie: null, job: null, minuteur: null, etat: { moteur: "", taille: "carre", n: 1, prive: false, checkpoint: "" } };
+  var S = { opts: null, racine: null, images: [], job: null, minuteur: null, resultat: null,
+            etat: { moteur: "", modele: "", taille: "carre", n: 1, prive: false, prompt: "", laisser_libre: false } };
 
   function dollars(n) { return (Number(n) || 0).toLocaleString("fr-CA", { style: "currency", currency: "USD", minimumFractionDigits: 3, maximumFractionDigits: 3 }); }
   function quand(ts) { return new Date(ts * 1000).toLocaleString("fr-CA", { dateStyle: "medium", timeStyle: "short" }); }
-  function moteur(id) { return S.opts ? S.opts.moteurs.filter(function (m) { return m.id === id; })[0] : null; }
-  function utilisable(m) { return m && m.disponible && !(S.etat.prive && m.nuage); }
+  function moteurDe(o, id) { return o.moteurs.filter(function (m) { return m.id === id; })[0]; }
+  function utilisable(m, prive) { return !!m && m.disponible && !(prive && m.nuage); }
+  function prixTexte(m) { return m.usd_image ? "≈ " + dollars(m.usd_image) : "gratuit"; }
 
-  function coutTexte() {
-    var m = moteur(S.etat.moteur);
-    if (!m) return "Aucun moteur disponible.";
-    var usd = m.usd_image * S.etat.n;
-    return usd === 0 ? "Gratuit (moteur local, rien ne quitte le PC)." :
-      "Coût estimé : ≈ " + dollars(usd) + " pour " + S.etat.n + " image" + (S.etat.n > 1 ? "s" : "") + " (estimation indicative ; seuil de confirmation " + dollars(S.opts.seuil_usd) + ").";
+  // Choix par défaut : le dernier utilisé (mémorisé côté serveur), sinon ComfyUI s'il répond, sinon xAI ; jamais un moteur du nuage pour du contenu confidentiel.
+  function initEtat(o, etat, prive) {
+    etat.prive = !!prive;
+    var m = moteurDe(o, etat.moteur);
+    if (!utilisable(m, etat.prive)) {
+      var pref = moteurDe(o, o.defaut);
+      m = utilisable(pref, etat.prive) ? pref : o.moteurs.filter(function (x) { return utilisable(x, etat.prive); })[0];
+      etat.moteur = m ? m.id : "";
+      etat.modele = m && pref && m.id === pref.id ? (o.modele_defaut || "") : "";
+    }
+    if (m && m.modeles.indexOf(etat.modele) < 0) etat.modele = m.modeles[0] || "";
+    if (!etat.taille) etat.taille = o.taille_defaut || "carre";
   }
-  function majCout() { var e = document.getElementById("img-cout"); if (e) e.textContent = coutTexte(); }
 
-  function choisirMoteurValide() {
-    var m = moteur(S.etat.moteur);
-    if (utilisable(m)) return;
-    var premier = S.opts.moteurs.filter(utilisable)[0];
-    S.etat.moteur = premier ? premier.id : "";
-  }
+  // Formulaire commun à la page et à la fenêtre des salles. cfg : { priveFixe: bool (conversation privée), inclurePrive: bool }.
+  function champs(o, etat, cfg, surChangement) {
+    cfg = cfg || {};
+    var prive = function () { return !!(cfg.priveFixe || etat.prive); };
+    var sel = h("select", { id: "img-moteur", "aria-label": "Moteur d'images" });
+    var selModele = h("select", { id: "img-modele", "aria-label": "Modèle" });
+    var blocModele = h("label", { class: "champ" }, h("span", { texte: "Modèle" }), selModele);
+    var raisons = h("div", { class: "doux", id: "img-raisons" });
+    var cout = h("p", { class: "doux", id: "img-cout", role: "status" });
+    var gpu = h("div", { class: "note-gpu", id: "img-gpu", hidden: true },
+      h("p", { class: "doux", texte: "ComfyUI utilise la carte graphique, que le chef d'équipe de Crew occupe : Crew sera indisponible pendant la création (il sera rechargé ensuite)." }));
+    var libre = h("input", { type: "checkbox", id: "img-libre", checked: !!etat.laisser_libre });
+    libre.addEventListener("change", function () { etat.laisser_libre = libre.checked; });
+    gpu.appendChild(h("label", { class: "case-prive" }, libre, " Laisser la carte graphique libre ensuite (ne pas recharger le chef)"));
 
-  function formulaire() {
-    var o = S.opts, sel = h("select", { id: "img-moteur", "aria-label": "Moteur" });
-    function remplir() {
+    function remplirMoteurs() {
       vider(sel);
+      ["Nuage", "Local"].forEach(function (groupe) {
+        var g = h("optgroup", { label: groupe });
+        o.moteurs.filter(function (m) { return m.groupe === groupe; }).forEach(function (m) {
+          var grise = !m.disponible || (prive() && m.nuage);
+          var opt = h("option", { value: m.id, texte: m.libelle + " — " + prixTexte(m) + (grise ? " (indisponible)" : ""), disabled: grise,
+            title: !m.disponible ? m.raison : (prive() && m.nuage ? "Contenu confidentiel : moteur local seulement" : "") });
+          if (m.id === etat.moteur) opt.selected = true;
+          g.appendChild(opt);
+        });
+        sel.appendChild(g);
+      });
+      vider(raisons);
       o.moteurs.forEach(function (m) {
-        var grise = !m.disponible || (S.etat.prive && m.nuage);
-        var raison = !m.disponible ? m.raison : (S.etat.prive && m.nuage ? "Contenu confidentiel : moteur local seulement" : "");
-        var opt = h("option", { value: m.id, texte: m.libelle + (m.usd_image ? " — ≈ " + dollars(m.usd_image) + " / image" : " — gratuit") + (grise ? " (indisponible)" : ""), disabled: grise, title: raison });
-        if (m.id === S.etat.moteur) opt.selected = true;
-        sel.appendChild(opt);
+        var r = !m.disponible ? m.raison : (prive() && m.nuage ? "Contenu confidentiel : moteur local seulement." : "");
+        if (r) raisons.appendChild(h("div", { texte: m.libelle + " : " + r }));
       });
     }
-    remplir();
-    var raisons = h("div", { class: "doux", id: "img-raisons" });
-    function majRaisons() {
-      vider(raisons);
-      o.moteurs.filter(function (m) { return !m.disponible; }).forEach(function (m) { raisons.appendChild(h("div", { texte: m.libelle + " : " + m.raison })); });
+    function remplirModeles() {
+      var m = moteurDe(o, etat.moteur);
+      vider(selModele);
+      var liste = m ? m.modeles : [];
+      liste.forEach(function (x) { selModele.appendChild(h("option", { value: x, texte: x, selected: x === etat.modele })); });
+      blocModele.hidden = liste.length < 2 && !(m && m.id === "local");
+      selModele.disabled = liste.length < 2;
     }
-    majRaisons();
+    function majCout() {
+      var m = moteurDe(o, etat.moteur);
+      if (!m) { cout.textContent = "Aucun moteur disponible."; gpu.hidden = true; return; }
+      var usd = m.usd_image * etat.n;
+      cout.textContent = usd === 0 ? "Gratuit (moteur local, rien ne quitte le PC)." :
+        "Coût estimé : ≈ " + dollars(usd) + " pour " + etat.n + " image" + (etat.n > 1 ? "s" : "") + (m.tarif_verifie ? "" : " (estimation indicative)") +
+        " ; seuil de confirmation " + dollars(o.seuil_usd) + ".";
+      gpu.hidden = !(m.id === "local" && o.chef_a_liberer);
+    }
+    function tout() { remplirMoteurs(); remplirModeles(); majCout(); if (surChangement) surChangement(); }
+    sel.addEventListener("change", function () { etat.moteur = sel.value; var m = moteurDe(o, etat.moteur); etat.modele = m && m.modeles[0] || ""; tout(); });
+    selModele.addEventListener("change", function () { etat.modele = selModele.value; });
+
     var prompt = h("textarea", { id: "img-prompt", rows: "4", maxlength: "4000", placeholder: "Décrivez l'image : sujet, style, lumière, ambiance…", "aria-label": "Description de l'image" });
-    if (S.etat.prompt) prompt.value = S.etat.prompt;
-    prompt.addEventListener("input", function () { S.etat.prompt = prompt.value; });
-    var taille = h("select", { id: "img-taille", "aria-label": "Format" }, o.tailles.map(function (t) { return h("option", { value: t.id, texte: t.libelle, selected: t.id === S.etat.taille }); }));
-    taille.addEventListener("change", function () { S.etat.taille = taille.value; });
-    var nombre = h("select", { id: "img-n", "aria-label": "Nombre d'images" }, [1, 2, 3, 4].filter(function (n) { return n <= o.max_images; }).map(function (n) { return h("option", { value: String(n), texte: n + (n > 1 ? " images" : " image"), selected: n === S.etat.n }); }));
-    nombre.addEventListener("change", function () { S.etat.n = Number(nombre.value); majCout(); });
-    var prive = h("input", { type: "checkbox", id: "img-prive", checked: S.etat.prive });
-    var cps = h("select", { id: "img-checkpoint", "aria-label": "Modèle ComfyUI" }, (o.checkpoints || []).map(function (c) { return h("option", { value: c, texte: c, selected: c === S.etat.checkpoint }); }));
-    cps.addEventListener("change", function () { S.etat.checkpoint = cps.value; });
-    var blocCps = h("label", { class: "champ", id: "img-bloc-cps", hidden: S.etat.moteur !== "local" || !(o.checkpoints || []).length }, h("span", { texte: "Modèle local (ComfyUI)" }), cps);
-    function après() { choisirMoteurValide(); remplir(); blocCps.hidden = S.etat.moteur !== "local" || !(o.checkpoints || []).length; majCout(); }
-    sel.addEventListener("change", function () { S.etat.moteur = sel.value; après(); });
-    prive.addEventListener("change", function () { S.etat.prive = prive.checked; après(); });
-    var bouton = h("button", { class: "bouton principal", id: "img-creer", type: "button", texte: "🎨 Créer l'image", onclick: creer, disabled: !S.etat.moteur || !!S.job });
-    return h("div", { class: "carte" },
-      h("label", { class: "champ" }, h("span", { texte: "Moteur" }), sel), raisons,
+    prompt.value = etat.prompt || "";
+    prompt.addEventListener("input", function () { etat.prompt = prompt.value; });
+    var taille = h("select", { id: "img-taille", "aria-label": "Format" }, o.tailles.map(function (t) { return h("option", { value: t.id, texte: t.libelle, selected: t.id === etat.taille }); }));
+    taille.addEventListener("change", function () { etat.taille = taille.value; });
+    var nombre = h("select", { id: "img-n", "aria-label": "Nombre d'images" }, [1, 2, 3, 4].filter(function (n) { return n <= o.max_images; }).map(function (n) {
+      return h("option", { value: String(n), texte: n + (n > 1 ? " images" : " image"), selected: n === etat.n }); }));
+    nombre.addEventListener("change", function () { etat.n = Number(nombre.value); majCout(); });
+
+    var corps = h("div", { class: "formulaire-image" },
+      h("label", { class: "champ" }, h("span", { texte: "Moteur" }), sel), raisons, blocModele,
       h("label", { class: "champ" }, h("span", { texte: "Description" }), prompt),
-      h("div", { class: "rangee-img" }, h("label", { class: "champ" }, h("span", { texte: "Format" }), taille), h("label", { class: "champ" }, h("span", { texte: "Nombre" }), nombre)),
-      blocCps,
-      h("label", { class: "case-prive" }, prive, " Contenu confidentiel : moteur local seulement (jamais le nuage)"),
-      h("p", { class: "doux", id: "img-cout", role: "status", texte: coutTexte() }), bouton);
+      h("div", { class: "rangee-img" }, h("label", { class: "champ" }, h("span", { texte: "Format" }), taille), h("label", { class: "champ" }, h("span", { texte: "Nombre" }), nombre)));
+    if (cfg.priveFixe) corps.appendChild(h("p", { class: "doux", texte: "Cette conversation est privée : seul le moteur local est permis." }));
+    else if (cfg.inclurePrive !== false) {
+      var cp = h("input", { type: "checkbox", id: "img-prive", checked: !!etat.prive });
+      cp.addEventListener("change", function () { etat.prive = cp.checked; initEtat(o, etat, etat.prive); tout(); });
+      corps.appendChild(h("label", { class: "case-prive" }, cp, " Contenu confidentiel : moteur local seulement (jamais le nuage)"));
+    }
+    corps.appendChild(cout); corps.appendChild(gpu);
+    tout();
+    return { el: corps, prompt: prompt };
   }
 
-  function creer() {
-    var m = moteur(S.etat.moteur), prompt = (S.etat.prompt || "").trim();
-    if (!m) { C.informer("Aucun moteur", "Aucun moteur d'images n'est disponible pour le moment."); return; }
-    if (!prompt) { C.informer("Description vide", "Décrivez l'image à créer."); return; }
-    var usd = m.usd_image * S.etat.n, depasse = m.nuage && usd > S.opts.seuil_usd;
-    var suite = depasse ? C.confirmer("Coût au-dessus du seuil", "Coût estimé : ≈ " + dollars(usd) + " pour " + S.etat.n + " image(s) chez " + m.libelle + ", au-dessus du seuil de " + dollars(S.opts.seuil_usd) +
-      ".\nLa description part vers ce fournisseur dans le nuage.\n\nCréer quand même ?", "Créer", "danger") : Promise.resolve(true);
-    suite.then(function (ok) {
-      if (!ok) return;
-      return api("POST", "/api/images", { moteur: m.id, prompt: prompt, taille: S.etat.taille, n: S.etat.n, prive: S.etat.prive, checkpoint: S.etat.checkpoint, confirme_depassement: depasse })
-        .then(function (job) { S.job = job; dessiner(); suivre(job.id); })
-        .catch(function (e) { if (e.message !== "session") C.informer("Création impossible", e.message); });
+  // Demande au serveur ; s'il réclame une confirmation (seuil de coût, libération de la carte graphique), on la demande puis on recommence.
+  function poster(url, etat, extra, drapeaux) {
+    drapeaux = drapeaux || {};
+    var corps = { moteur: etat.moteur, modele: etat.modele, prompt: etat.prompt, taille: etat.taille, n: etat.n, prive: !!etat.prive, laisser_libre: !!etat.laisser_libre,
+                  confirme_depassement: !!drapeaux.depassement, confirme_liberation: !!drapeaux.liberation };
+    Object.keys(extra || {}).forEach(function (k) { corps[k] = extra[k]; });
+    return api("POST", url, corps).catch(function (e) {
+      var d = e.donnees || {};
+      if (d.depassement && !drapeaux.depassement) {
+        return C.confirmer("Coût au-dessus du seuil", e.message + "\nLa description part vers ce fournisseur dans le nuage.\n\nCréer quand même ?", "Créer", "danger").then(function (ok) {
+          return ok ? poster(url, etat, extra, { depassement: true, liberation: drapeaux.liberation }) : null; });
+      }
+      if (d.liberation && !drapeaux.liberation) {
+        return C.confirmer("Libérer la carte graphique ?", e.message, "Continuer").then(function (ok) {
+          return ok ? poster(url, etat, extra, { depassement: drapeaux.depassement, liberation: true }) : null; });
+      }
+      throw e;
     });
+  }
+
+  // ---------------------------------------------------------------- fenêtre de création (salles)
+  // options : { titre, prompt, taille, moteur, modele, prive (conversation privée), url, extra } -> promesse du job lancé (ou null si annulé)
+  C.dialogueImage = function (options) {
+    return api("GET", "/api/images/options").then(function (o) {
+      var etat = { moteur: options.moteur || "", modele: options.modele || "", taille: options.taille || "", n: options.n || 1, prive: !!options.prive, prompt: options.prompt || "", laisser_libre: false };
+      initEtat(o, etat, options.prive);
+      var f = champs(o, etat, { priveFixe: !!options.prive });
+      return C.demander(options.titre || "🎨 Créer une image", "L'IA de la salle n'est pas appelée : l'image est créée par le moteur choisi, puis revient dans la conversation.",
+        [{ texte: "Annuler", valeur: false }, { texte: "Créer l'image", valeur: true, style: "principal" }], f.el).then(function (v) {
+        if (v !== true) return null;
+        if (!(etat.prompt || "").trim()) { C.informer("Description vide", "Décrivez l'image à créer."); return null; }
+        if (!etat.moteur) { C.informer("Aucun moteur", "Aucun moteur d'images n'est disponible pour le moment."); return null; }
+        return poster(options.url, etat, options.extra);
+      });
+    });
+  };
+  // Moteur et modèle que l'écran propose par défaut (pour la carte d'une proposition de l'IA) : mêmes règles que la fenêtre de création.
+  C.moteurParDefaut = function (o, prive) {
+    var e = { moteur: "", modele: "", taille: "", n: 1, prive: !!prive };
+    initEtat(o, e, prive);
+    var m = moteurDe(o, e.moteur);
+    return m ? { moteur: m, modele: e.modele } : null;
+  };
+  C.optionsImages = function () { return api("GET", "/api/images/options"); };
+  C.lancerImageDirect = function (url, etatPartiel, extra, prive) {
+    return api("GET", "/api/images/options").then(function (o) {
+      var etat = { moteur: "", modele: "", taille: etatPartiel.taille || "", n: 1, prive: !!prive, prompt: etatPartiel.prompt || "", laisser_libre: false };
+      initEtat(o, etat, prive);
+      if (!etat.moteur) throw new Error("Aucun moteur d'images n'est disponible" + (prive ? " pour du contenu confidentiel (ComfyUI doit être lancé)." : "."));
+      return poster(url, etat, extra);
+    });
+  };
+
+  // ---------------------------------------------------------------- page « Images »
+  function coutPage() { var e = document.getElementById("img-cout"); return e; }
+  function dessinerPage() {
+    var r = S.racine; if (!r || C.courante() !== "images" || !S.opts) return;
+    vider(r);
+    r.appendChild(h("h2", { texte: "🎨 Images" }));
+    r.appendChild(h("p", { class: "doux", texte: "Créez des images avec l'IA, ici ou depuis n'importe quelle salle (bouton 🎨 ou commande /image). Les images restent sur ce PC. Un moteur du nuage reçoit votre description ; avec la case « confidentiel », ou en mode Confidentiel / Ultra-confidentiel, seul ComfyUI (local) est utilisé." }));
+    if (S.resultat && S.resultat.etat === "erreur") r.appendChild(h("div", { class: "bandeau erreur", role: "alert", texte: S.resultat.message || "La création a échoué." }));
+    if (S.resultat && S.resultat.etat === "annule") r.appendChild(h("div", { class: "bandeau", role: "status", texte: "Création annulée." }));
+    if (S.resultat && S.resultat.etat === "termine") r.appendChild(h("div", { class: "bandeau ok", role: "status", texte: S.resultat.images.length + " image" + (S.resultat.images.length > 1 ? "s créées" : " créée") + " : elles sont en haut de la galerie." + (S.resultat.message ? " " + S.resultat.message : "") }));
+    if (S.job) r.appendChild(bandeauJob(S.job));
+    var f = champs(S.opts, S.etat, { inclurePrive: true });
+    var bouton = h("button", { class: "bouton principal", id: "img-creer", type: "button", texte: "🎨 Créer l'image", onclick: creer });
+    r.appendChild(h("div", { class: "carte" }, f.el, bouton));
+    r.appendChild(h("h3", { texte: "Galerie" }));
+    var g = h("div", { class: "galerie" });
+    if (!S.images.length) g.appendChild(h("div", { class: "doux", texte: "Aucune image pour le moment." }));
+    S.images.forEach(function (m) { g.appendChild(carte(m)); });
+    r.appendChild(g);
+  }
+  function bandeauJob(j) {
+    var texte = j.etat === "attente" ? "En attente" + (j.position ? " (position " + j.position + ")" : "") + "…" : (j.etape || "Création en cours…") + " — " + j.fait + " sur " + j.sur;
+    return h("div", { class: "progression", role: "status", "aria-live": "polite" }, h("strong", { id: "img-progression", texte: texte }),
+      h("div", { class: "barre", "aria-hidden": "true" }, h("span", { class: "barre-anim" })),
+      h("button", { class: "petit", type: "button", id: "img-annuler", texte: "Annuler", onclick: function () { api("POST", "/api/images/jobs/" + j.id + "/annuler").catch(function () {}); } }));
+  }
+  function creer() {
+    var e = S.etat;
+    if (!(e.prompt || "").trim()) { C.informer("Description vide", "Décrivez l'image à créer."); return; }
+    if (!e.moteur) { C.informer("Aucun moteur", "Aucun moteur d'images n'est disponible pour le moment."); return; }
+    S.resultat = null;
+    poster("/api/images", e, {}).then(function (job) { if (job) { S.job = job; dessinerPage(); suivre(job.id); } })
+      .catch(function (er) { if (er.message !== "session") C.informer("Création impossible", er.message); });
   }
   function suivre(id) {
     clearTimeout(S.minuteur);
     S.minuteur = setTimeout(function () {
       api("GET", "/api/images/jobs/" + id).then(function (j) {
-        S.job = j;
-        if (j.etat === "en_cours") { if (C.courante() === "images") { majProgression(); suivre(id); } return; }
-        var fini = j;
-        S.job = null; S.resultat = fini;
-        if (C.courante() === "images") { charger(); }
-      }).catch(function (e) { S.job = null; if (e.message !== "session" && C.courante() === "images") { dessiner(); } });
+        if (j.etat === "attente" || j.etat === "en_cours") { S.job = j; if (C.courante() === "images") { dessinerPage(); suivre(id); } return; }
+        S.job = null; S.resultat = j;
+        if (C.courante() === "images") charger();
+      }).catch(function (er) { S.job = null; if (er.message !== "session" && C.courante() === "images") dessinerPage(); });
     }, 1500);
   }
-  function majProgression() {
-    var e = document.getElementById("img-progression"); if (!e || !S.job) return;
-    e.textContent = "Création en cours : " + S.job.fait + " sur " + S.job.sur + "…";
-  }
-
   function carte(m) {
     var url = "/api/images/" + m.id + "/fichier";
     return h("div", { class: "carte-image" },
       h("a", { href: url, target: "_blank", rel: "noopener", title: "Ouvrir en grand" }, h("img", { src: url, alt: m.prompt || "image créée", loading: "lazy" })),
       h("div", { class: "infos-image" },
-        h("div", { class: "doux", texte: quand(m.ts) + " · " + (m.moteur_libelle || m.moteur) + (m.prive ? " · confidentiel" : "") + (m.cout_usd ? " · ≈ " + dollars(m.cout_usd) : "") }),
+        h("div", { class: "doux", texte: quand(m.ts) + " · " + (m.moteur_libelle || m.moteur) + (m.prive ? " · confidentiel" : "") + (m.cout_usd ? " · " + (m.cout_reel ? "" : "≈ ") + dollars(m.cout_usd) : "") }),
         h("div", { class: "prompt-image", title: m.prompt, texte: m.prompt }),
         h("div", { class: "actions" },
           h("a", { class: "petit", href: url + "?telecharger=1", texte: "Télécharger", download: "" }),
@@ -113,38 +217,16 @@
           h("button", { class: "petit", type: "button", texte: "Supprimer", onclick: function () {
             C.confirmer("Supprimer cette image ?", "Elle sera effacée de ce PC (irréversible).", "Supprimer", "danger").then(function (ok) {
               if (!ok) return;
-              api("DELETE", "/api/images/" + m.id).then(charger).catch(function (e) { C.informer("Suppression impossible", e.message); });
+              api("DELETE", "/api/images/" + m.id).then(charger).catch(function (er) { C.informer("Suppression impossible", er.message); });
             }); } }))));
   }
-
-  function dessiner() {
-    var r = S.racine; if (!r || C.courante() !== "images" || !S.opts) return;
-    vider(r);
-    r.appendChild(h("h2", { texte: "🎨 Images" }));
-    r.appendChild(h("p", { class: "doux", texte: "Créez des images avec l'IA. Les images restent sur ce PC (galerie ci-dessous). Un moteur du nuage reçoit votre description ; en mode confidentiel, ou avec la case « confidentiel », seul le moteur local (ComfyUI) est utilisé." }));
-    if (S.resultat && S.resultat.etat === "erreur") r.appendChild(h("div", { class: "bandeau erreur", role: "alert", texte: S.resultat.message || "La création a échoué." }));
-    if (S.resultat && S.resultat.etat === "termine") r.appendChild(h("div", { class: "bandeau ok", role: "status", texte: S.resultat.images.length + " image" + (S.resultat.images.length > 1 ? "s créées" : " créée") + " : elles sont en haut de la galerie." }));
-    if (S.job) r.appendChild(h("div", { class: "progression", role: "status", "aria-live": "polite" }, h("strong", { id: "img-progression", texte: "Création en cours : " + S.job.fait + " sur " + S.job.sur + "…" }),
-      h("div", { class: "barre", "aria-hidden": "true" }, h("span", { class: "barre-anim" }))));
-    r.appendChild(formulaire());
-    var g = h("div", { class: "galerie" });
-    S.galerie = g;
-    r.appendChild(h("h3", { texte: "Galerie" }));
-    if (!S.images.length) g.appendChild(h("div", { class: "doux", texte: "Aucune image pour le moment." }));
-    S.images.forEach(function (m) { g.appendChild(carte(m)); });
-    r.appendChild(g);
-  }
-
   function charger() {
     Promise.all([api("GET", "/api/images/options"), api("GET", "/api/images")]).then(function (res) {
       S.opts = res[0]; S.images = res[1].images;
-      if (!S.etat.moteur) S.etat.moteur = S.opts.defaut;
-      if (!S.etat.checkpoint && S.opts.checkpoints && S.opts.checkpoints.length) S.etat.checkpoint = S.opts.checkpoints[0];
-      choisirMoteurValide();
-      dessiner();
+      initEtat(S.opts, S.etat, S.etat.prive);
+      dessinerPage();
     }).catch(function (e) { if (e.message !== "session" && S.racine) { vider(S.racine); S.racine.appendChild(h("div", { class: "bandeau erreur", texte: e.message })); } });
   }
-
   function pageImages() {
     S.racine = h("div", { class: "page-images" }); S.images = []; S.resultat = null;
     C.page.appendChild(S.racine);

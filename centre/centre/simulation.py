@@ -5,6 +5,7 @@ sans rien dépenser. Chaque IA répond par un texte fabriqué.
 """
 
 import json
+import re
 import time
 
 from .reseau import ProcessusEnCours
@@ -43,7 +44,12 @@ class ReseauDemo:
             return 200, _sse([json.dumps({"verdict": "a_verifier", "resume": "Vérification SIMULÉE : rien n'a été réellement contrôlé.",
                                           "affirmations": [{"texte": "Première affirmation de la réponse", "statut": "confirmee", "raison": "simulation"},
                                                            {"texte": "Deuxième affirmation", "statut": "douteuse", "raison": "simulation"}]}, ensure_ascii=False)])
-        mots = (_reponse(question.split("Demande de l'utilisateur :")[-1].strip(), qui) + (f" (SIMULATION : {images} image(s) reçue(s))" if images else "")).split(" ")
+        demande = question.split("Demande de l'utilisateur :")[-1].strip()
+        if re.search(r"\b(image|dessin|illustration|logo)\b", demande.lower()) and "[[IMAGE]]" not in demande:
+            # L'IA de démonstration répond comme le ferait une vraie IA à qui on demande une image : un bloc [[IMAGE]] (le Centre le transforme en carte, sans rien lancer)
+            sujet = re.sub(r"^.*?(image|dessin|illustration|logo)( d[e'u] ?| des | de la | d')?", "", demande, flags=re.IGNORECASE).strip(" .?!") or "un paysage de montagne au lever du soleil"
+            return 200, _sse(["Avec plaisir ! ", "[[IMAGE]]\ntaille: paysage\ndescription: ", sujet[:200] + ", lumière douce, détails nets, style illustration soignée", "\n[[/IMAGE]]", "\nDites-moi si vous voulez l'ajuster."])
+        mots = (_reponse(demande, qui) + (f" (SIMULATION : {images} image(s) reçue(s))" if images else "")).split(" ")
         return 200, _sse([m + " " for m in mots])
 
     @staticmethod
@@ -93,6 +99,8 @@ class ReseauDemo:
         return lignes()
 
     def requete(self, methode, url, entetes=None, corps=None, delai=30, octets=False, max_octets=0):
+        if url == "https://api.x.ai/v1/models":
+            return 200, json.dumps({"data": [{"id": "grok-4"}, {"id": "grok-imagine-image"}, {"id": "grok-imagine-image-2.0"}, {"id": "grok-imagine-image-quality"}, {"id": "grok-imagine-video"}]})
         if url.endswith("/models"):
             return 200, json.dumps({"data": [{"id": "modele-demo-1"}, {"id": "modele-demo-2"}]})
         if url.endswith("/realtime/client_secrets"):
@@ -111,6 +119,8 @@ class ReseauDemo:
         """Faux moteurs d'images (démo) : OpenAI, xAI, Gemini et ComfyUI répondent avec un petit dégradé PNG dont la couleur dépend de la demande."""
         import base64
         graine = len(json.dumps(corps or {}, sort_keys=True)) * 7
+        if url == "https://api.x.ai/v1/images/generations":
+            return 200, json.dumps({"data": [{"b64_json": base64.b64encode(_png_demo(graine)).decode(), "mime_type": "image/png"}], "usage": {"cost_in_usd_ticks": 200000000}})
         if url.endswith("/images/generations"):
             return 200, json.dumps({"data": [{"b64_json": base64.b64encode(_png_demo(graine)).decode()}]})
         if ":generateContent" in url:
@@ -119,7 +129,9 @@ class ReseauDemo:
             if url.endswith("/system_stats"):
                 return 200, "{}"
             if url.endswith("/object_info/CheckpointLoaderSimple"):
-                return 200, json.dumps({"CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [["demo-sdxl.safetensors", "demo-sd15.safetensors"]]}}}})
+                return 200, json.dumps({"CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [["demo-sdxl.safetensors", "demo-sd15.safetensors", "demo-flux.safetensors"]]}}}})
+            if url.endswith("/free") or url.endswith("/interrupt"):
+                return 200, "{}"
             if url.endswith("/prompt") and methode == "POST":
                 return 200, json.dumps({"prompt_id": "demo1"})
             if "/history/" in url:
