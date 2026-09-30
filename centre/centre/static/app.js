@@ -57,6 +57,13 @@
   }
 
   var dlg = document.getElementById("dialogue");
+  // Ferme le dialogue et ne rend la main qu'APRÈS son événement « close » : sinon cet événement (tardif) tomberait sur le dialogue
+  // suivant (ex. confirmation après un formulaire) et l'annulerait aussitôt.
+  function fermerDialogue(valeur, resolve) {
+    dlg.onclose = null;
+    dlg.addEventListener("close", function () { resolve(valeur); }, { once: true });
+    dlg.close();
+  }
   function demander(titre, texte, boutons) {
     return new Promise(function (resolve) {
       document.getElementById("dialogue-titre").textContent = titre;
@@ -65,7 +72,7 @@
       vider(zone);
       boutons.forEach(function (b) {
         zone.appendChild(h("button", { class: "bouton " + (b.style || ""), type: "button", texte: b.texte,
-          onclick: function () { dlg.close(); resolve(b.valeur); } }));
+          onclick: function () { fermerDialogue(b.valeur, resolve); } }));
       });
       vider(document.getElementById("dialogue-champs"));
       dlg.onclose = function () { resolve(null); };
@@ -90,10 +97,11 @@
         if (c.type === "textarea") el = h("textarea", { rows: "5", id: "f-" + c.nom });
         else if (c.type === "select") el = h("select", { id: "f-" + c.nom }, (c.options || []).map(function (o) { return h("option", { value: o.valeur, texte: o.texte }); }));
         else if (c.type === "checkbox") el = h("input", { type: "checkbox", id: "f-" + c.nom });
-        else el = h("input", { type: c.type || "text", id: "f-" + c.nom, autocomplete: "off" });
+        else el = h("input", { type: c.type || "text", id: "f-" + c.nom, autocomplete: "off", min: c.min, max: c.max, inputmode: c.type === "number" ? "numeric" : null });
         if (c.type === "checkbox") el.checked = !!c.valeur; else if (c.valeur != null) el.value = c.valeur;
         controles[c.nom] = el;
         zoneChamps.appendChild(h("label", { class: "champ", for: "f-" + c.nom }, h("span", { texte: c.label }), el));
+        if (c.aide) zoneChamps.appendChild(h("small", { class: "doux explication", texte: c.aide }));
         if (c.explications) {                                    // explication du choix courant, sous le menu
           var expl = h("small", { class: "doux explication" });
           var majExpl = function () { expl.textContent = c.explications[el.value] || ""; };
@@ -103,7 +111,8 @@
       });
       var zone = document.getElementById("dialogue-boutons");
       vider(zone);
-      function fermer(v) { dlg.close(); resolve(v); }
+      function fermer(v) { fermerDialogue(v, resolve); }
+
       zone.appendChild(h("button", { class: "bouton", type: "button", texte: "Annuler", onclick: function () { fermer(null); } }));
       zone.appendChild(h("button", { class: "bouton principal", type: "button", texte: oui || "OK", onclick: function () {
         var v = {};
@@ -316,7 +325,7 @@
       h("thead", null, h("tr", null, h("th", { texte: "" }), h("th", { texte: "IA" }), h("th", { texte: "Niveau" }), h("th", { texte: "Coût" }), h("th", { texte: "État" }))),
       h("tbody", null, m.moteurs.map(function (x) {
         return h("tr", null, h("td", null, voyant(x.voyant)),
-          h("td", null, x.libelle + (x.local ? " (local)" : ""), x.forces.length ? h("div", { class: "msg", texte: x.forces.join(", ") }) : null),
+          h("td", null, x.libelle + (x.local ? " (local)" : ""), x.abonnement ? h("span", { class: "badge", texte: "abonnement" }) : null, x.forces.length ? h("div", { class: "msg", texte: x.forces.join(", ") }) : null),
           h("td", { texte: x.capacite }), h("td", { texte: x.cout }),
           h("td", null, x.etat_texte, x.detail ? h("div", { class: "msg", texte: x.detail }) : null));
       })));

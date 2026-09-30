@@ -106,7 +106,8 @@ SENSIBLES = [("POST", "/api/action", {"sens": "mode_jeu"}), ("PUT", "/api/crew/m
              ("POST", "/api/ouvrir", {"ident": "docker"}), ("PUT", "/api/couts/plafonds", {"jour": 1}),
              ("PUT", "/api/couts/tarifs", {"salle": "deepseek", "entree": 1, "sortie": 1}),
              ("POST", "/api/conversations/0123456789abcdef/approbation", {"decisions": {}}),
-             ("PUT", "/api/salles/deepseek/reglage", {"modele": "x"}), ("PUT", "/api/tiroir/abc", {"zone": "partageable"}),
+             ("PUT", "/api/salles/deepseek/reglage", {"modele": "x"}),
+             ("PUT", "/api/crew/autorisations", {"nom": "claude", "autorise": True}), ("PUT", "/api/tiroir/abc", {"zone": "partageable"}),
              ("DELETE", "/api/conversations/0123456789abcdef", None), ("POST", "/api/securite/deconnecter-autres", {})]
 
 

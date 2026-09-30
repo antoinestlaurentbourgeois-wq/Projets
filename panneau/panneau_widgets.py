@@ -278,6 +278,8 @@ class SectionMoteurs:
             infos = [C.texte_capacite(m.capacite), C.texte_cout(m.cout)]
             if m.local:
                 infos.append("sur ce PC")
+            if m.abonnement:
+                infos.append("abonnement")
             tk.Label(ligne, text="  ·  ".join(infos), bg="#f8fafc", fg=GRIS,
                      font=(POLICE, 8)).grid(row=0, column=2, sticky="e", padx=(8, 0))
             etat = C.TEXTE_ETAT_MOTEUR.get(m.etat, m.etat or "état inconnu")

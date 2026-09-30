@@ -71,6 +71,9 @@ class Simulateur:
              "explication": "Rien ne sort du PC : seul gemma (local) est utilisé."},
         ]
         self.moteurs_crew_supplementaires = []   # pour tester l'ajout d'une IA
+        # Claude et Codex dans Crew : abonnement, DÉCOCHÉS par défaut, limite de 20 appels par jour.
+        self.autorisations = {n: {"autorise": False, "limite_jour": 20, "utilise_aujourdhui": 0} for n in ("claude", "codex")}
+        self.programmes_abonnement_absents = set()   # ex. {"claude"} -> « Programme « claude » introuvable »
         self.conversations = []   # [{"id", "updated_at", "models": [...]}] pour Open WebUI
         self.webui_liste_format = "liste"        # « liste » ou « items »
         self.autres_modeles_charges = []         # [(id, type, taille)] en plus de gemma/nomic
@@ -186,7 +189,7 @@ class Simulateur:
             auth = (entetes or {}).get("Authorization", "")
             self.requetes.append((methode, url, bool(auth)))
             if url.startswith(R.URL_CREW_MODE) or url.startswith(R.URL_CREW_MOTEURS) \
-                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]) or url in (R.URL_CREW_TABLE_ESTIMATION, R.URL_CREW_TABLE_PARTICIPANTS):
+                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]) or url in (R.URL_CREW_TABLE_ESTIMATION, R.URL_CREW_TABLE_PARTICIPANTS, R.URL_CREW_AUTORISATIONS):
                 return self._crew_api(methode, url, auth, corps_json)
             if url.startswith(R.URL_WEBUI_BASE + "/api/v1/chats"):
                 return self._webui_api(url, auth)
@@ -361,8 +364,13 @@ class Simulateur:
                 {"nom": "deepseek-max", "libelle": "DeepSeek V4 Pro", "local": False, "capacite": 3,
                  "cout": 4, "forces": ["executant", "lecteur", "redacteur"], "etat": "pret",
                  "detail": "Clé DEEPSEEK_API_KEY présente"},
-            ] + self.moteurs_crew_supplementaires
+            ]
+            for m in moteurs:
+                m.setdefault("abonnement", False)
+            moteurs += self._moteurs_abonnement() + self.moteurs_crew_supplementaires
             return 200, json.dumps({"moteurs": moteurs}, ensure_ascii=False)
+        if url == R.URL_CREW_AUTORISATIONS:
+            return self._crew_autorisations(methode, corps_json)
         if url == R.URL_CREW_TABLE_PARTICIPANTS:
             return self._crew_table_participants()
         if url == R.URL_CREW_TABLE_ESTIMATION:
@@ -377,6 +385,43 @@ class Simulateur:
             self.fichiers[R.FICHIER_MODE_CREW] = json.dumps({"mode": demande})
         actuel = json.loads(self.fichiers.get(R.FICHIER_MODE_CREW) or "{}").get("mode", "econome")
         return 200, json.dumps({"mode": actuel, "modes": self.modes_crew}, ensure_ascii=False)
+
+    # ----- serveur Crew : /autorisations (contrat du vrai Crew) ---------------------------------
+
+    def _moteurs_abonnement(self):
+        sortie = []
+        for nom, libelle in (("claude", "Claude (abonnement)"), ("codex", "ChatGPT / Codex (abonnement)")):
+            a = self.autorisations[nom]
+            if nom in self.programmes_abonnement_absents:
+                etat, detail = "indisponible", f"Programme « {nom} » introuvable"
+            elif not a["autorise"]:
+                etat, detail = "indisponible", "Non autorisée pour Crew (réglage du panneau)"
+            elif a["utilise_aujourdhui"] >= a["limite_jour"]:
+                etat, detail = "indisponible", f"Limite de {a['limite_jour']} appels par jour atteinte"
+            else:
+                etat, detail = "pret", ""
+            sortie.append({"nom": nom, "libelle": libelle, "local": False, "capacite": 3, "abonnement": True, "cout": 0,
+                           "forces": ["redacteur"], "etat": etat, "detail": detail})
+        return sortie
+
+    def _crew_autorisations(self, methode, corps):
+        def tout():
+            return json.dumps({"autorisations": [dict(nom=n, **a) for n, a in self.autorisations.items()]})
+        if methode == "GET":
+            return 200, tout()
+        if methode != "PUT" or not isinstance(corps, dict):
+            return 400, '{"error": {"message": "corps invalide"}}'
+        nom, autorise, limite = corps.get("nom"), corps.get("autorise"), corps.get("limite_jour")
+        if nom not in self.autorisations:
+            return 400, '{"error": {"message": "nom invalide"}}'
+        if not isinstance(autorise, bool):
+            return 400, '{"error": {"message": "autorise doit être un booléen"}}'
+        if limite is not None and (not isinstance(limite, int) or isinstance(limite, bool) or not 1 <= limite <= 500):
+            return 400, '{"error": {"message": "limite_jour : entier de 1 à 500"}}'
+        self.autorisations[nom]["autorise"] = autorise
+        if limite is not None:
+            self.autorisations[nom]["limite_jour"] = limite
+        return 200, tout()
 
     # ----- serveur Crew : /table-ronde/participants et /table-ronde/estimation (comme le vrai Crew) ----
 

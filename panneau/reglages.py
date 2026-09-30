@@ -98,6 +98,7 @@ DELAI_ARRET_CREW = 20
 # Serveur Crew : adresses protégées par la clé CREW_API_KEY (lue dans le .env).
 URL_CREW_MODE = "http://127.0.0.1:8765/mode"
 URL_CREW_MOTEURS = "http://127.0.0.1:8765/moteurs"
+URL_CREW_AUTORISATIONS = "http://127.0.0.1:8765/autorisations"     # Claude et Codex (abonnement) : autorisés ou non, limite par jour
 # Mémoire de Crew (adresses prévues, pas encore exposées par le serveur : simulées en attendant).
 URL_CREW_MEMOIRE_ETAT = "http://127.0.0.1:8765/memoire/etat"
 URL_CREW_MEMOIRE_CHERCHER = "http://127.0.0.1:8765/memoire/chercher"

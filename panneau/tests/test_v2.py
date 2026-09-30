@@ -224,8 +224,12 @@ class TestMoteurs(unittest.TestCase):
         self.sim.tout_allumer()
         info = self.crew.lire_moteurs()
         self.assertEqual([m.libelle for m in info.moteurs],
-                         ["gemma (local, gratuit)", "Gemini Flash", "DeepSeek Flash", "DeepSeek V4 Pro"])
+                         ["gemma (local, gratuit)", "Gemini Flash", "DeepSeek Flash", "DeepSeek V4 Pro",
+                          "Claude (abonnement)", "ChatGPT / Codex (abonnement)"])
         self.assertEqual(info.moteurs[0].etat, "pret")
+        self.assertEqual([m.abonnement for m in info.moteurs], [False] * 4 + [True] * 2)
+        self.assertEqual(info.moteurs[4].etat, "indisponible")           # décochée par défaut : jamais choisie
+        self.assertIn("Non autorisée", info.moteurs[4].detail)
         self.assertEqual(info.moteurs[1].etat, "indisponible")   # pas de clé Gemini dans le simulateur
 
     def test_nouvelle_ia_apparait_sans_modifier_le_panneau(self):
@@ -430,3 +434,24 @@ class TestFichiers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAutorisationsCrew(unittest.TestCase):
+    def setUp(self):
+        self.sim = Simulateur()
+        self.sim.tout_allumer()
+        self.sim.cles["CREW_API_KEY"] = self.sim.cle_crew_serveur if hasattr(self.sim, "cles") else None
+        self.crew = C.CrewDistant(self.sim)
+
+    def test_analyse_tolerante(self):
+        a = C.analyser_autorisations('{"autorisations": [{"nom": "claude", "autorise": true, "limite_jour": 20, "utilise_aujourdhui": 3}, {"nom": "x"}, {"nom": "codex"}]}')
+        self.assertEqual([(x.nom, x.autorise, x.limite_jour, x.utilise_aujourdhui) for x in a], [("claude", True, 20, 3), ("codex", False, 20, 0)])
+        with self.assertRaises(ValueError):
+            C.analyser_autorisations("pas du json")
+
+    def test_validation_locale_sans_appel(self):
+        avant = len(self.sim.requetes)
+        for nom, autorise, limite in [("gemini", True, None), ("claude", "oui", None), ("claude", True, 0), ("claude", True, 501), ("claude", True, True)]:
+            with self.assertRaises(C.ErreurDemande):
+                self.crew.definir_autorisation(nom, autorise, limite)
+        self.assertEqual(len(self.sim.requetes), avant)
