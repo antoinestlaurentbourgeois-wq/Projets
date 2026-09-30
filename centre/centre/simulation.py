@@ -34,12 +34,16 @@ class ReseauDemo:
         if isinstance(corps.get("table_ronde"), dict):
             return 200, self._table_ronde(corps)
         question = corps["messages"][-1]["content"] if corps.get("messages") else ""
+        images = 0
+        if isinstance(question, list):                 # message avec images (format OpenAI) : texte + nombre d'images reçues
+            images = len([p for p in question if isinstance(p, dict) and p.get("type") == "image_url"])
+            question = " ".join(p.get("text", "") for p in question if isinstance(p, dict) and p.get("type") == "text")
         qui = corps.get("model") or url.split("/")[2]
         if "<<<QUESTION>>>" in question:            # vérification (Truth Gate) : réponse au format JSON attendu
             return 200, _sse([json.dumps({"verdict": "a_verifier", "resume": "Vérification SIMULÉE : rien n'a été réellement contrôlé.",
                                           "affirmations": [{"texte": "Première affirmation de la réponse", "statut": "confirmee", "raison": "simulation"},
                                                            {"texte": "Deuxième affirmation", "statut": "douteuse", "raison": "simulation"}]}, ensure_ascii=False)])
-        mots = _reponse(question.split("Demande de l'utilisateur :")[-1].strip(), qui).split(" ")
+        mots = (_reponse(question.split("Demande de l'utilisateur :")[-1].strip(), qui) + (f" (SIMULATION : {images} image(s) reçue(s))" if images else "")).split(" ")
         return 200, _sse([m + " " for m in mots])
 
     @staticmethod
@@ -97,7 +101,49 @@ class ReseauDemo:
             return 200, json.dumps({"text": "Bonjour, ceci est une question posée à voix haute (transcription simulée)."})
         if url.endswith("/audio/speech") or url.endswith("/v1/tts"):
             return 200, (_wav_bip() if octets else "")
+        image = self._images(methode, url, corps, octets)
+        if image is not None:
+            return image
         return 404, "{}"
+
+    @staticmethod
+    def _images(methode, url, corps, octets):
+        """Faux moteurs d'images (démo) : OpenAI, xAI, Gemini et ComfyUI répondent avec un petit dégradé PNG dont la couleur dépend de la demande."""
+        import base64
+        graine = len(json.dumps(corps or {}, sort_keys=True)) * 7
+        if url.endswith("/images/generations"):
+            return 200, json.dumps({"data": [{"b64_json": base64.b64encode(_png_demo(graine)).decode()}]})
+        if ":generateContent" in url:
+            return 200, json.dumps({"candidates": [{"content": {"parts": [{"text": "Voici."}, {"inlineData": {"mimeType": "image/png", "data": base64.b64encode(_png_demo(graine)).decode()}}]}}]})
+        if url.startswith("http://127.0.0.1:8188"):
+            if url.endswith("/system_stats"):
+                return 200, "{}"
+            if url.endswith("/object_info/CheckpointLoaderSimple"):
+                return 200, json.dumps({"CheckpointLoaderSimple": {"input": {"required": {"ckpt_name": [["demo-sdxl.safetensors", "demo-sd15.safetensors"]]}}}})
+            if url.endswith("/prompt") and methode == "POST":
+                return 200, json.dumps({"prompt_id": "demo1"})
+            if "/history/" in url:
+                return 200, json.dumps({"demo1": {"outputs": {"7": {"images": [{"filename": "centre_00001_.png", "subfolder": "", "type": "output"}]}}, "status": {"status_str": "success"}}})
+            if "/view?" in url:
+                return 200, (_png_demo(graine) if octets else "")
+        return None
+
+
+def _png_demo(graine=0, n=256):
+    """PNG valide n × n : dégradé dont les couleurs dépendent de `graine`."""
+    import struct
+    import zlib
+
+    def bloc(t, d):
+        c = struct.pack(">I", len(d)) + t + d
+        return c + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    lignes = []
+    for y in range(n):
+        ligne = bytearray(b"\x00")
+        for x in range(n):
+            ligne += bytes(((x + graine) % 256, (y * 2 + graine // 3) % 256, (255 - (x + y) // 2 + graine // 5) % 256))
+        lignes.append(bytes(ligne))
+    return b"\x89PNG\r\n\x1a\n" + bloc(b"IHDR", struct.pack(">IIBBBBB", n, n, 8, 2, 0, 0, 0)) + bloc(b"IDAT", zlib.compress(b"".join(lignes))) + bloc(b"IEND", b"")
 
 
 class _Proc:

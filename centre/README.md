@@ -98,3 +98,7 @@ Dans la salle Crew, l'interrupteur « 🎯 Table ronde » ouvre une liste d'IA �
 
 ## Chef d'équipe (page « 🧠 Chef d'équipe »)
 Choisit le modèle LM Studio qui sert de chef local à Crew (gemma par défaut). Un seul interrupteur actif ; Crew fait le changement (PUT /chef). Chaque modèle a sa salle, une seule est verte (le chef). Voir `RETOUR-chef-crew.md`.
+
+## Images et pièces jointes
+- Page **🎨 Images** : création d'images par IA (OpenAI, Gemini, Grok, ComfyUI local), galerie sur ce PC, coût estimé avant l'envoi, nuage refusé pour le contenu confidentiel.
+- Dans les salles : **📎** pour joindre un fichier texte (rangé dans le tiroir) ou une image, et **coller une image** dans le champ de saisie (salles qui lisent les images seulement). Voir `RETOUR-images-pieces.md`.

@@ -331,3 +331,31 @@ button.retour { display: inline-block; background: none; border: 0; color: var(-
 /* Pastilles des salles : elles passent à la ligne (plus de barre de défilement) ; un long nom de modèle est raccourci (nom complet au survol). */
 .chip .nom-salle { display: inline-block; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
 @media (max-width: 720px) { .chips { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; } .chip { flex: 0 0 auto; } .chip .nom-salle { max-width: 20ch; } }   /* téléphone : une seule rangée qu'on fait glisser (sinon elle mangerait l'écran) */
+
+/* ---- Pièces jointes : icône 📎, rangée de pièces, vignettes ---- */
+.rond.joindre { font-size: 18px; }
+.rond.joindre:disabled { opacity: .5; }
+.pieces-jointes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.piece { display: inline-flex; align-items: center; gap: 6px; background: var(--carte2); border: 1px solid var(--bord); border-radius: 999px; padding: 4px 6px 4px 10px; font-size: 12px; max-width: 100%; }
+.piece.image { padding: 3px; border-radius: 12px; position: relative; }
+.piece img { display: block; width: 56px; height: 56px; object-fit: cover; border-radius: 9px; }
+.piece .retirer { min-height: 0 !important; min-width: 0 !important; border: 0; background: var(--fond); color: var(--doux); border-radius: 50%; width: 22px; height: 22px; padding: 0; line-height: 1; cursor: pointer; min-height: 0; }
+.piece.image .retirer { position: absolute; top: -6px; right: -6px; box-shadow: 0 0 0 1px var(--bord); }
+.vignettes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.vignettes img { display: block; max-width: 160px; max-height: 120px; border-radius: 10px; border: 1px solid var(--bord); object-fit: cover; }
+
+/* ---- Page « Images » ---- */
+.page-images h2 { margin: 4px 0 6px; }
+.rangee-img { display: flex; gap: 10px; flex-wrap: wrap; }
+.rangee-img .champ { flex: 1 1 140px; min-width: 0; }
+.case-prive { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.page-images textarea { width: 100%; box-sizing: border-box; }
+.galerie { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 8px; }
+.carte-image { background: var(--carte); border: 1px solid var(--bord); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.carte-image img { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--carte2); }
+.infos-image { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+.prompt-image { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: .9rem; overflow-wrap: anywhere; }
+.infos-image .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.infos-image a.petit { text-decoration: none; display: inline-flex; align-items: center; }
+@media (max-width: 720px) { .galerie { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+[hidden] { display: none !important; }

@@ -70,3 +70,10 @@
 - [ ] « Tout démarrer » avec un autre chef : seul ce chef est chargé (pas de deuxième copie de gemma) ; « Mode jeu » libère la carte.
 - [ ] Crew arrêté : la page lit `chef_crew.json`, interrupteurs désactivés avec la raison.
 - [ ] `lms load --parallel` accepté par votre version de `lms` (sinon repli automatique).
+
+## I. Images et pièces jointes (vrais moteurs et vraies clés requis)
+- [ ] Page Images : chaque moteur disponible crée une image (OpenAI, Gemini, Grok avec leurs clés ; ComfyUI lancé) ; coût estimé affiché avant l'envoi ; confirmation au-dessus du seuil.
+- [ ] Case « confidentiel » ou mode Confidentiel / Ultra-confidentiel : seul ComfyUI reste possible ; le nuage est refusé.
+- [ ] Galerie : ouvrir, télécharger, réutiliser la description, supprimer ; les images sont dans le dossier `images` des données.
+- [ ] Salle gemma (modèle vision) / Grok / Gemini (clé) : coller une capture d'écran, poser une question dessus ; DeepSeek refuse l'image avec une explication.
+- [ ] Icône 📎 : un fichier `.txt` est rangé dans le tiroir puis joint ; un PDF est refusé avec une explication.
