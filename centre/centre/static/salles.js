@@ -119,7 +119,7 @@
       var code = x.disponible ? "actif" : "arrete";
       return h("button", { class: "chip" + (x.disponible ? "" : " indispo"), type: "button", role: "tab", "aria-pressed": x.id === S.salle ? "true" : "false",
         title: x.disponible ? x.description : x.raison, onclick: function () { choisirSalle(x.id); } },
-        h("span", { class: "voyant v-" + code, "aria-hidden": "true" }), x.libelle);
+        h("span", { class: "voyant v-" + code, "aria-hidden": "true" }), h("span", { class: "nom-salle", texte: x.libelle }));
     })));
     if (!s) { dessinerDock(null); return; }
     if (!s.disponible) racine.appendChild(h("div", { class: "bandeau erreur", role: "status" }, s.libelle + " : " + s.raison + (s.lecture_seule ? " Vous pouvez relire les anciennes conversations. " : " "),
