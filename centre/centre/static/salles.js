@@ -3,7 +3,7 @@
 (function () {
   var C = window.Centre, h = C.h, vider = C.vider, api = C.api;
   var S = { salles: [], politique: null, memoire: null, salle: null, convs: [], conv: null, actives: [], selection: [],
-            brouillon: "", enCours: false, live: null };
+            brouillon: "", enCours: false, live: null, images: [], titres: {} };
   var racine = null;
   S.opt = { memoire: false, lire: relire("opt.lire") === "oui", ecriture: false };
   S.voixOpts = null;
@@ -181,6 +181,14 @@
     bouton.addEventListener("pointerleave", pttFin); bouton.addEventListener("contextmenu", function (e) { e.preventDefault(); });
     bouton.addEventListener("keydown", function (e) { if (e.key === " " && !e.repeat) pttDebut(e); });
     bouton.addEventListener("keyup", function (e) { if (e.key === " ") pttFin(e); });
+    var entreeFichier = h("input", { type: "file", id: "fichier-joint", multiple: "", hidden: true, accept: ".txt,.md,.csv,.tsv,.json,.log,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.ini,.toml,.sql,.sh,.bat,.ps1,.cfg,.conf,image/*", "aria-label": "Choisir des fichiers à joindre" });
+    entreeFichier.addEventListener("change", function () { var f = Array.prototype.slice.call(entreeFichier.files); entreeFichier.value = ""; joindre(f); });
+    saisie.addEventListener("paste", function (e) {             // coller une image (capture d'écran, image copiée) : elle est jointe au message
+      var fichiers = Array.prototype.filter.call((e.clipboardData && e.clipboardData.files) || [], function (f) { return /^image\//.test(f.type); });
+      if (fichiers.length) { e.preventDefault(); joindre(fichiers); }
+    });
+    dock.ondragover = function (e) { if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") >= 0) e.preventDefault(); };
+    dock.ondrop = function (e) { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); joindre(Array.prototype.slice.call(e.dataTransfer.files)); } };
     var memoireOk = !!(S.memoire && S.memoire.disponible);
     var bascules = h("div", { class: "bascules" },
       bascule("◉ Live", false, "Conversation vocale en direct (page Voix)", function () { C.aller("voix"); }),
@@ -190,12 +198,13 @@
         function () { S.opt.memoire = !S.opt.memoire; dessinerDock(s); }, !memoireOk),
       bascule("🔊 Voix", S.opt.lire && voixOk, voixOk ? "Lire les réponses à voix haute (voix du nuage ; jamais du contenu privé)" : ((S.voixOpts && S.voixOpts.raison) || "Voix indisponible"),
         function () { S.opt.lire = !S.opt.lire; stocker("opt.lire", S.opt.lire ? "oui" : "non"); if (!S.opt.lire) C.micro.arreterLecture(); dessinerDock(s); }, !voixOk),
-      bascule(S.selection.length ? "📎 Tiroir (" + S.selection.length + ")" : "📎 Tiroir", S.selection.length > 0, "Joindre des éléments du tiroir", choisirTiroir),
+      bascule(S.selection.length ? "🗄 Tiroir (" + S.selection.length + ")" : "🗄 Tiroir", S.selection.length > 0, "Joindre des éléments déjà rangés dans le tiroir", choisirTiroir),
       s && s.ecriture ? bascule("✍ Écriture", S.opt.ecriture, "Autoriser l'écriture dans l'atelier pour le prochain message seulement", function () { S.opt.ecriture = !S.opt.ecriture; dessinerDock(s); }) : null,
       h("button", { class: "bascule stop", id: "bouton-stop", type: "button", texte: "⏹ Stop", hidden: !S.enCours, onclick: arreter }),
       h("span", { class: "indice", id: "dock-indice", texte: court((s && s.estimation) || ""), title: (s && s.estimation) || "" }));
     dock.appendChild(h("div", { class: "dock-inner" }, trActive() ? panneauTr() : null, bouton,
-      h("div", { class: "saisie-rangee" }, saisie,
+      rangeePieces(),
+      h("div", { class: "saisie-rangee" }, boutonJoindre(pret), saisie, entreeFichier,
         h("button", { class: "rond envoyer", id: "bouton-envoyer", type: "button", title: "Envoyer", "aria-label": "Envoyer", texte: "➤", disabled: !pret || S.enCours, onclick: function () { envoyer(); } })),
       bascules));
     if (trActive() && !S.tr.est && !S.tr.enCours) { S.tr.enCours = true; trEstimer().then(function () { S.tr.enCours = false; }); }
@@ -362,7 +371,7 @@
 
   function choisirSalle(id) {
     if (S.enCours) { C.informer("Réponse en cours", "Attendez la fin de la réponse (ou arrêtez-la) avant de changer de salle."); return; }
-    S.salle = id; S.conv = null; S.selection = []; S.brouillon = ""; stocker("salle", id); charger();
+    S.salle = id; S.conv = null; S.selection = []; S.images = []; S.brouillon = ""; stocker("salle", id); charger();
   }
   function nouvelle() {
     api("POST", "/api/conversations", { salle: S.salle }).then(function (c) { S.convs.unshift({ id: c.id, titre: c.titre, maj: c.maj, prive: false }); return ouvrir(c.id); })
@@ -370,7 +379,7 @@
   }
   function ouvrir(id) {
     return api("GET", "/api/conversations/" + id).then(function (c) {
-      S.conv = c; S.selection = []; dessiner(); defiler();
+      S.conv = c; S.selection = []; S.images = []; dessiner(); defiler();
       if (c.en_cours) reprendreFlux(c.id);
     }).catch(function (e) { C.informer("Impossible d'ouvrir", e.message); });
   }
@@ -457,6 +466,9 @@
     var corps = h("div");
     if (m.table_ronde && m.table_ronde.reponses) corps.appendChild(grilleDepuisMessage(m.table_ronde)); else rendre(corps, m.texte);
     var b = h("div", { class: "bulle " + (estIA ? "assistant" : "user") + (m.table_ronde ? " tableronde" : "") + (m.erreur ? " erreur" : "") }, meta, corps);
+    if ((m.pieces || []).length) b.appendChild(h("div", { class: "vignettes" }, m.pieces.map(function (p) {
+      return h("a", { href: "/api/pieces/" + p.id, target: "_blank", rel: "noopener" }, h("img", { src: "/api/pieces/" + p.id, alt: p.nom || "image jointe", title: p.nom || "image jointe", loading: "lazy" }));
+    })));
     (m.contexte || []).forEach(function (c) {
       b.appendChild(h("div", { class: "doux", texte: c.type === "tiroir" ? "📎 Tiroir : " + c.titre : (c.chemin ? "📚 Mémoire : " + c.chemin : "📚 Mémoire : " + (c.message || "rien trouvé")) }));
     });
@@ -530,6 +542,7 @@
       });
       return pret.then(function () {
         var corps = { texte: texte, memoire: S.opt.memoire && !!(S.memoire && S.memoire.disponible), tiroir: S.selection.slice(), autoriser_ecriture: ecr };
+        if (S.images.length) { corps.images = S.images.map(function (im) { return im.id; }); corps.noms_images = {}; S.images.forEach(function (im) { corps.noms_images[im.id] = im.nom; }); }
         if (trActive()) { if (window.innerWidth <= 720) S.tr.ouvert = false; }      // téléphone : on libère la place pour les réponses
         if (trActive()) corps.table_ronde = { participants: S.tr.participants.slice(), critique: S.tr.critique, synthese: S.tr.synthese, confirme_depassement: !!confirmeTr };
         S.brouillon = ""; if (saisie) saisie.value = "";
@@ -537,7 +550,7 @@
         S.conv.messages.push({ id: "tmp", role: "user", texte: texte, ts: Date.now() / 1000, contexte: [] });
         demarrerLive();
         lancerFlux("/api/conversations/" + S.conv.id + "/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps) });
-        S.selection = [];
+        S.selection = []; S.images = [];
       });
     }).catch(function (e) { C.informer("Envoi impossible", e.message); });
   }
@@ -717,6 +730,87 @@
       return api("POST", "/api/tiroir", { titre: v.titre, texte: m.texte, zone: v.zone, origine: m.salle || "" });
     }).catch(function (e) { C.informer("Impossible", e.message); });
   }
+  // ------------------------------------------------ pièces jointes : fichiers texte (rangés dans le tiroir) et images (collées ou choisies)
+  var TEXTES_OK = /\.(txt|md|markdown|csv|tsv|json|log|py|js|ts|html|css|xml|yaml|yml|ini|toml|sql|sh|bat|ps1|cfg|conf)$/i;
+  var MAX_IMAGES = 4;
+  function boutonJoindre(pret) {
+    return h("button", { class: "rond joindre", id: "bouton-joindre", type: "button", title: "Joindre un fichier texte ou une image (vous pouvez aussi coller une image)", "aria-label": "Joindre un fichier ou une image",
+      texte: "📎", disabled: !pret || S.enCours, onclick: function () { var e = document.getElementById("fichier-joint"); if (e) e.click(); } });
+  }
+  function rangeePieces() {
+    if (!S.selection.length && !S.images.length) return null;
+    var puces = [];
+    S.selection.forEach(function (id) {
+      puces.push(h("span", { class: "piece" }, "📄 " + (S.titres[id] || "élément du tiroir"),
+        h("button", { class: "retirer", type: "button", "aria-label": "Retirer cet élément", texte: "✕", onclick: function () { S.selection = S.selection.filter(function (x) { return x !== id; }); redessinerDockEnGardantSaisie(); } })));
+    });
+    S.images.forEach(function (im) {
+      puces.push(h("span", { class: "piece image" }, h("img", { src: im.url, alt: im.nom, title: im.nom }),
+        h("button", { class: "retirer", type: "button", "aria-label": "Retirer cette image", texte: "✕", onclick: function () {
+          S.images = S.images.filter(function (x) { return x.id !== im.id; }); api("DELETE", "/api/pieces/" + im.id).catch(function () {}); redessinerDockEnGardantSaisie(); } })));
+    });
+    return h("div", { class: "pieces-jointes", id: "pieces-jointes", "aria-label": "Pièces jointes" }, puces);
+  }
+  function blobEnBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result).split(",")[1] || ""); };
+      r.onerror = function () { reject(new Error("Lecture du fichier impossible.")); };
+      r.readAsDataURL(blob);
+    });
+  }
+  // Réduit l'image (1600 px au plus) : plus léger à envoyer, et les données cachées (lieu, appareil…) disparaissent.
+  function reduireImage(fichier) {
+    // createImageBitmap (et non une image « blob: », que la politique de sécurité de la page refuse) ; un nouveau dessin ne garde aucune donnée cachée.
+    if (!window.createImageBitmap) return Promise.reject(new Error("Ce navigateur ne sait pas lire les images collées."));
+    return createImageBitmap(fichier).then(function (bmp) {
+      var echelle = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      if (echelle === 1 && fichier.size <= 1500000 && /^image\/(png|jpeg|webp)$/.test(fichier.type)) { bmp.close(); return fichier; }
+      var c = document.createElement("canvas"); c.width = Math.max(1, Math.round(bmp.width * echelle)); c.height = Math.max(1, Math.round(bmp.height * echelle));
+      var g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
+      return new Promise(function (resolve, reject) { c.toBlob(function (blob) { blob ? resolve(blob) : reject(new Error("Image illisible.")); }, "image/jpeg", 0.88); });
+    }, function () { throw new Error("Ce fichier n'est pas une image lisible."); });
+  }
+  function ajouterImage(fichier) {
+    var s = salleCourante();
+    if (!s || !s.images) { C.informer("Cette salle ne lit pas les images", (s && s.raison_images) || "Choisissez une salle qui lit les images."); return Promise.resolve(); }
+    if (S.images.length >= MAX_IMAGES) { C.informer("Trop d'images", "Quatre images au plus par message."); return Promise.resolve(); }
+    return reduireImage(fichier).then(function (blob) {
+      return blobEnBase64(blob).then(function (b64) { return api("POST", "/api/pieces", { nom: fichier.name || "image collée", donnees: b64 }); });
+    }).then(function (e) {
+      S.images.push({ id: e.id, nom: e.nom, type: e.type, url: "/api/pieces/" + e.id });
+    });
+  }
+  function ajouterTexte(fichier) {
+    if (fichier.size > 200000) { C.informer("Fichier trop gros", fichier.name + " dépasse 200 Ko : coupez-le en morceaux."); return Promise.resolve(); }
+    return fichier.text().then(function (texte) {
+      if (texte.length > 20000) { C.informer("Texte trop long", fichier.name + " fait " + texte.length + " caractères (maximum 20 000) : coupez-le en morceaux."); return; }
+      if (texte.indexOf("\u0000") >= 0) { C.informer("Fichier non pris en charge", fichier.name + " n'est pas un fichier texte."); return; }
+      var nuage = !(salleCourante() || {}).locale;
+      return C.formulaire("Joindre « " + fichier.name + " »", "Le fichier est d'abord rangé dans le tiroir, puis joint à votre prochain message. En zone « privé », il ne peut jamais être envoyé à une IA du nuage.",
+        [{ nom: "titre", label: "Titre", type: "text", valeur: fichier.name },
+         { nom: "zone", label: "Zone", type: "select", valeur: "prive", options: [{ valeur: "prive", texte: "Privé : jamais envoyé à une IA du nuage" }, { valeur: "partageable", texte: "Partageable : peut être envoyé aux IA du nuage" }] }], "Ranger et joindre").then(function (v) {
+        if (!v) return;
+        return api("POST", "/api/tiroir", { titre: v.titre || fichier.name, texte: texte, zone: v.zone, origine: "fichier" }).then(function (e) {
+          S.titres[e.id] = e.titre;
+          if (nuage && v.zone !== "partageable") { C.informer("Rangé dans le tiroir, pas joint", "« " + e.titre + " » est privé : cette IA est dans le nuage. Changez sa zone dans la page Tiroir, ou choisissez une IA locale."); return; }
+          if (S.selection.indexOf(e.id) < 0) S.selection.push(e.id);
+        });
+      });
+    });
+  }
+  function joindre(fichiers) {
+    var suite = Promise.resolve();
+    fichiers.forEach(function (f) {
+      suite = suite.then(function () {
+        if (/^image\//.test(f.type)) return ajouterImage(f);
+        if (TEXTES_OK.test(f.name) || /^text\//.test(f.type)) return ajouterTexte(f);
+        C.informer("Fichier non pris en charge", (f.name || "Ce fichier") + " : seuls les fichiers texte ou code et les images sont acceptés (les PDF et documents ne sont pas lus pour l'instant).");
+      });
+    });
+    suite.then(function () { redessinerDockEnGardantSaisie(); }).catch(function (e) { if (e.message !== "session") C.informer("Pièce jointe impossible", e.message); redessinerDockEnGardantSaisie(); });
+  }
+
   function choisirTiroir() {
     api("GET", "/api/tiroir").then(function (d) {
       if (!d.elements.length) return C.informer("Tiroir vide", "Ajoutez des éléments dans la page Tiroir, ou depuis une réponse (« Mettre dans le tiroir »).");
@@ -728,6 +822,7 @@
       return C.formulaire("Joindre des éléments du tiroir", "Ils sont envoyés à l'IA comme des données, avec votre prochain message.", champs, "Joindre").then(function (v) {
         if (!v) return;
         S.selection = Object.keys(v).filter(function (k) { return v[k]; });
+        d.elements.forEach(function (e) { S.titres[e.id] = e.titre; });
         dessiner();
       });
     }).catch(function (e) { C.informer("Impossible", e.message); });
@@ -796,7 +891,7 @@
   // Départements : ouvre une nouvelle conversation dans la salle voulue, avec le texte prêt à compléter.
   C.demarrerDans = function (salle, titre, brouillon, memoire) {
     return api("POST", "/api/conversations", { salle: salle, titre: titre }).then(function (c) {
-      S.salle = salle; stocker("salle", salle); S.conv = null; S.selection = []; S.brouillon = brouillon || "";
+      S.salle = salle; stocker("salle", salle); S.conv = null; S.selection = []; S.images = []; S.brouillon = brouillon || "";
       S.pendingConv = c.id; S.memoireInitiale = !!memoire;
       C.aller("salles");
     });

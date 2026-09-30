@@ -30,6 +30,8 @@ from .verrou import ErreurVerrou, Verrou
 from .couts import ErreurCouts, IA, TARIFS_REFERENCE, libelle_ia
 from .conversations import ErreurConversation
 from .journal import lire_fin_journal, masquer
+from .images import ErreurImage
+from .pieces import ErreurPiece
 from .salles import ErreurSalle, MODELES_CREW, SALLES
 from .tiroir import ErreurTiroir
 from .voix import ErreurVoix
@@ -526,7 +528,7 @@ def creer_app(centre=None, verrou=None, config=None):
         if cid in salles.en_cours():
             return _erreur("Arrêtez d'abord la réponse en cours.", 409)
         try:
-            await run_in_threadpool(salles.conversations.supprimer, cid)
+            await run_in_threadpool(salles.supprimer_conversation, cid)
         except ErreurConversation as e:
             return erreur_salle(e)
         centre.recus.ajouter("conversation_supprimee", "ok", conversation=cid, session=session_courte(request))
@@ -537,7 +539,10 @@ def creer_app(centre=None, verrou=None, config=None):
         if d is None:
             return _erreur("Requête illisible.")
         options = {"memoire": bool(d.get("memoire")), "autoriser_ecriture": bool(d.get("autoriser_ecriture")),
-                   "tiroir": [str(x) for x in d.get("tiroir", [])[:10]] if isinstance(d.get("tiroir"), list) else []}
+                   "tiroir": [str(x) for x in d.get("tiroir", [])[:10]] if isinstance(d.get("tiroir"), list) else [],
+                   "images": [str(x) for x in d.get("images", [])[:4]] if isinstance(d.get("images"), list) else []}
+        if isinstance(d.get("noms_images"), dict):
+            options["noms_images"] = {str(k)[:20]: str(v)[:60] for k, v in list(d["noms_images"].items())[:4]}
         t = d.get("table_ronde")
         if isinstance(t, dict):
             options["table_ronde"] = {"participants": [str(x) for x in t.get("participants", [])[:12]] if isinstance(t.get("participants"), list) else [],
@@ -587,6 +592,86 @@ def creer_app(centre=None, verrou=None, config=None):
         except ErreurSalle as e:
             return erreur_salle(e)
         return _json(r, 201)
+
+    async def api_images_options(request):
+        return _json(await run_in_threadpool(centre.images.options))
+
+    async def api_images_estimation(request):
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            return _json(await run_in_threadpool(centre.images.estimer, str(d.get("moteur", "")), d.get("n", 1)))
+        except ErreurImage as e:
+            return _erreur(str(e), e.code)
+
+    async def api_images_creer(request):
+        refus = sensible(request)              # dépense possible : NIP reconfirmé à distance
+        if refus:
+            return refus
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            return _json(await run_in_threadpool(
+                centre.images.lancer, str(d.get("moteur", "")), d.get("prompt", ""), str(d.get("taille", "carre")), d.get("n", 1), bool(d.get("prive")),
+                str(d.get("checkpoint", ""))[:200], bool(d.get("confirme_depassement")), session_courte(request)), 202)
+        except ErreurImage as e:
+            return _erreur(str(e), e.code, **e.extra)
+
+    async def api_images_job(request):
+        try:
+            return _json(await run_in_threadpool(centre.images.etat_job, request.path_params["ident"]))
+        except ErreurImage as e:
+            return _erreur(str(e), e.code)
+
+    async def api_images_lister(request):
+        return _json({"images": await run_in_threadpool(centre.images.lister)})
+
+    async def api_images_fichier(request):
+        try:
+            octets, mime = await run_in_threadpool(centre.images.lire, request.path_params["ident"])
+        except ErreurImage as e:
+            return _erreur(str(e), e.code)
+        nom = request.path_params["ident"] + {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}.get(mime, "")
+        disposition = 'attachment; filename="' + nom + '"' if request.query_params.get("telecharger") == "1" else "inline"
+        return Response(octets, media_type=mime, headers=dict(ENTETES_SECURITE, **{"Content-Disposition": disposition}))
+
+    async def api_images_supprimer(request):
+        refus = sensible(request)
+        if refus:
+            return refus
+        try:
+            await run_in_threadpool(centre.images.supprimer, request.path_params["ident"])
+        except ErreurImage as e:
+            return _erreur(str(e), e.code)
+        centre.recus.ajouter("image_supprimee", "ok", session=session_courte(request))
+        return _json({"ok": True})
+
+    async def api_piece_ajouter(request):
+        try:
+            if int(request.headers.get("content-length", "0")) > 9_000_000:
+                return _erreur("Image trop lourde (maximum 6 Mo).", 413)
+        except ValueError:
+            return _erreur("Requête illisible.")
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            return _json(await run_in_threadpool(salles.pieces.ajouter_base64, d.get("donnees"), d.get("nom", "")), 201)
+        except ErreurPiece as e:
+            return _erreur(str(e), e.code)
+
+    async def api_piece_lire(request):
+        try:
+            octets, mime = await run_in_threadpool(salles.pieces.lire, request.path_params["ident"])
+        except ErreurPiece as e:
+            return _erreur(str(e), e.code)
+        return Response(octets, media_type=mime, headers=dict(ENTETES_SECURITE, **{"Content-Disposition": "inline"}))
+
+    async def api_piece_supprimer(request):
+        await run_in_threadpool(salles.pieces.supprimer, request.path_params["ident"])
+        return _json({"ok": True})
 
     async def api_tr_options(request):
         return _json(await run_in_threadpool(salles.table_ronde.options))
@@ -852,6 +937,11 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/crew/mode", api_mode_lire), Route("/api/crew/mode", api_mode_changer, methods=["PUT"]),
         Route("/api/crew/moteurs", api_moteurs), Route("/api/crew/autorisations", api_autorisations), Route("/api/crew/chef", api_chef),
         Route("/api/crew/chef", api_chef_definir, methods=["PUT"]),
+        Route("/api/images/options", api_images_options), Route("/api/images/estimation", api_images_estimation, methods=["POST"]),
+        Route("/api/images/jobs/{ident}", api_images_job), Route("/api/images", api_images_lister), Route("/api/images", api_images_creer, methods=["POST"]),
+        Route("/api/images/{ident}/fichier", api_images_fichier), Route("/api/images/{ident}", api_images_supprimer, methods=["DELETE"]),
+        Route("/api/pieces", api_piece_ajouter, methods=["POST"]), Route("/api/pieces/{ident}", api_piece_lire),
+        Route("/api/pieces/{ident}", api_piece_supprimer, methods=["DELETE"]),
         Route("/api/crew/autorisations", api_autorisation_definir, methods=["PUT"]), Route("/api/ouvrir", api_ouvrir, methods=["POST"]),
         Route("/api/couts", api_couts), Route("/api/couts/plafonds", api_couts_plafonds, methods=["PUT"]),
         Route("/api/couts/deepseek", api_couts_deepseek),

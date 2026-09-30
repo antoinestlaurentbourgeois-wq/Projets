@@ -20,6 +20,7 @@ from .cles import Cles
 from .conversations import Conversations, ErreurConversation
 from .couts import MODES_CREW_LOCAUX
 from .memoire import Memoire, ZONE_PARTAGEABLE
+from .pieces import Pieces, ErreurPiece, MAX_PAR_MESSAGE
 from .politique import Politique
 from .reseau import Annulation, Processus, Reseau
 from .tiroir import Tiroir, ErreurTiroir
@@ -218,6 +219,7 @@ class Salles:
         self.processus = processus or Processus()
         cfg = centre.config
         self.cles = Cles(centre.sys)
+        self.pieces = Pieces(centre.config.chemin("pieces"))
         self._salles_lm = {}                 # ident -> DefSalle (modèles LM Studio autres que gemma)
         self._meta_lm = {}                   # ident -> {modele, libelle, taille_go, params, quantification} (aussi pour « gemma »)
         self._presents_lm = None             # ensemble des modèles présents dans LM Studio, ou None si on ne sait pas
@@ -474,6 +476,24 @@ class Salles:
             return False, f"Le chef local ({self.nom_modele(chef)}) n'est pas chargé : allumez-le dans la page Centre."
         return True, ""
 
+    def lit_images(self, salle):
+        """(ok, raison) : cette salle peut-elle recevoir une image collée ? Seules les salles qui parlent au format OpenAI (LM Studio, clés API) le peuvent ;
+        les programmes (Claude Code, Codex, Gemini CLI), DeepSeek (texte seulement) et Crew (pas vérifié) les refusent avec une raison claire."""
+        if salle == "gemma" or salle in self._salles_lm:
+            return True, "Modèle local : l'image n'est lue que si ce modèle sait lire les images (modèle « vision »)."
+        if salle == "crew":
+            return False, "Crew ne lit pas encore les images."
+        if salle == "deepseek":
+            return False, "DeepSeek ne lit que du texte."
+        if salle in ("claude",):
+            return False, "Claude (programme officiel) ne reçoit pas d'image depuis le Centre."
+        r = self.reglage(salle)
+        if salle in ("chatgpt", "gemini") and r["auth"] != "cle":
+            return False, "Avec le programme officiel, cette salle ne reçoit pas d'image : passez à la clé API dans les réglages de la salle."
+        if salle in ("chatgpt", "gemini", "grok"):
+            return True, ""
+        return False, "Cette salle ne reçoit pas d'image."
+
     def catalogue(self):
         self.centre.assurer_etats()
         sortie = []
@@ -483,6 +503,7 @@ class Salles:
             lecture_seule = (not ok) and ("chef d'équipe" in raison or "absent de LM Studio" in raison)
             sortie.append({"id": s.ident, "libelle": s.libelle, "description": s.description,
                            "lien": "chef" if "chef d'équipe" in raison else "", "lecture_seule": bool(lecture_seule),
+                           "images": self.lit_images(s.ident)[0], "raison_images": self.lit_images(s.ident)[1],
                            "locale": s.locale or s.ident == "crew", "auths": [{"id": a, "texte": TEXTE_AUTH[a]} for a in self.auths(s.ident)],
                            "auth": r["auth"], "modele": r["modele"], "disponible": ok, "raison": raison,
                            "approbations": s.ident in ("claude",), "ecriture": s.ident == "chatgpt" and r["auth"] == "abonnement",
@@ -568,6 +589,28 @@ class Salles:
             raise ErreurSalle("Salle inconnue.", 404)
         return self.conversations.creer(salle, titre)
 
+    def supprimer_conversation(self, cid):
+        """Supprime la conversation ET les images qu'elle contenait."""
+        try:
+            conv = self.conversations.lire(cid)
+            ids = [p.get("id") for m in conv["messages"] for p in (m.get("pieces") or [])]
+        except ErreurConversation:
+            ids = []
+        self.conversations.supprimer(cid)
+        for i in ids:
+            self.pieces.supprimer(i)
+
+    def nettoyer_pieces(self):
+        """Retire les images envoyées au serveur mais jamais utilisées (plus d'un jour)."""
+        refs = set()
+        for c in self.conversations.lister(None, 100000):
+            try:
+                conv = self.conversations.lire(c["id"])
+            except ErreurConversation:
+                continue
+            refs.update(p.get("id") for m in conv["messages"] for p in (m.get("pieces") or []))
+        return self.pieces.nettoyer(refs)
+
     def conversation(self, cid):
         try:
             return self.conversations.lire(cid)
@@ -647,7 +690,8 @@ class Salles:
         return texte, contexte, prive
 
     def _messages_pour_ia(self, conv, dernier_texte):
-        msgs = [{"role": m["role"], "content": m["texte"]} for m in conv["messages"] if m.get("texte") and not m.get("erreur")]
+        msgs = [{"role": m["role"], "content": m["texte"] + ("\n[image jointe : " + ", ".join(p.get("nom", "image") for p in m["pieces"]) + "]" if m.get("pieces") else "")}
+                for m in conv["messages"] if m.get("texte") and not m.get("erreur")]
         if msgs and msgs[-1]["role"] == "user":
             msgs[-1] = {"role": "user", "content": dernier_texte}
         total, garde = 0, []
@@ -701,11 +745,31 @@ class Salles:
                     ev["code"] = e.code          # ex. « depassement » : l'écran demande alors une confirmation
                 yield ev
                 return
+        images = []
+        if options.get("images"):
+            if options.get("table_ronde"):
+                yield ia.evt_erreur("Les images ne sont pas envoyées en table ronde : décochez la table ronde ou retirez l'image.")
+                return
+            ok_img, raison_img = self.lit_images(salle)
+            if not ok_img:
+                yield ia.evt_erreur(raison_img + " Retirez l'image ou changez de salle.")
+                return
+            for ident in list(options["images"])[:MAX_PAR_MESSAGE]:
+                try:
+                    _, mime = self.pieces.lire(str(ident))
+                except ErreurPiece as e:
+                    yield ia.evt_erreur(str(e))
+                    return
+                images.append({"id": str(ident), "type": mime, "nom": (options.get("noms_images") or {}).get(str(ident), "image")})
         ecriture = bool(options.get("autoriser_ecriture")) and salle == "chatgpt" and self.reglage(salle)["auth"] == "abonnement"
         conv["prive"] = prive
-        m_user = self.conversations.ajouter_message(conv, "user", texte, contexte=contexte, sensible=prive)
+        extra_msg = {"pieces": images} if images else {}
+        m_user = self.conversations.ajouter_message(conv, "user", texte, contexte=contexte, sensible=prive, **extra_msg)
         self.conversations.enregistrer(conv)
         req = self._requete(conv, salle, enrichi, prive, ecriture)
+        if images and req.messages and req.messages[-1]["role"] == "user":      # seule la question EN COURS porte les images (les anciennes ne sont pas renvoyées)
+            req.messages[-1] = {"role": "user", "content": [{"type": "text", "text": enrichi}] +
+                                [{"type": "image_url", "image_url": {"url": self.pieces.data_url(i["id"])}} for i in images]}
         if tr:
             req.table_ronde, req.modele = tr, tr_mod.MODELE
         yield from self._tour(conv, salle, req, m_user["id"], annulation, session, prive)
@@ -892,7 +956,8 @@ class Salles:
         r = self.reglage(salle)
         gratuit = (salle == "gemma" or salle in self._salles_lm or r["auth"] == "abonnement" or
                    (salle == "crew" and (prive or self.mode_crew() in MODES_CREW_LOCAUX)))
-        e = usage["entree"] if usage and usage.get("entree") else jetons(sum(len(m["content"]) for m in req.messages) + len(req.systeme))
+        n_images = sum(len([p for p in m["content"] if p.get("type") == "image_url"]) for m in req.messages if isinstance(m["content"], list))
+        e = usage["entree"] if usage and usage.get("entree") else jetons(sum(len(m["content"]) if isinstance(m["content"], str) else 0 for m in req.messages) + len(req.systeme)) + 1000 * n_images
         s = usage["sortie"] if usage and usage.get("sortie") else jetons(reponse)
         if salle == "crew" and usage and isinstance(usage.get("cout_usd"), (int, float)):
             usd = float(usage["cout_usd"])           # coût réel renvoyé par Crew (0 pour les appels locaux)

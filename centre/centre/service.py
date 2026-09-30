@@ -73,6 +73,8 @@ class Centre:
         self._fil = None
         from .salles import Salles          # après tout le reste : Salles s'appuie sur ce Centre
         self.salles = Salles(self, reseau=reseau, processus=processus)
+        from .images import Images
+        self.images = Images(self)
         from .rappels import Rappels
         self.rappels = Rappels(self.config.chemin("rappels.json"))
         from .voix import Voix
@@ -91,6 +93,10 @@ class Centre:
 
     def _boucle(self):
         from .config import DELAI_RAFRAICHISSEMENT, INACTIVITE_RAFRAICHISSEMENT
+        try:
+            self.salles.nettoyer_pieces()               # images téléversées puis jamais envoyées (plus d'un jour)
+        except Exception:
+            journal.exception("nettoyage des images impossible")
         while not self._arret.is_set():
             if time.monotonic() - self._derniere_demande < INACTIVITE_RAFRAICHISSEMENT:
                 try:

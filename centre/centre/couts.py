@@ -26,6 +26,7 @@ IA = {
     "grok":     {"libelle": "Grok",          "payante": True},
     "deepseek": {"libelle": "DeepSeek",      "payante": True},
     "voix":     {"libelle": "Voix (nuage)",  "payante": True},
+    "images":   {"libelle": "Images (nuage)", "payante": True},
     "gemma":    {"libelle": "gemma (local)", "payante": False},
 }
 MODES_CREW_LOCAUX = ("confidentiel", "ultra-confidentiel", "ultra")     # « ultra » : ancien nom, encore reconnu
