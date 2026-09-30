@@ -1209,6 +1209,76 @@ const MOD_WELD = {
 };
 
 /* =========================================================================
+   Moteur de calcul des profils de mouvement (commun aux modules 6 et 7)
+   ps : { kind: 'lin' | 'ang', shape, def: 'time' | 'lim', tm, ra, vmax, amax, wmax, almax, rj, cyc, t0 }
+   ========================================================================= */
+const PSHAPES = [['trap', 'Trapézoïdal (triangulaire si t_a = 50 %)'], ['scurve', 'Courbe en S (jerk limité)'], ['cyclo', 'Cycloïdal (sinusoïdal)']];
+// Profil d'un déplacement D (> 0) : durée T, accélération a(t), points de rupture
+function moveProfile(s, D) {
+  const ang = s.kind === 'ang', r = s.shape === 'scurve' ? s.rj : 0, k = 1 - r / 2;
+  const vmax = ang ? s.wmax : s.vmax, amax = ang ? s.almax : s.amax;
+  let T, ta, tri = false;
+  if (s.shape === 'cyclo') {
+    T = s.def === 'time' ? s.tm : Math.max(2 * D / vmax, Math.sqrt(2 * PI * D / amax)); ta = T / 2;
+    const A = 2 * PI * D / (T * T);
+    return { T, ta, tri, r, A, vp: 2 * D / T, aF: t => A * Math.sin(2 * PI * t / T), jmax: 2 * PI * A / T, brk: [] };
+  }
+  if (s.def === 'time') { T = s.tm; ta = s.ra * T; tri = s.ra >= .4999; }
+  else {
+    ta = vmax / (amax * k);
+    if (D >= vmax * ta) T = D / vmax + ta;
+    else { tri = true; const vp = Math.sqrt(D * amax * k); ta = vp / (amax * k); T = 2 * ta; }
+  }
+  const vp = D / (T - ta), tj = r * ta / 2, A = vp / (ta * k);
+  const up = t => tj > 0 ? (t < tj ? A * t / tj : t < ta - tj ? A : A * (ta - t) / tj) : A;
+  const aF = t => t < ta ? up(t) : t < T - ta ? 0 : t <= T ? -up(t - (T - ta)) : 0;
+  const brk = [ta, T - ta]; if (tj > 0) brk.push(tj, ta - tj, T - ta + tj, T - tj);
+  return { T, ta, tri, r, A, vp, aF, jmax: tj > 0 ? A / tj : Infinity, brk };
+}
+function sampleMove(P, D, dir) {
+  const T = P.T, eps = T * 1e-9;
+  let ts = linspace(0, T, 900);
+  P.brk.forEach(b => { if (b > eps && b < T - eps) ts.push(b - eps, b + eps); });
+  ts = [...new Set(ts)].sort((p, q) => p - q);
+  const t = [], x = [], v = [], a = [];
+  let vv = 0, xx = 0;
+  ts.forEach((tt, i) => {
+    const aa = P.aF(Math.min(tt, T));
+    if (i) { const dt = tt - ts[i - 1], aPrev = a[i - 1] * dir, vPrev = vv; vv += (aPrev + aa) / 2 * dt; xx += (vPrev + vv) / 2 * dt; }
+    t.push(tt); a.push(aa * dir); v.push(vv * dir); x.push(xx * dir);
+  });
+  // correction de la petite erreur d'intégration : la course finale vaut exactement D
+  const last = x[x.length - 1], f = last !== 0 ? D * dir / last : 1;
+  return { t, x: x.map(z => z * f), v: v.map((z, i) => i === v.length - 1 ? 0 : z), a };
+}
+// Cycle complet : aller, arrêt, et si ps.cyc === 'ret', retour et arrêt
+function buildCycle(ps, D) {
+  const P = moveProfile(ps, D), T = P.T, t = [], x = [], v = [], a = [];
+  const pushSeg = (seg, t0, x0) => seg.t.forEach((tt, i) => { t.push(t0 + tt); x.push(x0 + seg.x[i]); v.push(seg.v[i]); a.push(seg.a[i]); });
+  const dwell = (t0, dur, xx) => { if (dur <= 0) return; linspace(0, dur, 40).forEach(u => { t.push(t0 + u); x.push(xx); v.push(0); a.push(0); }); };
+  pushSeg(sampleMove(P, D, 1), 0, 0);
+  dwell(T, ps.t0, D);
+  let tc = T + ps.t0;
+  if (ps.cyc === 'ret') { pushSeg(sampleMove(P, D, -1), tc, D); tc += T; dwell(tc, ps.t0, 0); tc += ps.t0; }
+  return { P, T, t, x, v, a, tc };
+}
+const rmsOf = (t, arr, tc) => { let acc = 0; for (let k = 1; k < t.length; k++) acc += (arr[k] ** 2 + arr[k - 1] ** 2) / 2 * (t[k] - t[k - 1]); return Math.sqrt(acc / tc); };
+const absMax = arr => arr.reduce((m, z) => Math.max(m, Math.abs(z)), 0);
+// Copie le profil et la charge du module 7 vers le module 6
+function profileToMotor(p, m) {
+  Object.assign(m, { shape: p.shape, def: p.def, rj: p.rj, cyc: p.cyc, t0: p.t0, tm: p.tm, ta: p.ra * p.tm, vmax: p.vmax, amax: p.amax, wmax: p.wmax, almax: p.almax });
+  if (p.kind === 'ang') {
+    Object.assign(m, { mech: 'rot', Sa: p.Ang * 180 / PI, Jadd: p.J, md: 0, Tf: p.Tf, Tl: p.Tl });
+    if (p.tr === 'gear') Object.assign(m, { i: p.i, etag: p.eta }); else Object.assign(m, { i: 1, etag: 1 });
+  } else {
+    Object.assign(m, { S: p.S, m: p.m, theta: p.theta, mu: p.mu, Fext: p.Fext });
+    if (p.tr === 'screw') Object.assign(m, { mech: 'screw', Pb: p.P, i: p.i, eta: p.eta, etag: 1 });
+    else if (p.tr === 'belt') Object.assign(m, { mech: 'belt', Dp: p.D, i: p.i, eta: p.eta, etag: 1 });
+    else if (m.mech === 'rot') m.mech = 'screw';
+  }
+}
+
+/* =========================================================================
    Module 6 — Sélection de moteur (servo / asynchrone AC)
    ========================================================================= */
 const G0 = 9.80665, RHO_STEEL = 7850;
@@ -1240,31 +1310,48 @@ function tPeak(m, N, ac) {
 }
 const MECHS = [['screw', 'Vis à billes'], ['belt', 'Courroie crantée / pignon-crémaillère'], ['rot', 'Table rotative / disque']];
 const lin = s => s.mech !== 'rot';
+const motorPS = s => ({ kind: s.mech === 'rot' ? 'ang' : 'lin', shape: s.shape, def: s.def, tm: s.tm, ra: s.shape === 'cyclo' ? .5 : s.ta / s.tm,
+  vmax: s.vmax, amax: s.amax, wmax: s.wmax, almax: s.almax, rj: s.rj, cyc: s.cyc, t0: s.t0 });
+// Charge ramenée à l'arbre moteur, échantillonnée sur le cycle complet
 function loadCalc(s) {
-  const { tm, ta, t0 } = s, tc = tm - 2 * ta;
-  let Nload, J, T, Th = 0, v = NaN, F = NaN;
-  if (s.mech === 'rot') {
-    const w = (s.Sa * PI / 180) / (tm - ta);
-    Nload = w * 60 / (2 * PI); J = s.md * s.Dd * s.Dd / 8 + s.Jadd; T = s.Tf / s.eta;
-  } else {
-    v = s.S / (tm - ta);
-    const rad = s.theta * PI / 180, Fg = s.m * G0 * Math.sin(rad);
-    F = s.Fext + Fg + s.mu * s.m * G0 * Math.cos(rad);
-    const r = s.mech === 'screw' ? s.Pb / (2 * PI) : s.Dp / 2;
-    Nload = v / (2 * PI * r) * 60;
+  const rot = s.mech === 'rot', D = rot ? s.Sa * PI / 180 : s.S, C = buildCycle(motorPS(s), D);
+  let J, r = 1, Fg = 0, Ffr = 0, Tc = 0, Tfr = 0;
+  if (rot) { J = s.md * s.Dd * s.Dd / 8 + s.Jadd; Tc = s.Tl; Tfr = s.Tf; }
+  else {
+    const rad = s.theta * PI / 180;
+    r = s.mech === 'screw' ? s.Pb / (2 * PI) : s.Dp / 2;
     J = s.m * r * r + (s.mech === 'screw' ? PI * RHO_STEEL * s.Lb * s.Db ** 4 / 32 : s.Jp);
-    T = F * r / s.eta; Th = Fg * r;
+    Fg = s.m * G0 * Math.sin(rad); Ffr = s.mu * s.m * G0 * Math.cos(rad) + s.Fext;
   }
-  const N = Nload * s.i, w = 2 * PI * N / 60;
-  return { N, Nload, v, F, J, Jm: J / (s.i * s.i) + s.JG, TL: T / (s.i * s.etag), Th: Th / s.i, eta: s.eta * s.etag, w, alpha: w / ta, ta, tc, t0, tcyc: tm + t0 };
+  const gk = s.i / r, Jm = J / (s.i * s.i) + s.JG, eta = s.eta * s.etag, vp = C.P.vp, eps = vp * 1e-6;
+  const sg = z => z > eps ? 1 : z < -eps ? -1 : 0;
+  const w = C.v.map(z => z * gk), al = C.a.map(z => z * gk), N = w.map(z => z * 60 / (2 * PI));
+  // couple de charge (hors inertie du rotor) : rendement appliqué selon le sens du flux de puissance
+  const Tload = C.v.map((z, k) => {
+    const raw = rot ? (Tc + sg(z) * Tfr) / s.i : (Fg + sg(z) * Ffr) * r / s.i;
+    const tot = Jm * al[k] + raw;
+    return sg(z) === 0 ? tot : tot * w[k] >= 0 ? tot / eta : tot * eta;
+  });
+  const moving = C.v.map(z => sg(z) !== 0);
+  let sumN = 0, tMove = 0;
+  for (let k = 1; k < C.t.length; k++) if (moving[k]) { const dt = C.t[k] - C.t[k - 1]; sumN += Math.abs(N[k]) * dt; tMove += dt; }
+  const aMax = absMax(al);
+  const cst = C.v.map((z, k) => moving[k] && Math.abs(al[k]) < aMax * 1e-6);
+  return { C, D, rot, J, Jm, r, gk, eta, w, al, N, Tload, cst, Nmax: absMax(N), Navg: tMove > 0 ? sumN / tMove : 0,
+    TL: rot ? (Tc + Tfr) / s.i / eta : (Fg + Ffr) * r / s.i / eta, Th: rot ? Tc / s.i : Fg * r / s.i };
 }
 function evalMotor(m, L, s, ac) {
-  const k = s.sf, Ta = (m.J + L.Jm / L.eta) * L.alpha, Tad = (m.J + L.Jm * L.eta) * L.alpha;
-  const T1 = k * (Ta + L.TL), T2 = k * L.TL, T3 = k * (L.TL - Tad), T4 = k * L.Th;
-  const Trms = Math.sqrt((T1 * T1 * L.ta + T2 * T2 * L.tc + T3 * T3 * L.ta + T4 * T4 * L.t0) / L.tcyc);
-  const Tpk = Math.max(Math.abs(T1), Math.abs(T3)), Tpa = tPeak(m, L.N, ac), Tca = tCont(m, L.N, ac), ratio = L.Jm / m.J;
-  const c = { pk: Tpa > 0 ? Tpk / Tpa : Infinity, rms: Trms / m.Tr, run: Tca > 0 ? Math.abs(T2) / Tca : Infinity, spd: L.N / m.Nmax, jr: ratio / s.jr };
-  return { m, Ta, T1, T2, T3, T4, Trms, Tpk, Tpa, Tca, ratio, c, ok: Object.values(c).every(x => x <= 1) };
+  const k = s.sf, Tm = L.Tload.map((tl, j) => k * (m.J * L.al[j] + tl));
+  const Trms = rmsOf(L.C.t, Tm, L.C.tc);
+  let pk = 0, iPk = 0, run = 0, hasCst = false;
+  Tm.forEach((T, j) => {
+    const n = Math.abs(L.N[j]), avail = tPeak(m, n, ac), r = avail > 0 ? Math.abs(T) / avail : Infinity;
+    if (r > pk * (1 + 1e-6) || (r >= pk * (1 - 1e-6) && n > Math.abs(L.N[iPk]))) { pk = Math.max(pk, r); iPk = j; }
+    if (L.cst[j]) { hasCst = true; const c = tCont(m, n, ac), rc = c > 0 ? Math.abs(T) / c : Infinity; if (rc > run) run = rc; }
+  });
+  if (!hasCst) { const c = tCont(m, L.Navg, ac); run = c > 0 ? Trms / c : Infinity; }
+  const ratio = L.Jm / m.J, c = { pk, rms: Trms / m.Tr, run, spd: L.Nmax / m.Nmax, jr: ratio / s.jr };
+  return { m, Tm, Trms, Tpk: absMax(Tm), iPk, Tpa: tPeak(m, Math.abs(L.N[iPk]), ac), hasCst, ratio, c, ok: Object.values(c).every(x => x <= 1) };
 }
 function motorSVG(s, gear) {
   let g = `<svg viewBox="0 0 560 170" aria-label="Schéma de la chaîne d'entraînement">`;
@@ -1319,6 +1406,7 @@ const MOD_MOTOR = {
       { id: 'md', label: 'Masse du disque (charge incluse)', sym: 'm', q: 'mass', def: 10, when: s => s.mech === 'rot' },
       { id: 'Jadd', label: 'Inertie additionnelle', sym: 'J_add', q: 'minertia', def: 0, when: s => s.mech === 'rot' },
       { id: 'Tf', label: 'Couple de frottement à la table', sym: 'T_f', q: 'mtorque', def: .5, when: s => s.mech === 'rot' },
+      { id: 'Tl', label: 'Couple de charge constant (balourd)', sym: 'T_c', q: 'mtorque', def: 0, when: s => s.mech === 'rot' },
       { id: 'eta', label: 'Rendement du mécanisme', sym: 'η', q: 'pct', def: .9 }
     ] },
     { title: 'Réducteur', fields: [
@@ -1327,10 +1415,19 @@ const MOD_MOTOR = {
       { id: 'JG', label: 'Inertie réducteur + accouplement (côté moteur)', sym: 'J_G', q: 'minertia', def: 0 }
     ] },
     { title: 'Profil de mouvement', fields: [
+      { id: 'importP', type: 'btn', label: 'Importer le profil et la charge du module « Profils de mouvement »', action: s => { profileToMotor(S.profile, s); toast('Profil importé'); } },
+      { id: 'shape', type: 'sel', label: 'Forme du profil', def: 'trap', opts: PSHAPES },
+      { id: 'def', type: 'sel', label: 'Définir le profil par', def: 'time', opts: [['time', 'Temps de déplacement'], ['lim', 'Vitesse et accélération maximales']] },
       { id: 'S', label: 'Course', sym: 'S', q: 'dim', def: .2, when: lin },
       { id: 'Sa', label: 'Angle de rotation', sym: 'θ', q: 'deg', def: 90, when: s => s.mech === 'rot' },
-      { id: 'tm', label: 'Temps de déplacement', sym: 't_m', q: 'time', def: .5 },
-      { id: 'ta', label: 'Temps d\'accélération (= décélération)', sym: 't_a', q: 'time', def: .1, hint: 't_a = t_m/2 donne un profil triangulaire' },
+      { id: 'tm', label: 'Temps de déplacement', sym: 't_m', q: 'time', def: .5, when: s => s.def === 'time' },
+      { id: 'ta', label: 'Temps d\'accélération (= décélération)', sym: 't_a', q: 'time', def: .1, when: s => s.def === 'time' && s.shape !== 'cyclo', hint: 't_a = t_m/2 donne un profil triangulaire' },
+      { id: 'vmax', label: 'Vitesse maximale de la charge', sym: 'v_max', q: 'speed', def: .5, when: s => s.def === 'lim' && lin(s) },
+      { id: 'amax', label: 'Accélération maximale de la charge', sym: 'a_max', q: 'accel', def: 5, when: s => s.def === 'lim' && lin(s) },
+      { id: 'wmax', label: 'Vitesse angulaire maximale de la table', sym: 'ω_max', q: 'avel', def: 2 * PI, when: s => s.def === 'lim' && !lin(s) },
+      { id: 'almax', label: 'Accélération angulaire maximale', sym: 'α_max', q: 'aacc', def: 8 * PI, when: s => s.def === 'lim' && !lin(s) },
+      { id: 'rj', label: 'Part de jerk (variation d\'accélération)', sym: 'r', q: 'pct', def: .5, when: s => s.shape === 'scurve', hint: '0 % = trapézoïdal ; 100 % = courbe en S pure' },
+      { id: 'cyc', type: 'sel', label: 'Cycle', def: 'single', opts: [['single', 'Aller simple + arrêt'], ['ret', 'Aller-retour avec arrêts']] },
       { id: 't0', label: 'Temps d\'arrêt entre les mouvements', sym: 't_0', q: 'time', def: .5 }
     ] },
     { title: 'Moteur', fields: [
@@ -1352,8 +1449,9 @@ const MOD_MOTOR = {
     ] }
   ],
   notes: [
-    'Méthode classique des guides de dimensionnement des fabricants : inertie et couples ramenés à l\'arbre moteur, profil trapézoïdal symétrique (t_a = t_d), puis comparaison aux couples crête et nominal du moteur.',
-    'Couple d\'accélération T_a = (J_M + J_L/η)·ω/t_a ; en décélération, T_d = (J_M + J_L·η)·ω/t_a. Couple efficace T_rms = √(Σ T_i²·t_i / t_cycle). Le facteur de sécurité k multiplie tous les couples.',
+    'Méthode classique des guides de dimensionnement des fabricants : inertie et couples ramenés à l\'arbre moteur, puis comparaison aux couples crête et nominal du moteur. Le bouton « Importer » reprend le profil et la charge définis dans « Profils de mouvement ».',
+    'Le profil (trapézoïdal, courbe en S ou cycloïdal, aller simple ou aller-retour) est échantillonné sur tout le cycle : le couple moteur est calculé à chaque instant, T_M = J_M·α_M + (J_L·α_M + T_charge)/η en mode moteur et ×η en freinage. Le facteur de sécurité k multiplie tous les couples.',
+    'Critères : chaque point du cycle doit rester dans la zone intermittente de la courbe couple-vitesse ; le couple efficace T_rms = √(∫T²dt / t_cycle) doit être ≤ au couple nominal ; les phases à vitesse constante doivent rester dans la zone continue.',
     'Vis à billes : J = m·(P_B/2π)² + π·ρ·L_B·D_B⁴/32 (acier, ρ = 7850 kg/m³), T = F·P_B/(2π·η). Courroie/pignon : J = m·(D_p/2)² + J_p, T = F·D_p/(2η). Disque plein : J = m·D²/8.',
     'Pendant l\'arrêt, le couple de maintien est la composante de gravité (axe incliné/vertical). Prévoir un frein pour les axes verticaux.',
     'Les catalogues intégrés sont génériques : valeurs typiques d\'une gamme de servomoteurs 200 V / 3000 tr/min et de moteurs asynchrones IE3 4 pôles. Courbes couple-vitesse idéalisées. Valider le choix avec les données et le logiciel du fabricant retenu (tension, codeur, frein, IP).',
@@ -1361,8 +1459,12 @@ const MOD_MOTOR = {
   ],
   compute(s) {
     const R = newRes(), ac = s.mtype === 'ac';
-    if (!(s.tm > 0 && s.ta > 0)) R.errors.push('Les temps de déplacement et d\'accélération doivent être positifs.');
-    else if (2 * s.ta > s.tm * (1 + 1e-9)) R.errors.push('Le temps d\'accélération doit être ≤ la moitié du temps de déplacement.');
+    if (s.def === 'time') {
+      if (!(s.tm > 0)) R.errors.push('Le temps de déplacement doit être positif.');
+      else if (s.shape !== 'cyclo' && !(s.ta > 0)) R.errors.push('Le temps d\'accélération doit être positif.');
+      else if (s.shape !== 'cyclo' && 2 * s.ta > s.tm * (1 + 1e-9)) R.errors.push('Le temps d\'accélération doit être ≤ la moitié du temps de déplacement.');
+    } else if (lin(s) ? !(s.vmax > 0 && s.amax > 0) : !(s.wmax > 0 && s.almax > 0)) R.errors.push('La vitesse et l\'accélération maximales doivent être positives.');
+    if (s.shape === 'scurve' && !(s.rj >= 0 && s.rj <= 1)) R.errors.push('La part de jerk doit être comprise entre 0 et 100 %.');
     if (!(s.t0 >= 0)) R.errors.push('Le temps d\'arrêt doit être positif ou nul.');
     if (!(s.eta > 0 && s.eta <= 1) || !(s.etag > 0 && s.etag <= 1)) R.errors.push('Les rendements doivent être compris entre 0 et 100 %.');
     if (!(s.i > 0)) R.errors.push('Le rapport de réduction doit être positif.');
@@ -1376,28 +1478,30 @@ const MOD_MOTOR = {
     if (s.motor === 'custom' && !(s.cTr > 0 && s.cTmax >= s.cTr && s.cJ > 0 && s.cNr > 0 && s.cNmax >= s.cNr)) R.errors.push('Moteur personnalisé : vérifier T_max ≥ T_n > 0, J_M > 0 et N_max ≥ N_n > 0.');
     if (R.errors.length) return R;
 
-    const L = loadCalc(s), cat = motorCatalog(s), evals = cat.map(m => evalMotor(m, L, s, ac));
+    const L = loadCalc(s), C = L.C, P = C.P, cat = motorCatalog(s), evals = cat.map(m => evalMotor(m, L, s, ac));
     let E, auto = s.motor === 'auto';
     if (s.motor === 'custom') E = evalMotor({ id: 'custom', n: 'Moteur personnalisé', P: s.cTr * 2 * PI * s.cNr / 60, Tr: s.cTr, Tmax: s.cTmax, J: s.cJ, Nr: s.cNr, Nmax: s.cNmax }, L, s, ac);
     else if (auto) E = evals.find(e => e.ok) || evals[evals.length - 1];
     else E = evals.find(e => e.m.id === s.motor) || evals[0];
-    const m = E.m, none = auto && !E.ok;
-    const Navg = L.N * (L.ta + L.tc) / L.tcyc, Prun = Math.abs(E.T2) * L.w, Ppk = Math.abs(E.T1) * L.w;
+    const m = E.m, none = auto && !E.ok, Npk = Math.abs(L.N[E.iPk]);
+    const pw = E.Tm.map((T, j) => T * L.w[j]), Ppk = pw.reduce((a, b) => Math.max(a, b), 0), Pmin = pw.reduce((a, b) => Math.min(a, b), 0);
+    const hold = E.Tm[E.Tm.length - 1], shapeName = PSHAPES.find(p => p[0] === s.shape)[1].split(' (')[0];
 
     R.kpis = [
       { label: auto ? 'Moteur proposé' : 'Moteur évalué', text: none ? 'Aucun' : m.n, tone: E.ok ? 'ok' : 'bad', sub: none ? 'aucun moteur du catalogue ne convient' : `T_n ${valTxt(m.Tr, 'mtorque')} · J_M ${valTxt(m.J, 'minertia')}` },
-      { label: 'Couple crête requis', v: E.Tpk, q: 'mtorque', tone: tone(E.c.pk), sub: `disponible à ${fmtNum(L.N, 4)} tr/min : ${valTxt(E.Tpa, 'mtorque')}` },
+      { label: 'Couple crête requis', v: E.Tpk, q: 'mtorque', tone: tone(E.c.pk), sub: `disponible à ${fmtNum(Npk, 4)} tr/min : ${valTxt(E.Tpa, 'mtorque')}` },
       { label: 'Couple efficace (RMS)', v: E.Trms, q: 'mtorque', tone: tone(E.c.rms), sub: `nominal : ${valTxt(m.Tr, 'mtorque')} (${fmtNum(E.c.rms * 100, 3)} %)` },
       { label: 'Rapport d\'inertie', v: E.ratio, q: 'none', tone: tone(E.c.jr), sub: `J_L/J_M, limite ${fmtNum(s.jr, 3)} : 1` }
     ];
-    if (none) R.checks.push({ s: 'bad', t: 'Aucun moteur du catalogue ne satisfait tous les critères : le plus gros est affiché. Ajouter un réducteur, allonger t_a ou choisir un moteur personnalisé.' });
-    R.checks.push({ s: tone(E.c.pk), t: `Couple crête ${valTxt(E.Tpk, 'mtorque')} ${E.c.pk <= 1 ? '≤' : '>'} couple max. disponible ${valTxt(E.Tpa, 'mtorque')}` });
+    R.checks.push({ s: 'info', t: `Profil ${shapeName.toLowerCase()}${s.cyc === 'ret' ? ' en aller-retour' : ''} : déplacement ${valTxt(P.T, 'time')}, cycle ${valTxt(C.tc, 'time')}, vitesse moteur max. ${fmtNum(L.Nmax, 4)} tr/min.` });
+    if (none) R.checks.push({ s: 'bad', t: 'Aucun moteur du catalogue ne satisfait tous les critères : le plus gros est affiché. Ajouter un réducteur, adoucir le profil ou choisir un moteur personnalisé.' });
+    R.checks.push({ s: tone(E.c.pk), t: `Couple crête ${valTxt(E.Tpk, 'mtorque')} dans la zone intermittente sur tout le cycle (point le plus sollicité : ${fmtNum(E.c.pk * 100, 3)} % à ${fmtNum(Npk, 4)} tr/min)` });
     R.checks.push({ s: tone(E.c.rms), t: `Couple efficace ${valTxt(E.Trms, 'mtorque')} ${E.c.rms <= 1 ? '≤' : '>'} couple nominal ${valTxt(m.Tr, 'mtorque')}` });
-    R.checks.push({ s: tone(E.c.run), t: `Couple à vitesse constante ${valTxt(Math.abs(E.T2), 'mtorque')} ${E.c.run <= 1 ? '≤' : '>'} couple continu à ${fmtNum(L.N, 4)} tr/min (${valTxt(E.Tca, 'mtorque')})` });
-    R.checks.push({ s: tone(E.c.spd), t: `Vitesse moteur ${fmtNum(L.N, 4)} tr/min ${E.c.spd <= 1 ? '≤' : '>'} vitesse max. ${fmtNum(m.Nmax, 4)} tr/min` });
+    R.checks.push({ s: tone(E.c.run), t: E.hasCst ? `Couple à vitesse constante dans la zone continue (${fmtNum(E.c.run * 100, 3)} %)` : `Pas de phase à vitesse constante : couple efficace comparé au couple continu à la vitesse moyenne (${fmtNum(E.c.run * 100, 3)} %)` });
+    R.checks.push({ s: tone(E.c.spd), t: `Vitesse moteur ${fmtNum(L.Nmax, 4)} tr/min ${E.c.spd <= 1 ? '≤' : '>'} vitesse max. ${fmtNum(m.Nmax, 4)} tr/min` });
     R.checks.push({ s: tone(E.c.jr), t: `Rapport d'inertie ${fmtNum(E.ratio, 3)} ${E.c.jr <= 1 ? '≤' : '>'} ${fmtNum(s.jr, 3)}` });
     if (lin(s) && s.theta > 5) R.checks.push({ s: 'info', t: 'Axe incliné ou vertical : prévoir un moteur avec frein et vérifier l\'énergie régénérée en descente.' });
-    if (E.T3 < 0) R.checks.push({ s: 'info', t: `Couple de freinage ${valTxt(E.T3, 'mtorque')} : le moteur régénère en décélération (énergie ≈ ${fmtNum(.5 * (m.J + L.Jm) * L.w * L.w, 3)} J par arrêt).` });
+    if (Pmin < 0) R.checks.push({ s: 'info', t: `Le moteur freine la charge (puissance régénérée jusqu'à ${valTxt(-Pmin, 'power')}) : prévoir la dissipation de cette énergie.` });
     R.util = [{ label: 'Couple crête', r: E.c.pk }, { label: 'Couple efficace', r: E.c.rms }, { label: 'Couple en régime', r: E.c.run }, { label: 'Vitesse', r: E.c.spd }, { label: 'Rapport d\'inertie', r: E.c.jr }];
 
     const pc = r => `<td class="${tone(r)}">${isFinite(r) ? fmtNum(r * 100, 3) + ' %' : '∞'}</td>`;
@@ -1406,35 +1510,35 @@ const MOD_MOTOR = {
       evals.map(e => `<tr data-pick="${e.m.id}" class="${e.m.id === m.id ? 'sel' : ''}" tabindex="0"><td>${esc(e.m.n)}</td><td>${valTxt(e.m.Tr, 'mtorque')}</td><td>${valTxt(e.m.Tmax, 'mtorque')}</td><td>${valTxt(e.m.J, 'minertia')}</td>${pc(e.c.pk)}${pc(e.c.rms)}${pc(e.c.run)}${pc(e.c.spd)}${pc(e.c.jr)}<td>${e.ok ? '<span class="pill ok">OK</span>' : '<span class="pill bad">NON</span>'}</td></tr>`).join('') +
       `</tbody></table>` }];
 
+    const qv = lin(s) ? 'speed' : 'avel', qa = lin(s) ? 'accel' : 'aacc';
     R.tables = [
-      { title: 'Charge (côté mécanisme)', rows: lin(s) ? [['Vitesse linéaire max.', L.v, 'lspeed'], ['Accélération', L.v / L.ta, 'accel'], ['Force de poussée F', L.F, 'nforce'], ['Vitesse de rotation de la charge', `${fmtNum(L.Nload, 4)}<span class="u">tr/min</span>`, null], ['Inertie de la charge J_L', L.J, 'minertia']]
-        : [['Vitesse de la table', `${fmtNum(L.Nload, 4)}<span class="u">tr/min</span>`, null], ['Accélération angulaire', `${fmtNum(L.alpha / s.i, 4)}<span class="u">rad/s²</span>`, null], ['Inertie de la charge J_L', L.J, 'minertia']] },
-      { title: 'Ramené à l\'arbre moteur', rows: [['Vitesse moteur', `${fmtNum(L.N, 4)}<span class="u">tr/min</span>`, null], ['Inertie de charge J_L (moteur)', L.Jm, 'minertia'], ['Couple de charge T_L', L.TL, 'mtorque'],
-        ['Couple d\'accélération T_a', E.Ta, 'mtorque'], ['T₁ accélération (× k)', E.T1, 'mtorque'], ['T₂ vitesse constante (× k)', E.T2, 'mtorque'], ['T₃ décélération (× k)', E.T3, 'mtorque'], ['T₄ arrêt (× k)', E.T4, 'mtorque'],
-        ['Couple efficace T_rms', E.Trms, 'mtorque'], ['Puissance en régime', Prun, 'power'], ['Puissance crête', Ppk, 'power']] },
+      { title: 'Charge (côté mécanisme)', rows: [[lin(s) ? 'Course' : 'Angle', lin(s) ? L.D : s.Sa, lin(s) ? 'dim' : 'deg'], ['Vitesse de pointe', P.vp, qv], ['Accélération de pointe', P.A, qa],
+        ['Inertie de la charge J_L', L.J, 'minertia'], ['Temps de déplacement', P.T, 'time'], ['Temps de cycle', C.tc, 'time']] },
+      { title: 'Ramené à l\'arbre moteur', rows: [['Vitesse moteur max.', `${fmtNum(L.Nmax, 4)}<span class="u">tr/min</span>`, null], ['Inertie de charge J_L (moteur)', L.Jm, 'minertia'],
+        ['Couple de charge en régime T_L', L.TL, 'mtorque'], ['Couple crête (× k)', E.Tpk, 'mtorque'], ['Couple efficace T_rms (× k)', E.Trms, 'mtorque'],
+        ['Couple de maintien à l\'arrêt (× k)', hold, 'mtorque'], ['Puissance crête', Ppk, 'power'], ['Puissance régénérée max.', Pmin < 0 ? -Pmin : 0, 'power']] },
       { title: 'Moteur', rows: [['Puissance nominale', m.P, 'power'], ['Couple nominal', m.Tr, 'mtorque'], ['Couple maximal', m.Tmax, 'mtorque'], ['Inertie du rotor J_M', m.J, 'minertia'],
-        ['Vitesse nominale', `${fmtNum(m.Nr, 4)}<span class="u">tr/min</span>`, null], ['Vitesse maximale', `${fmtNum(m.Nmax, 4)}<span class="u">tr/min</span>`, null], ['Temps de cycle', L.tcyc, 'time']] }
+        ['Vitesse nominale', `${fmtNum(m.Nr, 4)}<span class="u">tr/min</span>`, null], ['Vitesse maximale', `${fmtNum(m.Nmax, 4)}<span class="u">tr/min</span>`, null]] }
     ];
-    R.formulas = ['J_L,M = J_L/i² + J_G', 'T_a = (J_M + J_L/η)·ω/t_a', 'T_L = F·r/(η·i·η_G)', 'T_rms = √(ΣT²·t / t_cycle)', 'N = v/(2π·r)·60·i'];
+    R.formulas = ['J_L,M = J_L/i² + J_G', 'T_M(t) = k·[J_M·α_M + (J_L,M·α_M + T_charge)·η^±1]', 'T_rms = √(∫T²dt / t_cycle)', 'N = v/(2π·r)·60·i'];
     R.schematic = motorSVG(s, s.i !== 1 || s.JG > 0);
 
-    const t1 = L.ta, t2 = L.ta + L.tc, t3 = t2 + L.ta, t4 = L.tcyc, cT = v => conv(v, 'mtorque');
-    const tu = unit('mtorque');
+    const tu = unit('mtorque'), cT = v => conv(v, 'mtorque'), base = { xLabel: 'Temps (s)', xName: 't', xUnit: 's', sync: 'mot', xMin: 0, xMax: C.tc };
+    const Ns = linspace(0, m.Nmax, 160);
     R.charts = [
-      { title: 'Profil de vitesse du moteur', sub: `N_max = ${fmtNum(L.N, 4)} tr/min`, o: { height: 180, xLabel: 'Temps (s)', xName: 't', xUnit: 's', yLabel: 'Vitesse (tr/min)', yZero: true,
-        series: [{ name: 'Vitesse', unit: 'tr/min', color: 'var(--c1)', area: true, x: [0, t1, t2, t3, t4], y: [0, L.N, L.N, 0, 0] }] } },
-      { title: 'Profil de couple du moteur', sub: `T_rms = ${valTxt(E.Trms, 'mtorque')}`, o: { height: 220, xLabel: 'Temps (s)', xName: 't', xUnit: 's', yLabel: `Couple (${tu})`, yZero: true,
-        series: [{ name: 'Couple', unit: tu, color: 'var(--c2)', area: true, x: [0, 0, t1, t1, t2, t2, t3, t3, t4], y: [0, E.T1, E.T1, E.T2, E.T2, E.T3, E.T3, E.T4, E.T4].map(cT) }],
-        hlines: [{ y: cT(E.Tpa), label: 'Couple max. disponible', color: 'var(--bad)' }, { y: cT(m.Tr), label: 'Couple nominal', color: 'var(--c3)' }] } },
-      { title: 'Courbe couple-vitesse', sub: `${m.n} (courbe idéalisée)`, o: (() => {
-        const Ns = linspace(0, m.Nmax, 160);
-        return { height: 260, xLabel: 'Vitesse moteur (tr/min)', xName: 'N', xUnit: 'tr/min', yLabel: `Couple (${tu})`, yMin: 0, xMin: 0, xMax: Math.max(m.Nmax, L.N) * 1.05,
-          series: [{ name: 'Zone intermittente (crête)', unit: tu, color: 'var(--c2)', area: true, x: Ns, y: Ns.map(N => cT(tPeak(m, N, ac))) },
-                   { name: 'Zone continue', unit: tu, color: 'var(--c1)', area: true, x: Ns, y: Ns.map(N => cT(tCont(m, N, ac))) }],
-          markers: [{ x: L.N, y: cT(E.Tpk), color: E.c.pk <= 1 ? 'var(--ok)' : 'var(--bad)', label: 'Crête' }, { x: Navg, y: cT(E.Trms), color: E.c.rms <= 1 ? 'var(--ok)' : 'var(--bad)', label: 'Efficace (vitesse moy.)', below: true }] };
-      })() }
+      { title: 'Profil de vitesse du moteur', sub: `N_max = ${fmtNum(L.Nmax, 4)} tr/min`, o: Object.assign({}, base, { height: 180, yLabel: 'Vitesse (tr/min)', yZero: true,
+        series: [{ name: 'Vitesse', unit: 'tr/min', color: 'var(--c1)', area: true, x: C.t, y: L.N }] }) },
+      { title: 'Profil de couple du moteur', sub: `crête ${valTxt(E.Tpk, 'mtorque')} · RMS ${valTxt(E.Trms, 'mtorque')}`, o: Object.assign({}, base, { height: 220, yLabel: `Couple (${tu})`, yZero: true,
+        series: [{ name: 'Couple', unit: tu, color: 'var(--c2)', area: true, x: C.t, y: E.Tm.map(cT) }],
+        hlines: [{ y: cT(m.Tmax), label: 'Couple max.', color: 'var(--bad)' }, { y: cT(m.Tr), label: 'Couple nominal', color: 'var(--c3)' }, { y: cT(E.Trms), label: 'RMS', color: 'var(--faint)' }] }) },
+      { title: 'Courbe couple-vitesse', sub: `${m.n} (courbe idéalisée) · trajectoire du cycle`, o: {
+        height: 260, xLabel: 'Vitesse moteur (tr/min)', xName: 'N', xUnit: 'tr/min', yLabel: `Couple (${tu})`, yMin: 0, xMin: 0, xMax: Math.max(m.Nmax, L.Nmax) * 1.05,
+        series: [{ name: 'Zone intermittente (crête)', unit: tu, color: 'var(--c2)', area: true, x: Ns, y: Ns.map(N => cT(tPeak(m, N, ac))) },
+                 { name: 'Zone continue', unit: tu, color: 'var(--c1)', area: true, x: Ns, y: Ns.map(N => cT(tCont(m, N, ac))) },
+                 { name: 'Fonctionnement', unit: tu, color: 'var(--text)', noHover: true, x: L.N.map(Math.abs), y: E.Tm.map(T => cT(Math.abs(T))) }],
+        markers: [{ x: Npk, y: cT(Math.abs(E.Tm[E.iPk])), color: E.c.pk <= 1 ? 'var(--ok)' : 'var(--bad)', label: 'Point critique' }, { x: L.Navg, y: cT(E.Trms), color: E.c.rms <= 1 ? 'var(--ok)' : 'var(--bad)', label: 'Efficace (vitesse moy.)', below: true }] } }
     ];
-    R.summary = [{ l: 'Mécanisme', t: MECHS.find(x => x[0] === s.mech)[1] }, { l: 'Moteur', t: none ? 'aucun' : m.n }, { l: 'N', t: `${fmtNum(L.N, 4)} tr/min` },
+    R.summary = [{ l: 'Mécanisme', t: MECHS.find(x => x[0] === s.mech)[1] }, { l: 'Profil', t: shapeName }, { l: 'Moteur', t: none ? 'aucun' : m.n }, { l: 'N', t: `${fmtNum(L.Nmax, 4)} tr/min` },
       { l: 'T crête', v: E.Tpk, q: 'mtorque' }, { l: 'T rms', v: E.Trms, q: 'mtorque' }, { l: 'J_L/J_M', v: E.ratio, q: 'none' }];
     return R;
   }
@@ -1444,45 +1548,6 @@ const MOD_MOTOR = {
    Module 7 — Profils de mouvement (linéaire / angulaire)
    ========================================================================= */
 const isAng = s => s.kind === 'ang';
-const PSHAPES = [['trap', 'Trapézoïdal (triangulaire si t_a = 50 %)'], ['scurve', 'Courbe en S (jerk limité)'], ['cyclo', 'Cycloïdal (sinusoïdal)']];
-// Profil d'un déplacement D (≥ 0) : durée T, accélération a(t), points de rupture
-function moveProfile(s, D) {
-  const r = s.shape === 'scurve' ? s.rj : 0, k = 1 - r / 2;
-  const vmax = isAng(s) ? s.wmax : s.vmax, amax = isAng(s) ? s.almax : s.amax;
-  let T, ta, tri = false;
-  if (s.shape === 'cyclo') {
-    T = s.def === 'time' ? s.tm : Math.max(2 * D / vmax, Math.sqrt(2 * PI * D / amax)); ta = T / 2;
-    const A = 2 * PI * D / (T * T);
-    return { T, ta, tri, r, A, vp: 2 * D / T, aF: t => A * Math.sin(2 * PI * t / T), jmax: 2 * PI * A / T, brk: [] };
-  }
-  if (s.def === 'time') { T = s.tm; ta = s.ra * T; tri = s.ra >= .4999; }
-  else {
-    ta = vmax / (amax * k);
-    if (D >= vmax * ta) T = D / vmax + ta;
-    else { tri = true; const vp = Math.sqrt(D * amax * k); ta = vp / (amax * k); T = 2 * ta; }
-  }
-  const vp = D / (T - ta), tj = r * ta / 2, A = vp / (ta * k);
-  const up = t => tj > 0 ? (t < tj ? A * t / tj : t < ta - tj ? A : A * (ta - t) / tj) : A;
-  const aF = t => t < ta ? up(t) : t < T - ta ? 0 : t <= T ? -up(t - (T - ta)) : 0;
-  const brk = [ta, T - ta]; if (tj > 0) brk.push(tj, ta - tj, T - ta + tj, T - tj);
-  return { T, ta, tri, r, A, vp, aF, jmax: tj > 0 ? A / tj : Infinity, brk };
-}
-function sampleMove(P, D, dir) {
-  const T = P.T, eps = T * 1e-9;
-  let ts = linspace(0, T, 900);
-  P.brk.forEach(b => { if (b > eps && b < T - eps) ts.push(b - eps, b + eps); });
-  ts = [...new Set(ts)].sort((p, q) => p - q);
-  const t = [], x = [], v = [], a = [];
-  let vv = 0, xx = 0;
-  ts.forEach((tt, i) => {
-    const aa = P.aF(Math.min(tt, T));
-    if (i) { const dt = tt - ts[i - 1], aPrev = a[i - 1] * dir, vPrev = vv; vv += (aPrev + aa) / 2 * dt; xx += (vPrev + vv) / 2 * dt; }
-    t.push(tt); a.push(aa * dir); v.push(vv * dir); x.push(xx * dir);
-  });
-  // correction de la petite erreur d'intégration : la course finale vaut exactement D
-  const last = x[x.length - 1], f = last !== 0 ? D * dir / last : 1;
-  return { t, x: x.map(z => z * f), v: v.map((z, i) => i === v.length - 1 ? 0 : z), a };
-}
 function profileSVG(s, P) {
   const W = 360, H = 150, x0 = 30, x1 = 340, yb = 118, yt = 26, pts = linspace(0, 1, 120);
   const vN = t => { // vitesse normalisée par intégration grossière
@@ -1508,6 +1573,7 @@ const MOD_PROFILE = {
   icon: '<path d="M3 20c3 0 4-16 9-16s6 16 9 16"/><path d="M3 20h18"/>',
   groups: [
     { title: 'Mouvement', fields: [
+      { id: 'toMotor', type: 'btn', primary: true, label: 'Dimensionner le moteur avec ce profil →', hint: 'Copie le profil, la charge et la transmission dans « Sélection de moteur »', action: s => { profileToMotor(s, S.motor); store.set('mc.state', S); cur = 'motor'; store.set('mc.tab', cur); renderNav(); renderView(); window.scrollTo({ top: 0 }); toast('Profil transféré à la sélection de moteur'); return true; } },
       { id: 'kind', type: 'sel', label: 'Type de mouvement', def: 'lin', opts: [['lin', 'Linéaire'], ['ang', 'Angulaire (rotation)']] },
       { id: 'shape', type: 'sel', label: 'Forme du profil', def: 'trap', opts: PSHAPES },
       { id: 'def', type: 'sel', label: 'Définir le profil par', def: 'time', opts: [['time', 'Temps de déplacement'], ['lim', 'Vitesse et accélération maximales']] },
@@ -1565,15 +1631,7 @@ const MOD_PROFILE = {
     if (s.tr === 'belt' && !(s.D > 0)) R.errors.push('Le diamètre de poulie doit être positif.');
     if (R.errors.length) return R;
 
-    const P = moveProfile(s, D), T = P.T;
-    // assemblage du cycle
-    const t = [], x = [], v = [], a = [];
-    const pushSeg = (seg, t0, x0) => seg.t.forEach((tt, i) => { t.push(t0 + tt); x.push(x0 + seg.x[i]); v.push(seg.v[i]); a.push(seg.a[i]); });
-    const dwell = (t0, dur, xx) => { if (dur <= 0) return; linspace(0, dur, 40).forEach(u => { t.push(t0 + u); x.push(xx); v.push(0); a.push(0); }); };
-    pushSeg(sampleMove(P, D, 1), 0, 0);
-    dwell(T, s.t0, D);
-    let tc = T + s.t0;
-    if (s.cyc === 'ret') { pushSeg(sampleMove(P, D, -1), tc, D); tc += T; dwell(tc, s.t0, 0); tc += s.t0; }
+    const C = buildCycle(s, D), P = C.P, T = C.T, { t, x, v, a, tc } = C;
     // efforts
     const eps = P.vp * 1e-6, sg = z => z > eps ? 1 : z < -eps ? -1 : 0;
     const F = ang ? a.map((aa, k) => s.J * aa + s.Tl + s.Tf * sg(v[k]))
@@ -1584,9 +1642,8 @@ const MOD_PROFILE = {
       Nm = v.map(z => z / rr * s.i * 60 / (2 * PI));
       Tm = F.map((f, k) => { const tl = f * rr / s.i, mot = tl * v[k] >= 0; return (mot ? tl / s.eta : tl * s.eta) + s.JM * a[k] / rr * s.i; });
     }
-    const rms = arr => { let acc = 0; for (let k = 1; k < t.length; k++) acc += (arr[k] ** 2 + arr[k - 1] ** 2) / 2 * (t[k] - t[k - 1]); return Math.sqrt(acc / tc); };
-    const absMax = arr => arr.reduce((m, z) => Math.max(m, Math.abs(z)), 0);
-    const Fpk = absMax(F), Frms = rms(F), Ppk = F.reduce((m, f, k) => Math.max(m, f * v[k] * (ang ? 1 : 1)), 0);
+    const rms = arr => rmsOf(t, arr, tc);
+    const Fpk = absMax(F), Frms = rms(F), Ppk = F.reduce((m, f, k) => Math.max(m, f * v[k]), 0);
     const qp = ang ? 'ang' : 'dim', qv = ang ? 'avel' : 'speed', qa = ang ? 'aacc' : 'accel', qf = ang ? 'mtorque' : 'nforce', qj = ang ? 'ajerk' : 'jerk';
     const fName = ang ? 'Couple à la charge' : 'Force';
     const vmaxLim = ang ? s.wmax : s.vmax;
@@ -1690,6 +1747,11 @@ function renderView() {
   const host = $('#inputs');
   host.addEventListener('input', onInput);
   host.addEventListener('change', onSelect);
+  host.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const f = fieldList().find(x => x.id === b.dataset.act);
+    if (f && f.action && !f.action(S[cur])) { renderInputs(); compute(); }
+  });
   $('#reset').onclick = () => { S[cur] = defaults(m); renderInputs(); compute(); toast('Valeurs par défaut rétablies'); };
   $('#save').onclick = saveHistory;
   compute();
@@ -1705,6 +1767,7 @@ function renderInputs() {
 function fieldHTML(f, s) {
   const label = typeof f.label === 'function' ? f.label(s) : f.label, hint = typeof f.hint === 'function' ? f.hint(s) : f.hint;
   const sym = f.sym ? `<span class="sym">${esc(f.sym)}</span>` : '';
+  if (f.type === 'btn') return `<div class="fld"><button type="button" class="btn${f.primary ? ' primary' : ''}" data-act="${f.id}" style="width:100%;justify-content:center;white-space:normal;text-align:center">${esc(label)}</button>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</div>`;
   if (f.type === 'sel') {
     const opts = typeof f.opts === 'function' ? f.opts(s) : f.opts;
     if (!opts.some(o => o[0] === s[f.id])) s[f.id] = opts[0][0];
