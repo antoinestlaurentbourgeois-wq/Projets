@@ -95,3 +95,6 @@ Thème sombre par défaut (clair si votre système le demande). Les autres pages
 ## Table ronde (salle Crew)
 
 Dans la salle Crew, l'interrupteur « 🎯 Table ronde » ouvre une liste d'IA à cocher (par défaut : gemma, Gemini, DeepSeek ; les indisponibles sont grisées avec la raison). Le coût estimé total s'affiche **avant** l'envoi ; au-dessus du seuil (`seuil_table_ronde_usd` dans `reglages.json`, 0,10 $ par défaut) une confirmation est demandée. Le message part en un seul appel vers Crew, les réponses arrivent en colonnes (l'une sous l'autre sur téléphone), la synthèse de Crew en dernier. Option « tour de critique » : 2e tour, surcoût affiché avant activation. Les IA exclues par Crew (contenu confidentiel) sont marquées comme telles, jamais contournées. Contrat avec Crew : voir `RETOUR-table-ronde-suite.md` (aligné sur le vrai Crew).
+
+## Chef d'équipe (page « 🧠 Chef d'équipe »)
+Choisit le modèle LM Studio qui sert de chef local à Crew (gemma par défaut). Un seul interrupteur actif ; Crew fait le changement (PUT /chef). Chaque modèle a sa salle, une seule est verte (le chef). Voir `RETOUR-chef-crew.md`.

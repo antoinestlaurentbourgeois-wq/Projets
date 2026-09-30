@@ -6,6 +6,7 @@ mémoire, tiroir), appelle l'adaptateur voulu, enregistre l'historique et les co
 Toutes les règles de sécurité sont ici, côté serveur.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -217,6 +218,11 @@ class Salles:
         self.processus = processus or Processus()
         cfg = centre.config
         self.cles = Cles(centre.sys)
+        self._salles_lm = {}                 # ident -> DefSalle (modèles LM Studio autres que gemma)
+        self._meta_lm = {}                   # ident -> {modele, libelle, taille_go, params, quantification} (aussi pour « gemma »)
+        self._presents_lm = None             # ensemble des modèles présents dans LM Studio, ou None si on ne sait pas
+        self._chemin_lm = centre.config.chemin("salles_lm.json")
+        self._charger_lm()
         self.politique = Politique(centre)
         self.memoire = Memoire(centre)
         self.conversations = Conversations(cfg.chemin("conversations"))
@@ -233,6 +239,97 @@ class Salles:
 
     # ----- réglages par salle -------------------------------------------------------------------
 
+    # ----- salles par modèle LM Studio (une salle par modèle ; une seule utilisable : celle du chef d'équipe) --------------------
+
+    def def_salle(self, salle):
+        d = SALLES.get(salle) or self._salles_lm.get(salle)
+        if d is None:
+            raise ErreurSalle("Salle inconnue.", 404)
+        return d
+
+    def existe(self, salle):
+        return isinstance(salle, str) and (salle in SALLES or salle in self._salles_lm)
+
+    def toutes_les_salles(self):
+        """Les salles fixes, puis une salle par modèle LM Studio connu (ordre stable : celui de la première apparition)."""
+        return list(SALLES.values()) + list(self._salles_lm.values())
+
+    @staticmethod
+    def ident_du_modele(modele, modele_gemma):
+        """« google/gemma-4-12b-qat » garde la salle « gemma » ; les autres : « lm-<court nom>-<4 signes> » (sûr, stable, jamais le chemin brut)."""
+        if modele == modele_gemma:
+            return "gemma"
+        court = re.sub(r"[^a-z0-9]+", "-", modele.lower().split("/")[-1]).strip("-")[:28] or "modele"
+        return f"lm-{court}-{hashlib.sha1(modele.encode('utf-8')).hexdigest()[:4]}"
+
+    def nom_modele(self, modele):
+        """Nom lisible d'un modèle : celui donné par Crew si on le connaît, sinon la fin de l'identifiant."""
+        if not modele:
+            return ""
+        for meta in self._meta_lm.values():
+            if meta.get("modele") == modele and meta.get("libelle"):
+                return meta["libelle"]
+        return modele.split("/")[-1]
+
+    def modeles_connus(self):
+        """Modèles LM Studio déjà vus (mémorisés dans salles_lm.json) : servent quand Crew ou LM Studio sont arrêtés."""
+        return [dict(m) for m in self._meta_lm.values()]
+
+    def synchroniser_lm(self, info):
+        """Met à jour les salles de modèles d'après GET /chef (InfoChef) : nouveau modèle -> nouvelle salle ; modèle disparu -> « absent »
+        (la salle reste, en lecture seule). Crew ou LM Studio arrêtés : on ne sait rien de nouveau, on garde ce qu'on connaît."""
+        R = self.centre.L.R
+        with self._verrou:
+            if info is None or not info.lmstudio:
+                self._presents_lm = None
+                return
+            change = False
+            for m in info.modeles:
+                ident = self.ident_du_modele(m["id"], R.MODELE_GEMMA)
+                meta = {"modele": m["id"], "libelle": m.get("libelle") or m["id"], "taille_go": m.get("taille_go"),
+                        "params": m.get("params", ""), "quantification": m.get("quantification", "")}
+                if self._meta_lm.get(ident) != meta:
+                    self._meta_lm[ident] = meta
+                    change = True
+                if ident != "gemma" and ident not in self._salles_lm:
+                    self._salles_lm[ident] = DefSalle(ident, meta["libelle"], f"Modèle local de LM Studio ({m['id']}) : gratuit, rien ne quitte le PC.",
+                                                      ("local",), m["id"], "", True)
+                    change = True
+                elif ident != "gemma" and self._salles_lm[ident].libelle != meta["libelle"]:
+                    self._salles_lm[ident] = DefSalle(ident, meta["libelle"], self._salles_lm[ident].description, ("local",), m["id"], "", True)
+            self._presents_lm = {m["id"] for m in info.modeles}
+            if change:
+                self._enregistrer_lm()
+
+    def _enregistrer_lm(self):
+        try:
+            temporaire = self._chemin_lm + ".tmp"
+            with open(temporaire, "w", encoding="utf-8") as f:
+                json.dump(self._meta_lm, f, ensure_ascii=False)
+            os.replace(temporaire, self._chemin_lm)
+        except OSError:
+            journal.warning("salles_lm.json non écrit")
+
+    def _charger_lm(self):
+        try:
+            with open(self._chemin_lm, encoding="utf-8") as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            return
+        R = self.centre.L.R
+        if not isinstance(d, dict):
+            return
+        for ident, m in d.items():
+            if not isinstance(m, dict) or not ia.modele_valide(m.get("modele") or ""):
+                continue
+            if ident != self.ident_du_modele(m["modele"], R.MODELE_GEMMA):
+                continue                                          # identifiant qui ne correspond pas au modèle : ignoré
+            self._meta_lm[ident] = {"modele": m["modele"], "libelle": str(m.get("libelle") or m["modele"])[:120], "taille_go": m.get("taille_go"),
+                                    "params": str(m.get("params") or "")[:30], "quantification": str(m.get("quantification") or "")[:30]}
+            if ident != "gemma":
+                self._salles_lm[ident] = DefSalle(ident, self._meta_lm[ident]["libelle"], f"Modèle local de LM Studio ({m['modele']}) : gratuit, rien ne quitte le PC.",
+                                                  ("local",), m["modele"], "", True)
+
     def _reglages(self):
         try:
             with open(self._chemin_reglages, encoding="utf-8") as f:
@@ -244,7 +341,7 @@ class Salles:
     def auths(self, salle):
         """Connexions proposées. Gemini CLI n'accepte plus les comptes Google de particuliers : « abonnement » n'est offert
         pour Gemini que si `gemini_abonnement` est activé dans reglages.json (ex. compte Workspace/Code Assist)."""
-        d = SALLES[salle]
+        d = self.def_salle(salle)
         if salle == "gemini" and not getattr(self.centre.config, "gemini_abonnement", False):
             return tuple(a for a in d.auths if a != "abonnement")
         return d.auths
@@ -252,6 +349,8 @@ class Salles:
     def _defaut_modele(self, salle, auth):
         if salle == "gemma":
             return self.centre.L.R.MODELE_GEMMA
+        if salle in self._salles_lm:
+            return self._salles_lm[salle].modele_defaut          # « salle par modèle » : le modèle LM Studio de la salle
         if salle == "chatgpt" and auth == "abonnement":
             return ""          # compte ChatGPT : Codex choisit lui-même le modèle de l'abonnement (gpt-4.1-mini est refusé)
         return SALLES[salle].modele_defaut
@@ -269,7 +368,7 @@ class Salles:
         return {"auth": auth, "modele": modele}
 
     def definir_reglage(self, salle, auth=None, modele=None):
-        if salle not in SALLES:
+        if not self.existe(salle):
             raise ErreurSalle("Salle inconnue.", 404)
         actuel = self.reglage(salle)
         if auth is not None:
@@ -322,19 +421,18 @@ class Salles:
         return self.politique.mode()[0]
 
     def est_locale(self, salle, prive=False, mode=None):
-        """Une salle est-elle « sûre pour du contenu privé » ? gemma : oui. Crew : oui (modèle crew-confidentiel)."""
-        return salle in ("gemma", "crew")
+        """Une salle est-elle « sûre pour du contenu privé » ? gemma et toutes les salles de modèles LM Studio : oui (locales).
+        Crew : oui (modèle crew-confidentiel)."""
+        return salle in ("gemma", "crew") or salle in self._salles_lm
 
     def disponibilite(self, salle, prive=False):
         """(ok, raison). Applique : confidentialité, plafonds, clés, programmes, état des services."""
-        d = SALLES[salle]
+        d = self.def_salle(salle)
         mode = self.mode_crew()
         nuage_ok, msg = self.politique.nuage_autorise()
         r = self.reglage(salle)
-        if salle == "gemma":
-            if self.centre.etats["gemma"].code != self.centre.L.ACTIF:
-                return False, "gemma n'est pas chargé : allumez-le dans la page Centre."
-            return True, ""
+        if salle == "gemma" or salle in self._salles_lm:
+            return self._disponibilite_modele(salle)
         if salle == "crew":
             if self.centre.etats["crew"].code != self.centre.L.ACTIF:
                 return False, "Le serveur Crew est éteint : allumez-le dans la page Centre."
@@ -360,13 +458,31 @@ class Salles:
                 return False, f"Le programme « {exe} » est introuvable : installez-le et connectez-vous."
         return True, ""
 
+    def _disponibilite_modele(self, salle):
+        """Salles locales par modèle (« gemma » = google/gemma-4-12b-qat, « lm-… » = les autres) : UNE SEULE est utilisable, celle du chef
+        d'équipe actuel (le seul modèle chargé). Les autres restent lisibles (anciennes conversations) mais n'envoient plus rien."""
+        R = self.centre.L.R
+        modele = R.MODELE_GEMMA if salle == "gemma" else self._salles_lm[salle].modele_defaut
+        with self._verrou:
+            presents = self._presents_lm
+        if presents is not None and modele not in presents and not (salle == "gemma" and not self._meta_lm.get("gemma")):
+            return False, "Modèle absent de LM Studio : la salle reste visible en lecture seule."
+        chef = self.centre.chef_actuel().modele
+        if modele != chef:
+            return False, "Ce modèle n'est pas le chef d'équipe : activez-le dans la page Chef d'équipe."
+        if self.centre.etats["gemma"].code != self.centre.L.ACTIF:
+            return False, f"Le chef local ({self.nom_modele(chef)}) n'est pas chargé : allumez-le dans la page Centre."
+        return True, ""
+
     def catalogue(self):
         self.centre.assurer_etats()
         sortie = []
-        for s in SALLES.values():
+        for s in self.toutes_les_salles():
             ok, raison = self.disponibilite(s.ident)
             r = self.reglage(s.ident)
+            lecture_seule = (not ok) and ("chef d'équipe" in raison or "absent de LM Studio" in raison)
             sortie.append({"id": s.ident, "libelle": s.libelle, "description": s.description,
+                           "lien": "chef" if "chef d'équipe" in raison else "", "lecture_seule": bool(lecture_seule),
                            "locale": s.locale or s.ident == "crew", "auths": [{"id": a, "texte": TEXTE_AUTH[a]} for a in self.auths(s.ident)],
                            "auth": r["auth"], "modele": r["modele"], "disponible": ok, "raison": raison,
                            "approbations": s.ident in ("claude",), "ecriture": s.ident == "chatgpt" and r["auth"] == "abonnement",
@@ -376,10 +492,10 @@ class Salles:
     # ----- estimation du coût avant l'envoi -----------------------------------------------------------------
 
     def estimer(self, salle, longueur_message, longueur_historique):
-        if salle not in SALLES:
+        if not self.existe(salle):
             raise ErreurSalle("Salle inconnue.", 404)
         r = self.reglage(salle)
-        if salle == "gemma":
+        if salle == "gemma" or salle in self._salles_lm:
             return {"usd": 0.0, "texte": "Gratuit (local)", "fiable": True}
         if salle == "crew":
             if self.mode_crew() in MODES_CREW_LOCAUX:
@@ -398,9 +514,9 @@ class Salles:
         if table_ronde:
             return ia.CrewTableRonde(self.reseau, self.centre.L.R.URL_CREW_CHAT, self._cle_crew)
         r = self.reglage(salle)
-        d = SALLES[salle]
+        d = self.def_salle(salle)
         R = self.centre.L.R
-        if salle == "gemma":
+        if salle == "gemma" or salle in self._salles_lm:
             return ia.OpenAICompat(self.reseau, "LM Studio", R.URL_LMSTUDIO_CHAT, None, False, stream_usage=False)
         if salle == "crew":
             return ia.OpenAICompat(self.reseau, "Crew", R.URL_CREW_CHAT, self._cle_crew, True, stream_usage=False)
@@ -430,10 +546,10 @@ class Salles:
 
     def modeles_disponibles(self, salle):
         """Modèles proposés par le fournisseur (interrogé en direct) — pour le menu de choix."""
-        if salle not in SALLES:
+        if not self.existe(salle):
             raise ErreurSalle("Salle inconnue.", 404)
-        d, r = SALLES[salle], self.reglage(salle)
-        if salle == "gemma":
+        d, r = self.def_salle(salle), self.reglage(salle)
+        if salle == "gemma" or salle in self._salles_lm:
             adaptateur = ia.OpenAICompat(self.reseau, "LM Studio", "", None, False)
             return adaptateur.lister_modeles(self.centre.L.R.URL_LMSTUDIO)
         if salle == "crew":
@@ -448,7 +564,7 @@ class Salles:
     # ----- conversations -------------------------------------------------------------------------------------------
 
     def creer_conversation(self, salle, titre=""):
-        if salle not in SALLES:
+        if not self.existe(salle):
             raise ErreurSalle("Salle inconnue.", 404)
         return self.conversations.creer(salle, titre)
 
@@ -562,7 +678,7 @@ class Salles:
             yield ia.evt_erreur("Des actions attendent votre approbation : validez ou refusez-les d'abord.")
             return
         salle = conv["salle"]
-        if salle not in SALLES:
+        if not self.existe(salle):
             yield ia.evt_erreur("Salle inconnue.")
             return
         try:
@@ -571,7 +687,7 @@ class Salles:
             yield ia.evt_erreur(str(e))
             return
         prive = prive or bool(conv.get("prive"))
-        ok, raison = self.disponibilite(salle, prive=prive and salle not in ("gemma", "crew"))
+        ok, raison = self.disponibilite(salle, prive=prive and not self.est_locale(salle))
         if not ok:
             yield ia.evt_erreur(raison)
             return
@@ -605,7 +721,7 @@ class Salles:
             raise tr_mod.ErreurTableRonde(self.table_ronde.options()["raison"])
         # Filet de sécurité du Centre (règle absolue « le privé ne va jamais au nuage »), plus strict que Crew, jamais plus permissif :
         if prive and [p for p in participants if p != "gemma"]:
-            raise tr_mod.ErreurTableRonde("Cette conversation contient du contenu privé : seule gemma (locale) peut participer à la table ronde.")
+            raise tr_mod.ErreurTableRonde("Cette conversation contient du contenu privé : seul le chef local (gemma par défaut) peut participer à la table ronde.")
         ok, msg = self.centre.couts.peut_utiliser("crew", self.mode_crew())
         if not ok:
             raise tr_mod.ErreurTableRonde(msg)
@@ -753,7 +869,7 @@ class Salles:
             if d["statut"] == "en_cours":            # « debut » sans réponse : le flux s'est arrêté avant
                 d["statut"], d["raison"] = "erreur", "Aucune réponse reçue."
         for (p, tour), d in sorted(tr_data.items(), key=lambda x: (x[0][0] == "synthese", x[0][1], tr_mod.IDS.index(x[0][0]) if x[0][0] in tr_mod.IDS else 99)):
-            reponses.append({"participant": p, "libelle": tr_mod.LIBELLE.get(p, p), "tour": tour, "texte": "".join(d["texte"]),
+            reponses.append({"participant": p, "libelle": self.table_ronde.libelle(p), "tour": tour, "texte": "".join(d["texte"]),
                              "statut": d["statut"], "raison": d["raison"], "cout_usd": d["cout_usd"], "duree_s": d["duree_s"]})
         synth = "".join(r["texte"] for r in reponses if r["participant"] == "synthese")
         if synth:
@@ -774,7 +890,7 @@ class Salles:
     def _cout(self, salle, req, reponse, usage, prive):
         """Coût réel ou estimé d'un tour : {usd, estime, detail, texte}."""
         r = self.reglage(salle)
-        gratuit = (salle == "gemma" or r["auth"] == "abonnement" or
+        gratuit = (salle == "gemma" or salle in self._salles_lm or r["auth"] == "abonnement" or
                    (salle == "crew" and (prive or self.mode_crew() in MODES_CREW_LOCAUX)))
         e = usage["entree"] if usage and usage.get("entree") else jetons(sum(len(m["content"]) for m in req.messages) + len(req.systeme))
         s = usage["sortie"] if usage and usage.get("sortie") else jetons(reponse)
@@ -783,7 +899,7 @@ class Salles:
             return {"usd": round(usd, 6), "estime": False, "detail": f"{e}+{s} jetons",
                     "texte": "Gratuit (local)" if usd == 0 else f"{usd:.4f} $ (coût réel Crew)"}
         if gratuit:
-            texte = "Gratuit (local)" if salle in ("gemma", "crew") else "Inclus dans l'abonnement"
+            texte = "Gratuit (local)" if salle in ("gemma", "crew") or salle in self._salles_lm else "Inclus dans l'abonnement"
             return {"usd": 0.0, "estime": False, "detail": f"{e}+{s} jetons", "texte": texte}
         if usage and isinstance(usage.get("cout_usd"), (int, float)) and salle == "claude":
             usd, estime = float(usage["cout_usd"]), False
@@ -847,13 +963,13 @@ class Salles:
 
     def preparer_relais(self, cid, vers_salle, message_id=None, portee="reponse"):
         """Crée une conversation dans la salle cible avec un brouillon (question, ou question + réponse)."""
-        if vers_salle not in SALLES:
+        if not self.existe(vers_salle):
             raise ErreurSalle("Salle inconnue.", 404)
         if portee not in ("question", "reponse"):
             raise ErreurSalle("Portée inconnue.")
         conv = self.conversation(cid)
         prive = bool(conv.get("prive"))
-        ok, raison = self.disponibilite(vers_salle, prive=prive and vers_salle not in ("gemma", "crew"))
+        ok, raison = self.disponibilite(vers_salle, prive=prive and not self.est_locale(vers_salle))
         if not ok:
             raise ErreurSalle(raison, 403)
         msgs = conv["messages"]
@@ -869,9 +985,9 @@ class Salles:
             question, reponse = msgs[idx], None
         if question is None:
             raise ErreurSalle("Aucune question à transmettre.")
-        if (question.get("sensible") or (reponse or {}).get("sensible")) and vers_salle not in ("gemma", "crew"):
+        if (question.get("sensible") or (reponse or {}).get("sensible")) and not self.est_locale(vers_salle):
             raise ErreurSalle("Ce message vient d'un contenu privé : il ne peut être transmis qu'à une IA locale.", 403)
-        source = SALLES[conv["salle"]].libelle
+        source = self.def_salle(conv["salle"]).libelle
         if portee == "question" or reponse is None:
             brouillon = question["texte"]
         else:

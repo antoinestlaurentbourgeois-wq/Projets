@@ -36,6 +36,7 @@ class ErreurService(Exception):
         self.extra = extra
 
 
+DUREE_CHEF = 30.0          # un GET /chef plus vieux que cela n'est plus cru : on relit le fichier de secours
 SENS_SIMPLES = ("demarrer", "arreter")
 SEQUENCES = {"tout_demarrer": "Tout démarrer", "mode_jeu": "Mode jeu"}
 
@@ -60,6 +61,9 @@ class Centre:
         self.etats = {c.ident: self.L.Etat(self.L.INCONNU, "Pas encore vérifié") for c in self.L.COMPOSANTS}
         self.cles = {}
         self.info_mode = None
+        self._chef_info = None          # dernier GET /chef réussi (InfoChef) ; périmé après DUREE_CHEF secondes
+        self._chef_le = 0.0
+        self._chef_ancien = None        # chef avant le dernier changement demandé (pour « Revenir à … »)
         self.maj = None                 # instant de la dernière vérification
         self._derniere_demande = 0.0
         self._job = None
@@ -100,8 +104,11 @@ class Centre:
         if self.action_en_cours() or not self._rafraichissement.acquire(blocking=False):
             return
         try:
+            self.actualiser_chef()                       # AVANT les voyants : ils vérifient le modèle du chef actuel
             etats = self.ctrl.verifier_tout()
             cles = self.ctrl.verifier_cles()
+            if etats["crew"].code == self.L.ACTIF and self._chef_info is None:
+                self.actualiser_chef(crew_actif=True)    # Crew vient d'être vu actif : on lit tout de suite son chef
             info = self.crew.lire_mode(crew_actif=etats["crew"].code == self.L.ACTIF)
             with self._verrou:
                 if not self.action_en_cours():
@@ -111,6 +118,111 @@ class Centre:
                 self.maj = time.time()
         finally:
             self._rafraichissement.release()
+
+    # ----- chef local de Crew (modèle LM Studio) ----------------------------------------------------
+
+    def actualiser_chef(self, crew_actif=None):
+        """Interroge Crew (GET /chef, lecture seule) si Crew répond ; sinon on retombe sur le fichier de secours. Jamais d'écriture."""
+        if crew_actif is None:
+            crew_actif = self.etats["crew"].code == self.L.ACTIF
+        info = None
+        if crew_actif:
+            try:
+                info = self.crew.lire_chef(crew_actif=True)
+            except self.C.ErreurCrew as e:
+                journal.info("GET /chef impossible : %s", e)
+        nouveau = self._chef_courant(info)
+        with self._verrou:
+            ancien = self._chef_courant(self._chef_info) if self._chef_info is not None else None
+            self._chef_info = info
+            self._chef_le = time.monotonic()
+            if ancien is not None and info is not None and ancien.modele != nouveau.modele:
+                self.maj = None                          # le chef a changé : les voyants et les salles se revérifient tout de suite
+        self.ctrl.definir_chef_connu(nouveau)
+        self.salles.synchroniser_lm(info)
+        return info
+
+    def _chef_courant(self, info):
+        if info is not None and info.chef:
+            autres = next((m for m in info.modeles if m["id"] == info.chef), {})
+            return self.C.chef_depuis_donnees({"modele": info.chef, "contexte": autres.get("contexte"), "parallele": autres.get("parallele")})
+        return self.C.lire_chef_fichier(self.sys.lire_fichier(self.L.R.FICHIER_CHEF))
+
+    def chef_actuel(self):
+        """Chef local (Chef : modele, contexte, parallele) : GET /chef récent, sinon chef_crew.json, sinon gemma."""
+        with self._verrou:
+            info, age = self._chef_info, time.monotonic() - self._chef_le
+        return self._chef_courant(info if age < DUREE_CHEF else None)
+
+    def nom_chef(self):
+        """Nom lisible du chef (pour les écrans)."""
+        ch = self.chef_actuel()
+        with self._verrou:
+            info = self._chef_info
+        m = next((x for x in (info.modeles if info else []) if x["id"] == ch.modele), None)
+        return (m or {}).get("libelle") or self.salles.nom_modele(ch.modele)
+
+    def chef(self):
+        """Tout ce que la page « Chef d'équipe » affiche. Crew arrêté / Mode jeu / LM Studio arrêté : lecture du fichier, interrupteurs désactivés."""
+        self.noter_demande()
+        info = self.actualiser_chef()
+        crew_actif = self.etats["crew"].code == self.L.ACTIF
+        if not crew_actif:
+            # L'état peut dater : on revérifie vite avant d'affirmer que Crew est arrêté.
+            self.assurer_etats(age_max=5)
+            crew_actif = self.etats["crew"].code == self.L.ACTIF
+            if crew_actif and info is None:
+                info = self.actualiser_chef()
+        courant = self.chef_actuel()
+        raison, source = "", "crew"
+        if info is None:
+            source = "fichier"
+            raison = ("Crew est arrêté (ou en Mode jeu) : le chef ci-dessous vient du fichier de secours. Allumez Crew pour en changer."
+                      if not crew_actif else "Crew ne répond pas à la demande du chef : allumez-le ou réessayez.")
+        elif not info.lmstudio:
+            raison = info.message or "LM Studio est arrêté : allumez-le pour changer de chef."
+        modeles = []
+        if info is not None and info.lmstudio:
+            modeles = [dict(m) for m in info.modeles]
+        else:                                        # liste mémorisée (salles connues) : on voit au moins les modèles, sans pouvoir les activer
+            for m in self.salles.modeles_connus():
+                modeles.append({"id": m["modele"], "libelle": m["libelle"], "taille_go": m.get("taille_go"), "params": m.get("params", ""),
+                                "architecture": "", "quantification": m.get("quantification", ""), "charge": False, "chef": False,
+                                "contexte": None, "parallele": None, "avertissement": None})
+            if not any(m["id"] == courant.modele for m in modeles):
+                modeles.insert(0, {"id": courant.modele, "libelle": self.salles.nom_modele(courant.modele), "taille_go": None, "params": "",
+                                   "architecture": "", "quantification": "", "charge": False, "chef": True, "contexte": courant.contexte,
+                                   "parallele": courant.parallele, "avertissement": None})
+            for m in modeles:
+                m["chef"] = m["id"] == courant.modele
+        chargement = info.changement if info is not None else None
+        en_cours = bool(chargement and chargement["etat"] == "en_cours")
+        return {"source": source, "modifiable": bool(info is not None and info.lmstudio and not en_cours) and not raison, "raison": raison,
+                "lmstudio": True if info is None else info.lmstudio, "chef": courant.modele, "chef_nom": self.nom_chef(),
+                "chef_charge": bool(info.chef_charge) if info is not None else self.etats["gemma"].code == self.L.ACTIF,
+                "changement": chargement, "modeles": modeles, "dernier_test": info.dernier_test if info is not None else None,
+                "message": (info.message if info is not None else ""), "ancien_chef": self._chef_ancien,
+                "ancien_nom": self.salles.nom_modele(self._chef_ancien) if self._chef_ancien else ""}
+
+    def definir_chef(self, modele, session=""):
+        """UNIQUEMENT sur un clic de l'utilisateur. Crew fait tout (décharge, charge, teste, désigne) ; le Centre ne touche ni LM Studio ni le fichier."""
+        if not self.C.identifiant_modele_valide(modele):
+            self.recus.ajouter("chef_crew", "refuse", session=session, raison="identifiant")
+            raise ErreurService("Identifiant de modèle invalide.", 400)
+        if self.etats["crew"].code != self.L.ACTIF:
+            raise ErreurService("Le serveur Crew est éteint (ou en Mode jeu) : allumez-le pour changer de chef.", 422)
+        avant = self.chef_actuel().modele
+        try:
+            changement = self.crew.definir_chef(modele)
+        except self.C.ErreurDemande as e:
+            self.recus.ajouter("chef_crew", "refuse", modele=str(modele)[:80], code=e.code, session=session)
+            raise ErreurService(str(e), e.code)
+        except self.C.ErreurCrew as e:
+            self.recus.ajouter("chef_crew", "erreur", modele=str(modele)[:80], session=session)
+            raise ErreurService(str(e), 422)
+        self._chef_ancien = avant if avant != modele else self._chef_ancien
+        self.recus.ajouter("chef_crew", "ok", modele=modele, session=session)
+        return {"changement": changement}
 
     def noter_demande(self):
         self._derniere_demande = time.monotonic()
@@ -127,8 +239,10 @@ class Centre:
         self.noter_demande()
         if self.maj is None:
             self.rafraichir()
+        nom_chef = self.nom_chef()
         with self._verrou:
-            composants = [{"ident": c.ident, "nom": c.nom, "description": c.description,
+            composants = [{"ident": c.ident, "nom": c.nom,
+                           "description": (f"Modèle chef de Crew : {nom_chef} (à changer dans « Chef d'équipe »)" if c.ident == "gemma" else c.description),
                            "dependances": list(c.dependances),
                            "etat": {"code": self.etats[c.ident].code, "message": self.etats[c.ident].message}}
                           for c in self.L.COMPOSANTS]

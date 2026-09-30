@@ -339,7 +339,7 @@ class TestActions(unittest.TestCase):
         self.sim.lms_serveur = True
         self.assertEqual(self.ctrl.demarrer("gemma", sans_progres).code, ACTIF)
         self.assertEqual([c[1:] for c in commandes(self.sim, "load")],
-                         [["load", R.MODELE_GEMMA, "--context-length", "32000", "-y"]])
+                         [["load", R.MODELE_GEMMA, "--context-length", "32000", "--parallel", "4", "-y"]])
 
     def test_pas_de_chargement_si_etat_inconnu(self):
         self.sim.lms_serveur = True

@@ -65,7 +65,7 @@ COMPOSANTS = [
     Composant("openwebui", "Open WebUI", "Interface web — http://localhost:3000", ("docker",)),
     Composant("kokoro", "Kokoro (voix)", "Synthèse vocale — port 8880", ("docker",)),
     Composant("lmstudio", "Serveur LM Studio", "API sur http://localhost:1234"),
-    Composant("gemma", "Modèle gemma", "gemma-4-12b-qat — 7,15 Go de mémoire vidéo", ("lmstudio",)),
+    Composant("gemma", "Chef local", "Modèle chef de Crew (à changer dans la page « Chef d'équipe » du Centre)", ("lmstudio",)),
     Composant("embeddings", "Modèle d'embeddings", "nomic-embed-text v1.5 — 84 Mo", ("lmstudio",)),
     Composant("crew", "Serveur Crew", "Équipe d'agents CrewAI — port 8765", ("gemma",)),
 ]
@@ -74,6 +74,46 @@ PAR_ID = {c.ident: c for c in COMPOSANTS}
 
 def nom(ident):
     return PAR_ID[ident].nom
+
+
+# ---------------------------------------------------------------------------
+# Chef local de Crew (modèle LM Studio choisi par Antoine ; gemma par défaut)
+# ---------------------------------------------------------------------------
+
+_ID_MODELE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$")
+
+
+def identifiant_modele_valide(m):
+    """Identifiant LM Studio sûr avant tout emploi dans une commande : caractères simples, pas de « .. », pas de tiret au début."""
+    return isinstance(m, str) and bool(_ID_MODELE.match(m)) and ".." not in m and not m.startswith(("-", "/"))
+
+
+@dataclass
+class Chef:
+    modele: str = R.MODELE_CHEF_DEFAUT
+    contexte: int = R.CONTEXTE_CHEF_DEFAUT
+    parallele: int = R.PARALLELE_CHEF_DEFAUT
+
+
+def _entier_borne(v, defaut, bas, haut):
+    return v if isinstance(v, int) and not isinstance(v, bool) and bas <= v <= haut else defaut
+
+
+def chef_depuis_donnees(d):
+    """{"modele", "contexte", "parallele"} -> Chef ; toute valeur absente ou invalide redevient la valeur par défaut (gemma)."""
+    if not isinstance(d, dict):
+        return Chef()
+    modele = d.get("modele") if identifiant_modele_valide(d.get("modele")) else R.MODELE_CHEF_DEFAUT
+    return Chef(modele, _entier_borne(d.get("contexte"), R.CONTEXTE_CHEF_DEFAUT, 512, 4_000_000),
+                _entier_borne(d.get("parallele"), R.PARALLELE_CHEF_DEFAUT, 1, 64))
+
+
+def lire_chef_fichier(texte):
+    """Contenu de chef_crew.json -> Chef. Absent, illisible ou invalide -> gemma (google/gemma-4-12b-qat, 32000, 4)."""
+    try:
+        return chef_depuis_donnees(json.loads((texte or "").lstrip("\ufeff")))
+    except (TypeError, ValueError):
+        return Chef()
 
 
 # ---------------------------------------------------------------------------
@@ -461,7 +501,21 @@ class Controleur:
         # serveur LM Studio est arrêté et ne peut plus être interrogé.
         self._modeles_connus = {}
         self._verrou = threading.Lock()
-        self.cles_modeles = {"gemma": R.MODELE_GEMMA, "embeddings": R.MODELE_EMBEDDINGS}
+        self._chef_fourni = None      # réglages du chef donnés par le Centre (GET /chef) ; sinon fichier de secours, sinon gemma
+
+    # ----- le chef local (modèle « gemma » des anciennes versions) -------------
+
+    def definir_chef_connu(self, chef):
+        """Le Centre donne ici le chef lu auprès de Crew (GET /chef). None : on retombe sur le fichier de secours."""
+        self._chef_fourni = chef
+
+    def chef_actuel(self):
+        if self._chef_fourni is not None:
+            return self._chef_fourni
+        return lire_chef_fichier(self.sys.lire_fichier(R.FICHIER_CHEF))
+
+    def _cle_modele(self, ident):
+        return self.chef_actuel().modele if ident == "gemma" else R.MODELE_EMBEDDINGS
 
     # ----- petits outils --------------------------------------------------
 
@@ -523,7 +577,7 @@ class Controleur:
         2) sinon `lms ps` (fonctionne aussi quand le serveur HTTP est arrêté,
            mais peut réveiller LM Studio : on ne l'utilise pas pour les voyants).
         """
-        cle = self.cles_modeles[ident]
+        cle = self._cle_modele(ident)
         statut, corps = self.sys.http_get(R.URL_LMSTUDIO_MODELES, R.DELAI_HTTP)
         if statut == 200:
             try:
@@ -784,7 +838,7 @@ class Controleur:
     # Modèles
 
     def _demarrer_modele(self, ident, progres):
-        cle = self.cles_modeles[ident]
+        cle = self._cle_modele(ident)
         if not self._lmstudio_repond():
             raise ErreurAction("Le serveur LM Studio est arrêté : impossible de charger le modèle")
         # Vérification juste avant de charger : sinon LM Studio chargerait une 2e copie.
@@ -796,13 +850,19 @@ class Controleur:
             self._modeles_connus[ident] = True
             return self.verifier_modele(ident, Etat(ACTIF))
         if ident == "gemma":
-            args = [self.lms, "load", cle, "--context-length", str(R.CONTEXTE_GEMMA), "-y"]
+            # Le CHEF ACTUEL avec SES réglages (jamais gemma en dur : sinon une 2e copie de gemma saturerait la carte).
+            chef = self.chef_actuel()
+            args = [self.lms, "load", cle, "--context-length", str(chef.contexte), "--parallel", str(chef.parallele), "-y"]
             delai = R.DELAI_CHARGEMENT_GEMMA
         else:
             args = [self.lms, "load", cle, "-y"]
             delai = R.DELAI_CHARGEMENT_EMBEDDINGS
         progres(ident, Etat(TRANSITION, "Chargement en mémoire vidéo…"), False)
         res = self._cmd(args, delai)
+        if not res.ok and "--parallel" in args and "parallel" in res.texte.lower():
+            # Ancienne version de lms qui ne connaît pas --parallel : on recharge avec le seul contexte.
+            args = [a for i, a in enumerate(args) if a != "--parallel" and args[i - 1] != "--parallel"]
+            res = self._cmd(args, delai)
         charges = self.modeles_charges(ident)
         if not charges:
             raise ErreurAction("Chargement échoué : " + (resume(res.texte) or "modèle absent après chargement"))
@@ -834,7 +894,7 @@ class Controleur:
         if not pids:
             charges = self.modeles_charges("gemma")
             if not charges:
-                raise ErreurAction("gemma n'est pas chargé : le serveur Crew échouerait")
+                raise ErreurAction(f"Le chef local ({self.chef_actuel().modele}) n'est pas chargé : le serveur Crew échouerait")
             for f in (R.PYTHONW_CREW, R.SCRIPT_CREW):
                 if not self.sys.fichier_existe(f):
                     raise ErreurAction(f"Fichier introuvable : {f}")

@@ -455,3 +455,96 @@ class TestAutorisationsCrew(unittest.TestCase):
             with self.assertRaises(C.ErreurDemande):
                 self.crew.definir_autorisation(nom, autorise, limite)
         self.assertEqual(len(self.sim.requetes), avant)
+
+
+# ---------------------------------------------------------------------------
+# Chef local de Crew (modèle LM Studio choisi ; gemma par défaut)
+# ---------------------------------------------------------------------------
+
+class TestChefLocal(unittest.TestCase):
+    AUTRE = "qwen/qwen3-14b"
+
+    def setUp(self):
+        self.sim = Simulateur()
+        self.ctrl = L.Controleur(self.sim)
+
+    def fichier(self, **kw):
+        self.sim.fichiers[R.FICHIER_CHEF] = json.dumps(dict({"modele": self.AUTRE, "contexte": 24000, "parallele": 2}, **kw))
+
+    def test_lecture_du_fichier_et_valeurs_par_defaut(self):
+        g = (R.MODELE_GEMMA, 32000, 4)
+        def tri(texte):
+            c = L.lire_chef_fichier(texte)
+            return (c.modele, c.contexte, c.parallele)
+        self.assertEqual(tri(None), g)
+        self.assertEqual(tri("pas du json"), g)
+        self.assertEqual(tri("[]"), g)
+        self.assertEqual(tri(json.dumps({"modele": self.AUTRE, "contexte": 24000, "parallele": 2})), (self.AUTRE, 24000, 2))
+        self.assertEqual(tri("﻿" + json.dumps({"modele": self.AUTRE})), (self.AUTRE, 32000, 4))        # BOM accepté
+        for mauvais in ("../x", "-rf", "/etc/passwd", "a b", "x;y", "", None, 42, "a" * 300):
+            self.assertEqual(tri(json.dumps({"modele": mauvais})), g, mauvais)                          # identifiant dangereux -> gemma
+        self.assertEqual(tri(json.dumps({"modele": self.AUTRE, "contexte": "x", "parallele": 0})), (self.AUTRE, 32000, 4))
+        self.assertEqual(tri(json.dumps({"modele": self.AUTRE, "contexte": True})), (self.AUTRE, 32000, 4))
+
+    def test_le_chef_actuel_vient_du_centre_sinon_du_fichier_sinon_gemma(self):
+        self.assertEqual(self.ctrl.chef_actuel().modele, R.MODELE_GEMMA)
+        self.fichier()
+        self.assertEqual(self.ctrl.chef_actuel().modele, self.AUTRE)
+        self.ctrl.definir_chef_connu(L.Chef("autre/modele", 1000, 1))
+        self.assertEqual(self.ctrl.chef_actuel().modele, "autre/modele")
+        self.ctrl.definir_chef_connu(None)
+        self.assertEqual(self.ctrl.chef_actuel().modele, self.AUTRE)
+
+    def test_tout_demarrer_avec_un_autre_chef_ne_charge_pas_gemma(self):
+        self.fichier()
+        self.sim.modeles[self.AUTRE] = 0
+        self.sim.tout_allumer()
+        self.sim.modeles = {R.MODELE_GEMMA: 0, R.MODELE_EMBEDDINGS: 0, self.AUTRE: 0}
+        res = self.ctrl.tout_demarrer(lambda *_: None)
+        charges = [c for c in self.sim.commandes if c[1:2] == ["load"]]
+        self.assertEqual([c[2] for c in charges if c[2] != R.MODELE_EMBEDDINGS], [self.AUTRE])             # le chef, avec SES réglages
+        self.assertIn("24000", charges[0]); self.assertIn("2", charges[0][charges[0].index("--parallel") + 1])
+        self.assertEqual(self.sim.modeles, {R.MODELE_GEMMA: 0, R.MODELE_EMBEDDINGS: 1, self.AUTRE: 1})       # gemma n'a PAS été chargé
+        self.assertEqual(res["gemma"].code, ACTIF)
+
+    def test_pas_de_doublon_quand_le_chef_est_deja_charge(self):
+        self.fichier()
+        self.sim.modeles = {R.MODELE_GEMMA: 0, R.MODELE_EMBEDDINGS: 0, self.AUTRE: 1}
+        self.sim.lms_serveur = True
+        self.assertEqual(self.ctrl.demarrer("gemma", lambda *_: None).code, ACTIF)
+        self.assertEqual([c for c in self.sim.commandes if c[1:2] == ["load"]], [])
+
+    def test_mode_jeu_decharge_le_chef_actuel(self):
+        self.fichier()
+        self.sim.tout_allumer()
+        self.sim.modeles = {R.MODELE_GEMMA: 0, R.MODELE_EMBEDDINGS: 1, self.AUTRE: 1}
+        self.ctrl.mode_jeu(lambda *_: None)
+        self.assertEqual(self.sim.modeles[self.AUTRE], 0)
+        self.assertEqual(self.sim.modeles[R.MODELE_GEMMA], 0)
+
+    def test_ancienne_version_de_lms_sans_parallel(self):
+        self.fichier()
+        self.sim.modeles = {R.MODELE_GEMMA: 0, R.MODELE_EMBEDDINGS: 0, self.AUTRE: 0}
+        self.sim.lms_serveur = True
+        self.sim.lms_parallel_supporte = False
+        self.assertEqual(self.ctrl.demarrer("gemma", lambda *_: None).code, ACTIF)
+        charges = [c for c in self.sim.commandes if c[1:2] == ["load"]]
+        self.assertEqual(len(charges), 2)
+        self.assertNotIn("--parallel", charges[1])
+        self.assertEqual(self.sim.modeles[self.AUTRE], 1)
+
+    def test_analyse_de_get_chef_tolerante_et_sans_embeddings(self):
+        corps = json.dumps({"lmstudio": True, "chef": R.MODELE_GEMMA, "chef_charge": True,
+                            "changement": {"etat": "en_cours", "cible": self.AUTRE, "etape": "Déchargement…", "message": "", "debut": 1790000000},
+                            "modeles": [{"id": R.MODELE_GEMMA, "libelle": "Gemma", "taille_go": 7.15, "charge": True, "chef": True},
+                                        {"id": R.MODELE_EMBEDDINGS, "libelle": "Nomic", "architecture": "nomic-bert"},
+                                        {"id": "../piege"}, {"id": "x", "avertissement": "gros"}, "n'importe quoi"],
+                            "dernier_test": {"modele": self.AUTRE, "ok": False, "json_valides": 1, "sur": 3, "duree_moy_s": 1.1}})
+        info = C.analyser_chef(corps)
+        self.assertEqual([m["id"] for m in info.modeles], [R.MODELE_GEMMA, "x"])
+        self.assertEqual(info.modeles[1]["avertissement"], "gros")
+        self.assertEqual(info.changement["etat"], "en_cours")
+        self.assertFalse(info.dernier_test["ok"])
+        self.assertEqual(C.analyser_chef("{}").changement, None)
+        with self.assertRaises(ValueError):
+            C.analyser_chef("pas du json")

@@ -47,6 +47,13 @@ MODELE_EMBEDDINGS = "text-embedding-nomic-embed-text-v1.5"
 # ---------------------------------------------------------------------------
 
 DOSSIER_CREW = r"I:\Python\crewai-routage"
+# Chef local de Crew : c'est Crew qui le change (PUT /chef). Fichier de secours LU SEULEMENT par le Centre et le panneau (jamais modifié ici) :
+# {"modele": "<id LM Studio>", "contexte": 32000, "parallele": 4}. Absent ou illisible : gemma.
+FICHIER_CHEF = DOSSIER_CREW + r"\chef_crew.json"
+URL_CREW_CHEF = "http://127.0.0.1:8765/chef"
+MODELE_CHEF_DEFAUT = MODELE_GEMMA
+CONTEXTE_CHEF_DEFAUT = CONTEXTE_GEMMA
+PARALLELE_CHEF_DEFAUT = 4
 PYTHONW_CREW = DOSSIER_CREW + r"\.venv\Scripts\pythonw.exe"
 SCRIPT_CREW = DOSSIER_CREW + r"\serveur_crew.py"
 

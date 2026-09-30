@@ -257,7 +257,7 @@ def test_sans_synthese(centre, simulateur, reseau):
     assert envoi_crew(reseau)[2]["table_ronde"]["synthese"] is False
     m = conv["messages"][-1]
     assert m["table_ronde"]["synthese"] is False and not [r for r in m["table_ronde"]["reponses"] if r["participant"] == "synthese"]
-    assert "gemma (local) : avis A" in m["texte"] and "Gemini : avis B" in m["texte"]        # l'historique garde du contenu utile
+    assert "Chef local (" in m["texte"] and ") : avis A" in m["texte"] and "Gemini : avis B" in m["texte"]        # l'historique garde du contenu utile
 
 
 def test_tour_de_critique(centre, simulateur, reseau):

@@ -172,7 +172,7 @@
       var d = r[0], c = r[1], zone = document.getElementById("sysbar");
       if (!zone) return;
       vider(zone);
-      var noms = { docker: "Docker", lmstudio: "LM Studio", gemma: "gemma", crew: "Crew" };
+      var noms = { docker: "Docker", lmstudio: "LM Studio", gemma: "Chef local", crew: "Crew" };
       d.composants.forEach(function (x) {
         if (!noms[x.ident]) return;
         zone.appendChild(h("button", { type: "button", title: x.etat.message || TEXTE_VOYANT[x.etat.code], onclick: function () { aller("centre"); } },
