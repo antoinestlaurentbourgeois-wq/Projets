@@ -1,3 +1,5 @@
+> Complété par `RETOUR-images-salles.md` (moteur xAI corrigé, menu, images depuis toutes les salles, ComfyUI et carte graphique).
+
 # Menu « 🎨 Images » et pièces jointes des salles (📎 + images collées)
 
 ## Menu « 🎨 Images » (nouvelle page)

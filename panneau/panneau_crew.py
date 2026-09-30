@@ -462,6 +462,30 @@ class CrewDistant:
             raise ErreurDemande("LM Studio est arrêté" + detail, 503)
         raise ErreurCrew(f"/chef a répondu {statut}")
 
+    def _operation_chef(self, suffixe, corps=None):
+        """POST /chef/liberer ou /chef/reprendre : décharge ou recharge le chef de LM Studio (Crew le fait, jamais le Centre). Renvoie le « changement »."""
+        statut, texte = self._appel("POST", R.URL_CREW_CHEF + suffixe, corps or {})
+        if statut in (200, 202):
+            try:
+                ch = analyser_chef('{"changement": ' + json.dumps((json.loads(texte) or {}).get("changement")) + "}").changement
+            except (ValueError, AttributeError, TypeError):
+                ch = None
+            return ch or {"etat": "en_cours", "cible": "", "etape": "En cours…", "message": "", "debut": None}
+        detail = self._detail_erreur(texte)
+        if statut == 404:
+            raise ErreurDemande("Cette version de Crew ne sait pas libérer la carte graphique (adresse introuvable).", 404)
+        if statut == 409:
+            raise ErreurDemande("Crew est occupé (un travail ou une table ronde est en cours)" + detail, 409)
+        if statut == 503:
+            raise ErreurDemande("LM Studio est arrêté" + detail, 503)
+        raise ErreurCrew(f"/chef{suffixe} a répondu {statut}")
+
+    def liberer_chef(self):
+        return self._operation_chef("/liberer")
+
+    def reprendre_chef(self):
+        return self._operation_chef("/reprendre")
+
     def lire_moteurs(self, crew_actif=True):
         """Liste des IA que Crew peut utiliser (seulement si le serveur tourne)."""
         if not crew_actif:

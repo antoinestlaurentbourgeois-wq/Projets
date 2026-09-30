@@ -297,6 +297,11 @@ class Centre:
                     "etapes": list(j["etapes"]), "progres": dict(j["progres"]),
                     "resultats": dict(j["resultats"]), "erreur": j["erreur"]}
 
+    def mode_jeu_actif(self):
+        """Le Mode jeu est-il en train de libérer la carte graphique ? (alors on ne recharge rien derrière lui)"""
+        with self._verrou:
+            return bool(self._job and self._job["type"] == "mode_jeu" and self._job["statut"] == "en_cours")
+
     def lancer_action(self, sens, ident=None, avec_liees=False, session=""):
         L = self.L
         if sens in SEQUENCES:

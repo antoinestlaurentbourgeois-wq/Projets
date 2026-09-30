@@ -64,7 +64,7 @@
     dlg.addEventListener("close", function () { resolve(valeur); }, { once: true });
     dlg.close();
   }
-  function demander(titre, texte, boutons) {
+  function demander(titre, texte, boutons, contenu) {
     return new Promise(function (resolve) {
       document.getElementById("dialogue-titre").textContent = titre;
       document.getElementById("dialogue-texte").textContent = texte;
@@ -74,8 +74,10 @@
         zone.appendChild(h("button", { class: "bouton " + (b.style || ""), type: "button", texte: b.texte,
           onclick: function () { fermerDialogue(b.valeur, resolve); } }));
       });
-      vider(document.getElementById("dialogue-champs"));
-      dlg.onclose = function () { resolve(null); };
+      var champs = document.getElementById("dialogue-champs");
+      vider(champs);
+      if (contenu) champs.appendChild(contenu);             // contenu libre (ex. fenêtre de création d'image)
+      dlg.onclose = function () { vider(champs); resolve(null); };
       dlg.showModal();
     });
   }

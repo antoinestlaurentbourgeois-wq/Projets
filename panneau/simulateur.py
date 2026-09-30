@@ -92,6 +92,8 @@ class Simulateur:
         self.chef_test_mauvais_pour = set()   # idem, seulement pour ces modèles (démo)
         self.chef_echec_pour = {}          # modèle -> message d'échec de chargement (démo)
         self.chef_dernier_test = None
+        self.chef_liberer_disponible = True    # False : /chef/liberer et /chef/reprendre n'existent pas encore (404)
+        self.chef_operations = []              # historique : "liberer" / "reprendre"
         self.lms_parallel_supporte = True  # False : « lms load --parallel » est refusé (ancienne version)
         self.programmes_abonnement_absents = set()   # ex. {"claude"} -> « Programme « claude » introuvable »
         self.conversations = []   # [{"id", "updated_at", "models": [...]}] pour Open WebUI
@@ -209,7 +211,7 @@ class Simulateur:
             auth = (entetes or {}).get("Authorization", "")
             self.requetes.append((methode, url, bool(auth)))
             if url.startswith(R.URL_CREW_MODE) or url.startswith(R.URL_CREW_MOTEURS) \
-                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]) or url in (R.URL_CREW_TABLE_ESTIMATION, R.URL_CREW_TABLE_PARTICIPANTS, R.URL_CREW_AUTORISATIONS, R.URL_CREW_CHEF):
+                    or url.startswith(R.URL_CREW_MEMOIRE_ETAT[:-len("/etat")]) or url in (R.URL_CREW_TABLE_ESTIMATION, R.URL_CREW_TABLE_PARTICIPANTS, R.URL_CREW_AUTORISATIONS, R.URL_CREW_CHEF, R.URL_CREW_CHEF + "/liberer", R.URL_CREW_CHEF + "/reprendre"):
                 return self._crew_api(methode, url, auth, corps_json)
             if url.startswith(R.URL_WEBUI_BASE + "/api/v1/chats"):
                 return self._webui_api(url, auth)
@@ -395,6 +397,8 @@ class Simulateur:
             return self._crew_autorisations(methode, corps_json)
         if url == R.URL_CREW_CHEF:
             return self._crew_chef(methode, corps_json)
+        if url in (R.URL_CREW_CHEF + "/liberer", R.URL_CREW_CHEF + "/reprendre"):
+            return self._crew_chef_operation(url.rsplit("/", 1)[1])
         if url == R.URL_CREW_TABLE_PARTICIPANTS:
             return self._crew_table_participants()
         if url == R.URL_CREW_TABLE_ESTIMATION:
@@ -415,9 +419,32 @@ class Simulateur:
     def _etapes_chef(self, cible):
         return ["Vérification qu'aucun travail n'est en cours…", f"Déchargement de {self.chef_id}…", f"Chargement de {cible}…", "Test de 3 demandes…"]
 
+    def _crew_chef_operation(self, operation):
+        """POST /chef/liberer et /chef/reprendre (comme le vrai Crew) : 202 puis suivi par GET /chef ; 404 si absent, 409 si occupé, 503 si LM Studio arrêté."""
+        if not self.chef_liberer_disponible:
+            return 404, '{"detail": "Not Found"}'
+        if not self.lms_serveur:
+            return 503, '{"error": {"message": "LM Studio est arrêté"}}'
+        if self.chef_conflit:
+            return 409, '{"error": {"message": "un travail Crew est en cours"}}'
+        if self.chef_changement and self.chef_changement["etat"] == "en_cours":
+            return 409, '{"error": {"message": "un changement est déjà en cours"}}'
+        self.chef_pas = 0
+        self.chef_operations.append(operation)
+        self.chef_changement = {"etat": "en_cours", "cible": self.chef_id, "etape": ("Déchargement" if operation == "liberer" else "Rechargement") + " du chef…",
+                                "message": "", "debut": int(time.time()), "operation": operation}
+        return 202, json.dumps({"changement": self.chef_changement}, ensure_ascii=False)
+
     def _chef_avancer(self):
         ch = self.chef_changement
         if not ch or ch["etat"] != "en_cours":
+            return
+        if ch.get("operation"):
+            if self.chef_pas < 1:
+                self.chef_pas += 1
+                return
+            self.modeles[self.chef_id] = 0 if ch["operation"] == "liberer" else 1
+            ch.update(etat="termine", etape="Terminé")
             return
         etapes = self._etapes_chef(ch["cible"])
         if self.chef_pas < len(etapes) - 1:

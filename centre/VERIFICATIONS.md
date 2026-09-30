@@ -77,3 +77,10 @@
 - [ ] Galerie : ouvrir, télécharger, réutiliser la description, supprimer ; les images sont dans le dossier `images` des données.
 - [ ] Salle gemma (modèle vision) / Grok / Gemini (clé) : coller une capture d'écran, poser une question dessus ; DeepSeek refuse l'image avec une explication.
 - [ ] Icône 📎 : un fichier `.txt` est rangé dans le tiroir puis joint ; un PDF est refusé avec une explication.
+
+## J. Images depuis toutes les salles (vrai xAI, vrai ComfyUI, vrai Crew requis)
+- [ ] Page Images et fenêtre 🎨 d'une salle : menu à deux groupes (Nuage / Local), prix, raisons des moteurs grisés ; xAI liste « grok-imagine-image* » sans vidéo ; Gemini grisé avec « palier gratuit ».
+- [ ] Une image xAI coûte le prix RÉEL lu dans la réponse (page Coûts) ; l'image revient dans la conversation de la salle et reste à la réouverture.
+- [ ] Demander « fais-moi une image de… » à une IA de chaque type de salle : une carte apparaît avec la description complète, RIEN n'est créé avant le clic sur Générer.
+- [ ] Conversation privée / mode Confidentiel : seul ComfyUI est proposé.
+- [ ] ComfyUI avec le chef chargé : confirmation, Crew libère la carte, l'image se crée, Crew recharge le chef (sauf Mode jeu ou « laisser la carte libre »).

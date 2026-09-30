@@ -593,8 +593,19 @@ def creer_app(centre=None, verrou=None, config=None):
             return erreur_salle(e)
         return _json(r, 201)
 
+    def utilisateur(request):
+        """Utilisateur du Centre : identité Tailscale à distance, sinon « local » (sert à retenir le dernier moteur d'images choisi)."""
+        if request.scope.get("centre_distant"):
+            return _entete(request.scope, "tailscale-user-login").strip().lower()[:80] or "distant"
+        return "local"
+
+    def parametres_image(d):
+        return dict(moteur=str(d.get("moteur", "")), prompt=d.get("prompt", ""), taille=str(d.get("taille", "carre")), n=d.get("n", 1),
+                    modele=str(d.get("modele") or d.get("checkpoint") or "")[:200], confirme_depassement=bool(d.get("confirme_depassement")),
+                    confirme_liberation=bool(d.get("confirme_liberation")), laisser_libre=bool(d.get("laisser_libre")))
+
     async def api_images_options(request):
-        return _json(await run_in_threadpool(centre.images.options))
+        return _json(await run_in_threadpool(centre.images.options, utilisateur(request)))
 
     async def api_images_estimation(request):
         d = await _corps(request)
@@ -613,11 +624,42 @@ def creer_app(centre=None, verrou=None, config=None):
         if d is None:
             return _erreur("Requête illisible.")
         try:
-            return _json(await run_in_threadpool(
-                centre.images.lancer, str(d.get("moteur", "")), d.get("prompt", ""), str(d.get("taille", "carre")), d.get("n", 1), bool(d.get("prive")),
-                str(d.get("checkpoint", ""))[:200], bool(d.get("confirme_depassement")), session_courte(request)), 202)
+            return _json(await run_in_threadpool(lambda: centre.images.lancer(prive=bool(d.get("prive")), session=session_courte(request), utilisateur=utilisateur(request),
+                                                                              **parametres_image(d))), 202)
         except ErreurImage as e:
             return _erreur(str(e), e.code, **e.extra)
+
+    async def api_conv_image(request):
+        """Image demandée DEPUIS une salle (bouton, /image, clic sur la carte d'une proposition de l'IA) : l'IA de la salle n'est pas appelée."""
+        refus = sensible(request)
+        if refus:
+            return refus
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            return _json(await run_in_threadpool(lambda: salles.lancer_image(
+                request.path_params["cid"], proposition=(str(d["proposition"])[:20] if d.get("proposition") else None), session=session_courte(request),
+                utilisateur=utilisateur(request), prive=bool(d.get("prive")), **parametres_image(d))), 202)
+        except ErreurImage as e:
+            return _erreur(str(e), e.code, **e.extra)
+        except ErreurSalle as e:
+            return erreur_salle(e)
+
+    async def api_conv_image_jobs(request):
+        return _json({"jobs": await run_in_threadpool(centre.images.jobs_de, request.path_params["cid"])})
+
+    async def api_image_annuler(request):
+        try:
+            return _json(await run_in_threadpool(centre.images.annuler, request.path_params["ident"]))
+        except ErreurImage as e:
+            return _erreur(str(e), e.code)
+
+    async def api_proposition_ignorer(request):
+        try:
+            return _json(await run_in_threadpool(salles.ignorer_proposition, request.path_params["cid"], request.path_params["pid"]))
+        except ErreurSalle as e:
+            return erreur_salle(e)
 
     async def api_images_job(request):
         try:
@@ -938,7 +980,9 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/crew/moteurs", api_moteurs), Route("/api/crew/autorisations", api_autorisations), Route("/api/crew/chef", api_chef),
         Route("/api/crew/chef", api_chef_definir, methods=["PUT"]),
         Route("/api/images/options", api_images_options), Route("/api/images/estimation", api_images_estimation, methods=["POST"]),
-        Route("/api/images/jobs/{ident}", api_images_job), Route("/api/images", api_images_lister), Route("/api/images", api_images_creer, methods=["POST"]),
+        Route("/api/images/jobs/{ident}", api_images_job), Route("/api/images/jobs/{ident}/annuler", api_image_annuler, methods=["POST"]),
+        Route("/api/conversations/{cid}/image", api_conv_image, methods=["POST"]), Route("/api/conversations/{cid}/images/jobs", api_conv_image_jobs),
+        Route("/api/conversations/{cid}/propositions/{pid}/ignorer", api_proposition_ignorer, methods=["POST"]), Route("/api/images", api_images_lister), Route("/api/images", api_images_creer, methods=["POST"]),
         Route("/api/images/{ident}/fichier", api_images_fichier), Route("/api/images/{ident}", api_images_supprimer, methods=["DELETE"]),
         Route("/api/pieces", api_piece_ajouter, methods=["POST"]), Route("/api/pieces/{ident}", api_piece_lire),
         Route("/api/pieces/{ident}", api_piece_supprimer, methods=["DELETE"]),

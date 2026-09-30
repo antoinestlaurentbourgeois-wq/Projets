@@ -102,3 +102,4 @@ Choisit le modèle LM Studio qui sert de chef local à Crew (gemma par défaut).
 ## Images et pièces jointes
 - Page **🎨 Images** : création d'images par IA (OpenAI, Gemini, Grok, ComfyUI local), galerie sur ce PC, coût estimé avant l'envoi, nuage refusé pour le contenu confidentiel.
 - Dans les salles : **📎** pour joindre un fichier texte (rangé dans le tiroir) ou une image, et **coller une image** dans le champ de saisie (salles qui lisent les images seulement). Voir `RETOUR-images-pieces.md`.
+- **Images depuis toutes les salles** : bouton **🎨 Image** ou commande `/image <description>` dans n'importe quelle salle ; l'image revient dans la conversation. Si une IA propose une image (bloc `[[IMAGE]]`), une carte montre la description complète : rien n'est créé sans votre clic. ComfyUI (local) partage la carte graphique avec le chef : Crew le décharge puis le recharge. Voir `RETOUR-images-salles.md`.
