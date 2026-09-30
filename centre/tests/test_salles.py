@@ -713,6 +713,38 @@ def test_permanentes_fichier_trafique_ignore(centre):
 
 def test_routes_permanentes(client, centre):
     centre.salles.ajouter_permanent("mcp__X__y")
-    assert client.get("/api/approbations/permanentes").json() == {"motifs": ["mcp__X__y"]}
+    assert client.get("/api/approbations/permanentes").json() == {"motifs": ["mcp__X__y"], "auto": False}
     assert client.request("DELETE", "/api/approbations/permanentes", json={"motif": "mcp__X__y"}).json() == {"motifs": []}
     assert client.request("DELETE", "/api/approbations/permanentes", json={"motif": "mcp__X__y"}).status_code == 404
+
+
+def test_mode_toujours_approuver_poursuit_sans_redemander_les_actions_simples(centre, processus):
+    assert centre.salles.approbation_auto() is False                                              # désactivé par défaut
+    processus.scenarios["claude"] = flux_claude("Je regarde.", refus=[("t1", "mcp__AgentMail__list_messages", {})])
+    conv = centre.salles.creer_conversation("claude")
+    evts = centre.salles.demarrer_envoi(conv["id"], "mes courriels", {}).attendre()
+    assert any(e["t"] == "approbation" for e in evts)                                             # mode désactivé : on demande
+    centre.salles.definir_approbation_auto(True)
+    conv2 = centre.salles.creer_conversation("claude")
+    n = len(processus.lances)
+    processus.scenarios["claude"] = lambda args, stdin: (flux_claude("Voilà.") if "approuvé" in (stdin or "")
+                                                         else flux_claude("Je regarde.", refus=[("t1", "mcp__AgentMail__list_messages", {})]))
+    evts = centre.salles.demarrer_envoi(conv2["id"], "mes courriels", {}).attendre()
+    assert not any(e["t"] == "approbation" for e in evts) and len(processus.lances) == n + 2       # relancé tout seul, une fois
+    assert "mcp__AgentMail__list_messages" in processus.lances[-1]["args"][processus.lances[-1]["args"].index("--allowedTools") + 1]
+    assert any(r["resultat"] == "auto" for r in centre.recus.derniers())
+
+
+def test_mode_toujours_approuver_redemande_si_une_action_n_est_pas_simple(centre, processus):
+    centre.salles.definir_approbation_auto(True)
+    processus.scenarios["claude"] = flux_claude("x", refus=[("t1", "Bash", {"command": "git status"}), ("t2", "Write", {"file_path": "a.txt"})])
+    conv = centre.salles.creer_conversation("claude")
+    n = len(processus.lances)
+    evts = centre.salles.demarrer_envoi(conv["id"], "range", {}).attendre()
+    assert any(e["t"] == "approbation" for e in evts) and len(processus.lances) == n + 1           # une écriture dans le lot : rien d'automatique
+
+
+def test_route_auto(client, centre):
+    assert client.put("/api/approbations/auto", json={"actif": True}).json() == {"auto": True} and centre.salles.approbation_auto()
+    assert client.put("/api/approbations/auto", json={"actif": "oui"}).status_code == 400
+    assert client.get("/api/approbations/permanentes").json()["auto"] is True

@@ -704,7 +704,13 @@
         });
       }
       dessiner(d.motifs);
-      C.demander("Approbations permanentes", "Ces actions sont approuvées d'avance pour la salle Claude. Retirez-en une pour que Claude redemande.", [{ texte: "Fermer", valeur: true, style: "principal" }], liste);
+      var auto = h("input", { type: "checkbox", id: "approbation-auto", checked: !!d.auto });
+      auto.addEventListener("change", function () {
+        api("PUT", "/api/approbations/auto", { actif: auto.checked }).catch(function (e) { auto.checked = !auto.checked; if (e.message !== "session") C.informer("Réglage impossible", e.message); });
+      });
+      var bloc = h("div", null, h("label", { class: "case-prive" }, auto, " Toujours approuver les actions simples (sans redemander)"),
+        h("p", { class: "doux", texte: "Jamais les modifications de fichiers ni les commandes complexes : celles-ci demandent toujours votre accord." }), liste);
+      C.demander("Approbations permanentes", "Ces actions sont approuvées d'avance pour la salle Claude. Retirez-en une pour que Claude redemande.", [{ texte: "Fermer", valeur: true, style: "principal" }], bloc);
     }).catch(function (e) { if (e.message !== "session") C.informer("Lecture impossible", e.message); });
   }
 
@@ -726,7 +732,16 @@
         demarrerLive();
         lancerFlux("/api/conversations/" + S.conv.id + "/approbation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decisions: choix }) });
       } }),
-      " ", h("button", { class: "petit", type: "button", texte: "Gérer les approbations permanentes", onclick: gererPermanentes }));
+      " ", demandes.every(function (d) { return d.permanent_possible; }) ? h("button", { class: "petit", type: "button", id: "toujours-tout", texte: "Tout approuver, toujours", onclick: function () {
+        C.confirmer("Toujours approuver ?", "Claude pourra désormais exécuter sans vous demander toutes les actions SIMPLES (lecture, recherche web, commandes courantes). Les modifications de fichiers et les commandes complexes demanderont toujours votre accord. Vous pouvez le désactiver dans « Gérer les approbations permanentes ».", "Toujours approuver").then(function (ok) {
+          if (!ok) return;
+          var tout = {}; demandes.forEach(function (d) { tout[d.id] = "approuver"; });
+          api("PUT", "/api/approbations/auto", { actif: true }).then(function () {
+            demarrerLive();
+            lancerFlux("/api/conversations/" + S.conv.id + "/approbation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decisions: tout }) });
+          }).catch(function (e) { if (e.message !== "session") C.informer("Réglage impossible", e.message); });
+        });
+      } }) : null, " ", h("button", { class: "petit", type: "button", texte: "Gérer les approbations permanentes", onclick: gererPermanentes }));
   }
 
   // ------------------------------------------------ relais, tiroir

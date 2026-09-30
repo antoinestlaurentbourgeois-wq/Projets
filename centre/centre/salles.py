@@ -879,7 +879,7 @@ class Salles:
                               outils_autorises=tuple(outils) + tuple(m for m in (self.permanents() if salle == "claude" else ()) if m not in outils),
                               ecriture=ecriture, atelier=self.atelier)
 
-    def _tour(self, conv, salle, req, id_message_user, annulation, session, prive):
+    def _tour(self, conv, salle, req, id_message_user, annulation, session, prive, auto_niveau=0):
         cid = conv["id"]
         annulation = annulation or Annulation()
         with self._verrou:
@@ -1002,11 +1002,16 @@ class Salles:
         if erreur:
             yield ia.evt_erreur(erreur)
         else:
-            if approbations:
+            auto = bool(approbations and salle == "claude" and not interrompu and auto_niveau < 5 and self.approbation_auto()
+                        and all(self.permanent_possible(d) for d in approbations))
+            if approbations and not auto:
                 yield {"t": "approbation", "demandes": approbations}
             yield {"t": "cout", "usd": cout["usd"], "texte": cout["texte"]}
             yield {"t": "fin", "annule": interrompu, "message_id": conv["messages"][-1]["id"] if conv["messages"] else None,
                    "titre": conv["titre"]}
+            if auto:                      # mode « toujours approuver » : toutes les demandes sont simples, on poursuit sans redemander
+                self.centre.recus.ajouter("approbation", "auto", conversation=cid, session=session, n=len(approbations))
+                yield from self.approuver(cid, {d["id"]: "approuver" for d in approbations}, annulation, session, auto_niveau + 1)
 
     def _resume_table_ronde(self, tr_data, req, tr_total=None):
         """(structure enregistrée dans le message, texte de l'historique, coût). Le texte de l'historique est la synthèse, sinon un
@@ -1092,7 +1097,23 @@ class Salles:
                 raise ErreurSalle("Cette approbation permanente n'existe pas.", 404)
             self._ecrire_permanents([m for m in liste if m != motif])
 
-    def approuver(self, cid, decisions, annulation=None, session=""):
+    # Mode « toujours approuver » : désactivé par défaut. Approuve d'avance les demandes SIMPLES (mêmes règles que « Toujours approuver » : jamais les
+    # modifications de fichiers ni les commandes complexes). Dès qu'une demande du lot n'est pas simple, rien n'est automatique : le panneau s'affiche.
+
+    def approbation_auto(self):
+        try:
+            with open(self.centre.config.chemin("approbation_auto.json"), encoding="utf-8") as f:
+                return json.load(f).get("actif") is True
+        except (OSError, ValueError, AttributeError):
+            return False
+
+    def definir_approbation_auto(self, actif):
+        t = self.centre.config.chemin("approbation_auto.json")
+        with open(t + ".tmp", "w", encoding="utf-8") as f:
+            json.dump({"actif": bool(actif)}, f)
+        os.replace(t + ".tmp", t)
+
+    def approuver(self, cid, decisions, annulation=None, session="", auto_niveau=0):
         """`decisions` : {id_demande: "approuver" | "refuser"}. Générateur d'événements du tour qui suit."""
         try:
             conv = self.conversations.lire(cid)
@@ -1142,7 +1163,7 @@ class Salles:
         m_user = self.conversations.ajouter_message(conv, "user", consigne, approbation=True)
         self.conversations.enregistrer(conv)
         req = self._requete(conv, "claude", consigne, bool(conv.get("prive")), outils=motifs)
-        yield from self._tour(conv, "claude", req, m_user["id"], annulation, session, bool(conv.get("prive")))
+        yield from self._tour(conv, "claude", req, m_user["id"], annulation, session, bool(conv.get("prive")), auto_niveau)
 
     # ----- relais « Demander aussi à… » ---------------------------------------------------------------------------------------------
 

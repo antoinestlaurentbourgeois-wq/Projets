@@ -590,7 +590,18 @@ def creer_app(centre=None, verrou=None, config=None):
         return _json({"arrete": salles.arreter(request.path_params["cid"])})
 
     async def api_permanentes(request):
-        return _json({"motifs": await run_in_threadpool(salles.permanents)})
+        return _json({"motifs": await run_in_threadpool(salles.permanents), "auto": salles.approbation_auto()})
+
+    async def api_approbation_auto(request):
+        refus = sensible(request)
+        if refus:
+            return refus
+        d = await _corps(request)
+        if d is None or not isinstance(d.get("actif"), bool):
+            return _erreur("Requête illisible.")
+        salles.definir_approbation_auto(d["actif"])
+        centre.recus.ajouter("approbation", "auto_active" if d["actif"] else "auto_desactive", session=session_courte(request))
+        return _json({"auto": d["actif"]})
 
     async def api_permanente_retirer(request):
         refus = sensible(request)
@@ -1041,7 +1052,7 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/conversations/{cid}/flux", api_flux),
         Route("/api/conversations/{cid}/arreter", api_arreter, methods=["POST"]),
         Route("/api/conversations/{cid}/approbation", api_approbation, methods=["POST"]),
-        Route("/api/approbations/permanentes", api_permanentes), Route("/api/approbations/permanentes", api_permanente_retirer, methods=["DELETE"]),
+        Route("/api/approbations/permanentes", api_permanentes), Route("/api/approbations/auto", api_approbation_auto, methods=["PUT"]), Route("/api/approbations/permanentes", api_permanente_retirer, methods=["DELETE"]),
         Route("/api/conversations/{cid}/relais", api_relais, methods=["POST"]),
         Route("/api/table-ronde/options", api_tr_options), Route("/api/table-ronde/estimation", api_tr_estimation, methods=["POST"]),
         Route("/api/tiroir", api_tiroir_lister), Route("/api/tiroir", api_tiroir_ajouter, methods=["POST"]),
