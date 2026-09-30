@@ -589,6 +589,23 @@ def creer_app(centre=None, verrou=None, config=None):
     async def api_arreter(request):
         return _json({"arrete": salles.arreter(request.path_params["cid"])})
 
+    async def api_permanentes(request):
+        return _json({"motifs": await run_in_threadpool(salles.permanents)})
+
+    async def api_permanente_retirer(request):
+        refus = sensible(request)
+        if refus:
+            return refus
+        d = await _corps(request)
+        if d is None:
+            return _erreur("Requête illisible.")
+        try:
+            await run_in_threadpool(salles.retirer_permanent, str(d.get("motif", "")))
+        except ErreurSalle as e:
+            return erreur_salle(e)
+        centre.recus.ajouter("approbation", "permanente_retiree", session=session_courte(request))
+        return _json({"motifs": salles.permanents()})
+
     async def api_approbation(request):
         refus = sensible(request)
         if refus:
@@ -1024,6 +1041,7 @@ def creer_app(centre=None, verrou=None, config=None):
         Route("/api/conversations/{cid}/flux", api_flux),
         Route("/api/conversations/{cid}/arreter", api_arreter, methods=["POST"]),
         Route("/api/conversations/{cid}/approbation", api_approbation, methods=["POST"]),
+        Route("/api/approbations/permanentes", api_permanentes), Route("/api/approbations/permanentes", api_permanente_retirer, methods=["DELETE"]),
         Route("/api/conversations/{cid}/relais", api_relais, methods=["POST"]),
         Route("/api/table-ronde/options", api_tr_options), Route("/api/table-ronde/estimation", api_tr_estimation, methods=["POST"]),
         Route("/api/tiroir", api_tiroir_lister), Route("/api/tiroir", api_tiroir_ajouter, methods=["POST"]),

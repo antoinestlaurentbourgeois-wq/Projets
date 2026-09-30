@@ -679,3 +679,40 @@ def test_pas_de_reessai_sur_les_autres_erreurs_ni_en_local(centre, simulateur, r
     reseau.repondre(URL_GEMMA, lambda c, e: (essais.append(1) or (503, iter(["{}"]))))
     envoyer(centre, "gemma", "q")
     assert len(essais) == 1                      # LM Studio (local) : pas de nouvel essai
+
+
+def test_claude_toujours_approuver_memorise_et_ne_redemande_plus(centre, processus):
+    processus.scenarios["claude"] = flux_claude("Je dois lancer une commande.",
+                                                refus=[("t1", "Bash", {"command": "git status"}), ("t2", "mcp__AgentMail__list_messages", {}),
+                                                       ("t3", "Write", {"file_path": "notes.txt"})])
+    conv = centre.salles.creer_conversation("claude")
+    evts = centre.salles.demarrer_envoi(conv["id"], "range", {}).attendre()
+    demandes = [e for e in evts if e["t"] == "approbation"][0]["demandes"]
+    assert [d["permanent_possible"] for d in demandes] == [True, True, False]                    # jamais pour les modifications de fichiers
+    processus.scenarios["claude"] = flux_claude("Fait.")
+    centre.salles.demarrer_approbation(conv["id"], {"t1": "toujours", "t2": "toujours", "t3": "toujours"}).attendre()
+    assert centre.salles.permanents() == ["Bash(git status)", "mcp__AgentMail__list_messages"]  # Write n'est pas mémorisé
+    assert any(r["resultat"] == "permanente" for r in centre.recus.derniers())
+    # une NOUVELLE conversation : ces actions sont déjà autorisées d'avance, rien d'autre
+    conv2 = centre.salles.creer_conversation("claude")
+    centre.salles.demarrer_envoi(conv2["id"], "encore", {}).attendre()
+    outils = processus.lances[-1]["args"][processus.lances[-1]["args"].index("--allowedTools") + 1].split(",")
+    assert "mcp__AgentMail__list_messages" in outils and "Bash(git status)" in outils and "Write" not in outils
+    centre.salles.retirer_permanent("Bash(git status)")
+    assert centre.salles.permanents() == ["mcp__AgentMail__list_messages"]
+    with pytest.raises(ErreurSalle):
+        centre.salles.retirer_permanent("Bash(git status)")
+
+
+def test_permanentes_fichier_trafique_ignore(centre):
+    import json
+    with open(centre.config.chemin("approbations_permanentes.json"), "w", encoding="utf-8") as f:
+        json.dump(["Write", "Edit", "ok\nmal", "x" * 400, 5, "WebFetch(domain:exemple.com)"], f)
+    assert centre.salles.permanents() == ["WebFetch(domain:exemple.com)"]
+
+
+def test_routes_permanentes(client, centre):
+    centre.salles.ajouter_permanent("mcp__X__y")
+    assert client.get("/api/approbations/permanentes").json() == {"motifs": ["mcp__X__y"]}
+    assert client.request("DELETE", "/api/approbations/permanentes", json={"motif": "mcp__X__y"}).json() == {"motifs": []}
+    assert client.request("DELETE", "/api/approbations/permanentes", json={"motif": "mcp__X__y"}).status_code == 404

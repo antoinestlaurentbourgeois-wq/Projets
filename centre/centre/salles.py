@@ -875,7 +875,8 @@ class Salles:
             # Contenu privé : on demande explicitement le modèle confidentiel (jamais de nuage).
             modele = "crew-confidentiel" if prive and self.mode_crew() not in MODES_CREW_LOCAUX else (modele or "crew-normal")
         return ia.RequeteChat(messages=self._messages_pour_ia(conv, dernier_texte), modele=modele, systeme=SYSTEME,
-                              session_cli=conv.get("cli_session") or "", outils_autorises=tuple(outils),
+                              session_cli=conv.get("cli_session") or "",
+                              outils_autorises=tuple(outils) + tuple(m for m in (self.permanents() if salle == "claude" else ()) if m not in outils),
                               ecriture=ecriture, atelier=self.atelier)
 
     def _tour(self, conv, salle, req, id_message_user, annulation, session, prive):
@@ -937,6 +938,8 @@ class Salles:
                     usage = e
                 elif t == "approbation":
                     approbations = e["demandes"]
+                    for d in approbations:
+                        d["permanent_possible"] = self.permanent_possible(d)
                 elif t == "erreur":
                     erreur = e["message"]
                 elif t == "fin":
@@ -1055,6 +1058,40 @@ class Salles:
 
     # ----- approbations (Claude) ---------------------------------------------------------------------------------------------
 
+    # « Toujours approuver » : liste de motifs (un outil, un domaine web, une commande exacte) mémorisée sur ce PC, révocable à tout moment.
+    # Jamais pour les outils qui modifient des fichiers, ni pour une demande jugée trop complexe. Valable pour la salle Claude seulement.
+
+    def permanent_possible(self, demande):
+        m = demande.get("motif")
+        return bool(isinstance(m, str) and 0 < len(m) <= 300 and "\n" not in m and demande.get("outil") not in ia.OUTILS_ECRITURE and m not in ia.OUTILS_ECRITURE)
+
+    def permanents(self):
+        try:
+            with open(self.centre.config.chemin("approbations_permanentes.json"), encoding="utf-8") as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            return []
+        return [m for m in d if isinstance(m, str) and 0 < len(m) <= 300 and "\n" not in m and m not in ia.OUTILS_ECRITURE][:200] if isinstance(d, list) else []
+
+    def _ecrire_permanents(self, liste):
+        t = self.centre.config.chemin("approbations_permanentes.json")
+        with open(t + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(liste, f, ensure_ascii=False)
+        os.replace(t + ".tmp", t)
+
+    def ajouter_permanent(self, motif):
+        with self._verrou:
+            liste = self.permanents()
+            if motif not in liste:
+                self._ecrire_permanents(liste + [motif])
+
+    def retirer_permanent(self, motif):
+        with self._verrou:
+            liste = self.permanents()
+            if motif not in liste:
+                raise ErreurSalle("Cette approbation permanente n'existe pas.", 404)
+            self._ecrire_permanents([m for m in liste if m != motif])
+
     def approuver(self, cid, decisions, annulation=None, session=""):
         """`decisions` : {id_demande: "approuver" | "refuser"}. Générateur d'événements du tour qui suit."""
         try:
@@ -1072,8 +1109,11 @@ class Salles:
         approuvees, refusees = [], []
         for d in attente:
             choix = (decisions or {}).get(d["id"])
-            if choix == "approuver" and d.get("motif"):
+            if choix in ("approuver", "toujours") and d.get("motif"):
                 approuvees.append(d)
+                if choix == "toujours" and self.permanent_possible(d):
+                    self.ajouter_permanent(d["motif"])
+                    self.centre.recus.ajouter("approbation", "permanente", conversation=cid, session=session, motif=d["motif"][:120])
             else:
                 refusees.append(d)
         conv["en_attente"] = []

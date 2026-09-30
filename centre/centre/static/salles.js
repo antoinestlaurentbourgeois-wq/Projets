@@ -689,21 +689,44 @@
   });
 
   // ------------------------------------------------ approbations
+  function gererPermanentes() {
+    api("GET", "/api/approbations/permanentes").then(function (d) {
+      var liste = h("div", { class: "liste-permanentes" });
+      function dessiner(motifs) {
+        vider(liste);
+        if (!motifs.length) liste.appendChild(h("div", { class: "doux", texte: "Aucune approbation permanente." }));
+        motifs.forEach(function (m) {
+          liste.appendChild(h("div", { class: "ligne" }, h("span", { class: "texte", texte: m }),
+            h("button", { class: "petit", type: "button", texte: "Retirer", onclick: function () {
+              api("DELETE", "/api/approbations/permanentes", { motif: m }).then(function (r) { dessiner(r.motifs); })
+                .catch(function (e) { if (e.message !== "session") C.informer("Retrait impossible", e.message); });
+            } })));
+        });
+      }
+      dessiner(d.motifs);
+      C.demander("Approbations permanentes", "Ces actions sont approuvées d'avance pour la salle Claude. Retirez-en une pour que Claude redemande.", [{ texte: "Fermer", valeur: true, style: "principal" }], liste);
+    }).catch(function (e) { if (e.message !== "session") C.informer("Lecture impossible", e.message); });
+  }
+
   function panneauApprobation(demandes) {
     var choix = {};
     demandes.forEach(function (d) { choix[d.id] = d.motif ? "approuver" : "refuser"; });
     var lignes = demandes.map(function (d) {
-      var etat = h("span", { class: "badge", texte: choix[d.id] === "approuver" ? "à approuver" : "refusé" });
-      var bo = h("button", { class: "petit", type: "button", texte: "Approuver", disabled: !d.motif, onclick: function () { choix[d.id] = "approuver"; etat.textContent = "à approuver"; } });
-      var br = h("button", { class: "petit", type: "button", texte: "Refuser", onclick: function () { choix[d.id] = "refuser"; etat.textContent = "refusé"; } });
-      return h("div", { class: "ligne" }, h("span", { class: "texte", texte: d.resume + (d.motif ? "" : " — trop complexe pour être approuvé ici : faites-le vous-même") }), bo, br, etat);
+      var libelle = { approuver: "à approuver", toujours: "à approuver, toujours", refuser: "refusé" };
+      var etat = h("span", { class: "badge", texte: libelle[choix[d.id]] });
+      function choisir(v) { choix[d.id] = v; etat.textContent = libelle[v]; }
+      var bo = h("button", { class: "petit", type: "button", texte: "Approuver", disabled: !d.motif, onclick: function () { choisir("approuver"); } });
+      var bt = d.permanent_possible ? h("button", { class: "petit", type: "button", texte: "Toujours approuver", title: "Claude ne redemandera plus cette action exacte (révocable)", onclick: function () { choisir("toujours"); } }) : null;
+      var br = h("button", { class: "petit", type: "button", texte: "Refuser", onclick: function () { choisir("refuser"); } });
+      return h("div", { class: "ligne" }, h("span", { class: "texte", texte: d.resume + (d.motif ? "" : " — trop complexe pour être approuvé ici : faites-le vous-même") }), bo, bt, br, etat);
     });
     return h("div", { class: "demande-approbation", role: "alert" },
-      h("strong", { texte: "Claude demande votre approbation" }), h("div", { class: "doux", texte: "Rien n'est exécuté sans votre accord. Chaque approbation vaut pour cette demande seulement." }), lignes,
+      h("strong", { texte: "Claude demande votre approbation" }), h("div", { class: "doux", texte: "Rien n'est exécuté sans votre accord. « Approuver » vaut pour cette demande seulement ; « Toujours approuver » mémorise cette action exacte (jamais les modifications de fichiers)." }), lignes,
       h("button", { class: "bouton principal", type: "button", texte: "Valider mes choix", onclick: function () {
         demarrerLive();
         lancerFlux("/api/conversations/" + S.conv.id + "/approbation", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decisions: choix }) });
-      } }));
+      } }),
+      " ", h("button", { class: "petit", type: "button", texte: "Gérer les approbations permanentes", onclick: gererPermanentes }));
   }
 
   // ------------------------------------------------ relais, tiroir
