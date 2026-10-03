@@ -1,0 +1,58 @@
+name: MesFactures
+options:
+  bundleIdPrefix: ca.accompagnement
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Factures:
+    type: application
+    platform: iOS
+    sources:
+      - Sources/Core
+      - Sources/App
+    info:
+      path: Sources/App/Info.plist
+      properties:
+        CFBundleDisplayName: Mes factures
+        CFBundleDevelopmentRegion: fr
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        NSCalendarsFullAccessUsageDescription: "Mes factures lit votre calendrier pour retrouver les visites faites chez chaque client et préparer les factures. Rien n'est modifié ni transmis."
+        NSCalendarsUsageDescription: "Mes factures lit votre calendrier pour retrouver les visites faites chez chaque client et préparer les factures."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ca.accompagnement.mesfactures
+        PRODUCT_NAME: Factures
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+  FacturesTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests
+    dependencies:
+      - target: Factures
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: ca.accompagnement.mesfactures.tests
+schemes:
+  Factures:
+    build:
+      targets:
+        Factures: all
+    test:
+      targets:
+        - FacturesTests

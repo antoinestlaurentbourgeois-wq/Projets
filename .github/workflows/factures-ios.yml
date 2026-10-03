@@ -1,0 +1,50 @@
+name: Mes factures (iOS)
+
+on:
+  push:
+    paths: ['accompagnement-factures/**', '.github/workflows/factures-ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: accompagnement-factures
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer XcodeGen
+        run: brew install xcodegen
+      - name: Générer le projet Xcode
+        run: xcodegen generate
+      - name: Tests
+        run: |
+          mkdir -p ../out
+          set -o pipefail
+          SIMCTL_CHILD_PDF_OUT="$GITHUB_WORKSPACE/out" xcodebuild test \
+            -project MesFactures.xcodeproj -scheme Factures \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO | tee ../out/test.log | tail -n 80
+      - name: Compiler l'app pour iPhone (non signée)
+        run: |
+          set -o pipefail
+          xcodebuild -project MesFactures.xcodeproj -scheme Factures -sdk iphoneos -configuration Release \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build | tail -n 20
+          mkdir -p Payload && cp -R build/Build/Products/Release-iphoneos/Factures.app Payload/
+          zip -qr ../out/MesFactures-non-signee.ipa Payload
+      - name: Publier les exemples de PDF et le projet Xcode
+        if: github.ref_type == 'branch'
+        run: |
+          mkdir -p docs
+          cp ../out/exemple-facture*.pdf docs/ || true
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add docs MesFactures.xcodeproj
+          git diff --cached --quiet || (git commit -m "CI : exemples de factures PDF et projet Xcode généré" && git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MesFactures
+          path: out/
