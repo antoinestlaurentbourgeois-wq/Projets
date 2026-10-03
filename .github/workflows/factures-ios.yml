@@ -1,8 +1,6 @@
 name: Mes factures (iOS)
 
 on:
-  push:
-    paths: ['accompagnement-factures/**', '.github/workflows/factures-ios.yml']
   workflow_dispatch:
 
 permissions:
