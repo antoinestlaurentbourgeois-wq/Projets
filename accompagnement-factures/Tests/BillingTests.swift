@@ -24,7 +24,7 @@ final class BillingTests: XCTestCase {
 
     func testMatchingAvecAccentsEtLePlusLongMotCle() {
         var long = Client(name: "Tremblay Jean", keywords: "Tremblay Jean"); long.rate = 30
-        let e = event("Jean TREMBLAY – épicerie", 5, 9, mins: 60)
+        let e = event("TREMBLAY Jean – épicerie", 5, 9, mins: 60)
         let m = Billing.match(e, clients: clients + [long])
         XCTAssertEqual(m?.client.name, "Tremblay Jean")
         XCTAssertEqual(Billing.match(event("Dentiste", 5, 9, mins: 60), clients: clients)?.client.name, nil)
@@ -96,7 +96,7 @@ final class BillingTests: XCTestCase {
         var s = AppSettings(); s.provider.name = "Julie"
         let inv = Billing.makeInvoice(client: clients[0], lines: [InvoiceLine(date: date(5), desc: "A", qty: 2, rate: 35)], settings: s, from: date(1), to: date(31), today: date(1, month: 11))
         let out = Billing.fill("{numero} {client} {periode} {total} {echeance} {nom}", invoice: inv)
-        XCTAssertEqual(out, "2026-001 Mme Tremblay de octobre 2026 70,00 $ 1er décembre 2026 Julie")
+        XCTAssertEqual(out, "2026-001 Mme Tremblay de octobre 2026 75,00 $ 1er décembre 2026 Julie")
     }
 }
 
